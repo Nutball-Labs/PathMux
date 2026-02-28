@@ -28,11 +28,8 @@
 #include <ctime>
 #include <iomanip>
 
-// json.hpp is used only for --scan-all-trips manifest parsing.
-// Single-file mode remains usable without manifest infrastructure.
-#include "json.hpp"
+#include "config_manager.hpp"
 #include "platform.hpp"
-using json = nlohmann::json;
 using namespace Pathmux;
 
 // ---------------------------------------------------------------------------
@@ -400,7 +397,8 @@ static void outputText(const std::vector<GpsRecord>& recs,
 
 // ---------------------------------------------------------------------------
 // scanAllTrips — batch mode: find all manifests, scan first segment per trip.
-// Returns one LockScanResult per trip found.
+// Loads manifests via ConfigManager, writes gpsLockSeconds back for any trip
+// where a GPS lock is found.  Returns one LockScanResult per trip found.
 // ---------------------------------------------------------------------------
 static std::vector<LockScanResult> scanAllTrips(
     const std::string& exiftoolPath,
@@ -408,78 +406,42 @@ static std::vector<LockScanResult> scanAllTrips(
 {
     std::vector<LockScanResult> results;
 
-    std::string indexFile = Platform::getConfigDir() + "manifests.json";
+    ConfigManager config;
+    auto index = config.loadManifestIndex();
 
-    std::ifstream ifs(indexFile);
-    if (!ifs.is_open()) {
-        std::cerr << "Error: Cannot open " << indexFile << "\n"
+    if (index.empty()) {
+        std::cerr << "Error: No manifests found in "
+                  << Platform::getConfigDir() << "manifests.json\n"
                   << "  Has pathmux been run at least once to build manifests?\n";
         return results;
     }
 
-    json idx;
-    try { ifs >> idx; }
-    catch (...) {
-        std::cerr << "Error: manifests.json is corrupt or unreadable.\n";
-        return results;
-    }
+    for (const auto& entry : index) {
+        auto trips = config.loadTripCache(entry.manifestFile);
+        if (trips.empty()) continue;
 
-    if (!idx.contains("manifests") || !idx["manifests"].is_array()) {
-        std::cerr << "Error: No manifests array found in " << indexFile << "\n";
-        return results;
-    }
+        bool anyChanged = false;
 
-    for (const auto& jm : idx["manifests"]) {
-        std::string manifestId   = jm.value("id",            "??");
-        std::string manifestFile = jm.value("manifest_file", "");
+        for (auto& trip : trips) {
+            if (trip.segments.empty()) continue;
 
-        if (manifestFile.empty()) continue;
-
-        std::ifstream mfs(manifestFile);
-        if (!mfs.is_open()) {
-            std::cerr << "Warning: Cannot open manifest " << manifestFile
-                      << " — skipping.\n";
-            continue;
-        }
-
-        json mroot;
-        try { mfs >> mroot; }
-        catch (...) {
-            std::cerr << "Warning: Corrupt manifest " << manifestFile
-                      << " — skipping.\n";
-            continue;
-        }
-
-        if (!mroot.contains("trips") || !mroot["trips"].is_array()) continue;
-
-        for (const auto& jt : mroot["trips"]) {
-            std::string tripId = jt.value("id",     "??");
-            int         segdur = jt.value("segdur",  0);
-
-            if (!jt.contains("segments") || !jt["segments"].is_array()
-                    || jt["segments"].empty())
-                continue;
-
-            const auto& seg0  = jt["segments"][0];
-            std::string front = seg0.value("front", "-");
+            const std::string& front = trip.segments[0].front;
             if (front == "-" || front.empty()) continue;
 
-            // front is stored as an absolute path in the manifest;
-            // extract basename for display only.
-            std::string fullPath = front;
+            // front is an absolute path in the manifest; extract basename for display.
             std::string baseName = front;
             auto slash = front.rfind('/');
             if (slash != std::string::npos) baseName = front.substr(slash + 1);
 
             LockScanResult r;
-            r.manifestId  = manifestId;
-            r.tripId      = tripId;
+            r.manifestId   = entry.id;
+            r.tripId       = trip.id;
             r.firstSegFile = baseName;
-            r.segDur       = segdur;
+            r.segDur       = trip.segdur;
 
             // Verify file is accessible before handing to exiftool
             {
-                std::ifstream fcheck(fullPath);
+                std::ifstream fcheck(front);
                 if (!fcheck.good()) {
                     r.fileErr = true;
                     results.push_back(r);
@@ -487,10 +449,10 @@ static std::vector<LockScanResult> scanAllTrips(
                 }
             }
 
-            std::cerr << "  Scanning " << manifestId << ":" << tripId
+            std::cerr << "  Scanning " << entry.id << ":" << trip.id
                       << "  " << baseName << " ...\n";
 
-            auto records = runExiftool(fullPath, exiftoolPath, exiftoolOpts);
+            auto records = runExiftool(front, exiftoolPath, exiftoolOpts);
             for (const auto& rec : records) {
                 if (rec.lat != 0.0 && rec.lon != 0.0) {
                     r.lockSec = rec.index;
@@ -498,8 +460,19 @@ static std::vector<LockScanResult> scanAllTrips(
                 }
             }
 
+            // Write lock time back into the Trip if found.
+            // Only marks changed if the stored value differs.
+            if (r.lockSec >= 0 && trip.gpsLockSeconds != r.lockSec) {
+                trip.gpsLockSeconds = r.lockSec;
+                anyChanged = true;
+            }
+
             results.push_back(r);
         }
+
+        // Persist updated trips for this manifest if any lock times changed.
+        if (anyChanged)
+            config.saveTripCache(entry.path, trips);
     }
 
     return results;

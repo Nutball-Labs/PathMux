@@ -798,6 +798,8 @@ void ConfigManager::saveTripCache(const std::string& path,
             jTrip["firstLockTimestamp"] = trip.firstLockTimestamp;
             jTrip["firstLockRecord"]    = trip.firstLockRecord;
         }
+        if (trip.gpsLockSeconds >= 0)
+            jTrip["gpsLockSeconds"] = trip.gpsLockSeconds;
 
         if (trip.startLat != 0.0 || trip.startLon != 0.0) {
             jTrip["startLat"] = trip.startLat;
@@ -911,6 +913,7 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         trip.firstLockLon       = jTrip.value("firstLockLon",       0.0);
         trip.firstLockTimestamp = jTrip.value("firstLockTimestamp", "");
         trip.firstLockRecord    = jTrip.value("firstLockRecord",    -1);
+        trip.gpsLockSeconds     = jTrip.value("gpsLockSeconds",     -1);
 
         trip.startLat       = jTrip.value("startLat",       0.0);
         trip.startLon       = jTrip.value("startLon",       0.0);

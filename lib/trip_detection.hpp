@@ -79,10 +79,14 @@ struct Trip {
     // firstLock: first GPS record with non-zero lat/lon (chip acquisition time).
     // startLat/Lon: same as firstLock lat/lon (first valid fix of the trip).
     // endLat/Lon:   last valid fix of the last segment.
+    // gpsLockSeconds: seconds from segment start to first valid fix.
+    //   -1 = not yet scanned; >=0 = seconds to lock (0 means immediate).
+    //   Written by pm_gpsinfo --scan-all-trips; read by UI for display.
     double      firstLockLat       = 0.0;
     double      firstLockLon       = 0.0;
     std::string firstLockTimestamp;       // \"2026:02:16 14:32:05\"
     int         firstLockRecord    = -1;  // 0-based index into GPS stream
+    int         gpsLockSeconds     = -1;  // seconds to first valid fix; -1 = not scanned
     double startLat = 0.0;
     double startLon = 0.0;
     double endLat   = 0.0;
