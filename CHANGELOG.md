@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## [0.9.3 / HWM: 00070] - 2026-02-28
+### Added
+- **`pm_gpsinfo --scan-all-trips`**: New batch scan mode. Reads all manifests
+  from `~/.config/pathmux/manifests.json`, iterates every trip, runs ExifTool
+  on the first Front segment of each trip, and reports how many seconds into
+  the segment elapsed before GPS lock was achieved.
+  - Output: fixed-width table — `MID`, `TID`, `SegDur`, `LockAt`, `First Segment`
+  - `LockAt` shows `0s`–`Ns` (seconds), `none` (no lock in segment), or `!file`
+    (segment not accessible — drive not mounted, etc.)
+  - Progress lines written to stderr in `MID:TID  filename ...` format
+  - `MID:TID` colon-separated addressing convention established for future
+    batch manager feature — consistent from the start
+  - `--scan-all-trips` is mutually exclusive with a file argument
+### Fixed
+- **`pm_gpsinfo` argument order**: Usage corrected to POSIX convention
+  `[options] <file.ts>` (options before file).
+### Changed
+- **`pm_gpsinfo` now links `json.hpp`** for manifest parsing in batch mode.
+  Single-file mode behaviour unchanged.
+### Maintenance
+- **SN**: High-water mark `00070`. Changed files: `pm_gpsinfo.cpp`, `version.hpp`.
+
+---
+
 ## [0.8.12] - 2026-02-24
 ### Fixed
 - **`-p` lastPath**: Now calls `setLastPath()` on cache-hit paths, not just after a fresh scan.
