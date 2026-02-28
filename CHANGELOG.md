@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [housekeeping / out-of-session] - 2026-02-28
+### Fixed
+- **`cmake/archive_files.txt`**: Updated all source paths to reflect post-0.9.4
+  directory layout (`lib/`, `cli/`, `tools/`). Added new files from the refactor
+  (`format_helpers.hpp`, `platform.cpp/.hpp`, `pathmux.hpp`, `PROPOSED_UTILS.md`,
+  `Session_Log.md`, `man1/pathmux.1`). Dropped `json.hpp` (vendored, not distributed).
+- **`cmake/archive.cmake`**: Fixed hardcoded `${SRC}/version.hpp` path — moved to
+  `${SRC}/lib/version.hpp` during refactor. Archive target was broken; now verified
+  clean producing a correct 35-file tarball.
+
+---
+
 ## [post-0.9.4 / HWM: 00071] - 2026-02-28
 ### Added
 - **`Trip::gpsLockSeconds`**: New field in the `Trip` struct (`-1` = not yet
