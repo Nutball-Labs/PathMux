@@ -102,14 +102,16 @@ bottom of the file:
 
 ## Deliverable Format
 
-- **"Cut the tarball"** means: implement the requested changes, verify the
-  build compiles cleanly, bump the SN on changed files, bump version.hpp,
-  and produce a `.tgz` archive ready for download
-- Output tarballs go to `/mnt/user-data/outputs/pathmux_X.Y.Z.tgz`
+**When working in VSCode + Claude Code (current setup):** tarball production is
+not needed. Files are edited in-place and delivered via `git push origin main`.
+"Cut the tarball" in this context means: implement changes, verify clean build,
+bump SNs, bump version, commit, and push.
+
+**Tarball format (if ever needed outside VSCode):**
+- Output to `/mnt/user-data/outputs/pathmux_X.Y.Z.tgz`
 - Format is always `.tgz` — never `.zip` or `.tar.gz` (redundant extension)
-- After producing the tarball, present it with the `present_files` tool
-- Standard tarball contents: all `.cpp`, `.hpp`, `CMakeLists.txt`,
-  `pathmux.1`, `cmake/`, `ROADMAP.md`, `CHANGELOG.md`
+- Standard contents: all `.cpp`, `.hpp`, `CMakeLists.txt`, `pathmux.1`,
+  `cmake/`, `ROADMAP.md`, `CHANGELOG.md`
 - Do NOT include: `build/`, `*.o`, `*.a`, `archive/`, test video files,
   `pm_ls-lR.txt`, `json.hpp` (too large, user already has it)
 
@@ -238,15 +240,17 @@ bottom of the file:
 
 ## What "Cut the Tarball" Means
 
-When asked to "cut the tarball" or "cut as X.Y.Z":
+When working in **VSCode + Claude Code**, "cut the tarball" or "cut as X.Y.Z" means:
 1. Implement all requested changes
-2. Verify `make` or `cmake --build` compiles with no errors
+2. Verify `cmake --build` compiles with no errors
 3. Note warnings — fix if trivial, add to queue if not
 4. Bump SN on all changed files to current high-water mark
 5. If this is a new version: increment HWM, update `version.hpp`
-6. Produce `/mnt/user-data/outputs/pathmux_X.Y.Z.tgz`
-7. Present with `present_files` tool
-8. Summarize what changed
+6. Commit and `git push origin main`
+7. Summarize what changed
+
+No tarball file is produced — `git push` is the delivery mechanism.
+Steps 6–7 of the old flow (`produce .tgz`, `present_files`) are skipped.
 
 ---
 
