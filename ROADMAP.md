@@ -19,6 +19,24 @@ This document outlines planned features and future development direction for Pat
   - `lastThumb`: Front camera, last segment
 - [ ] Per-segment thumbnail paths for all four cameras
 
+### pm_gpsinfo Standalone Utility
+**Status:** Active development alongside main CLI
+
+- [x] Single-file GPS inspection: `pm_gpsinfo [options] <file.ts>`
+  - JSON, CSV, XML, text output formats
+  - `--first-lock` (default) and `--all` record modes
+- [x] **`--scan-all-trips` batch mode** (v0.9.3): Reads all manifests from
+  `~/.config/pathmux/manifests.json`, scans first Front segment of every trip,
+  reports seconds-to-GPS-lock in a labeled column table (MID, TID, SegDur, LockAt,
+  First Segment). Handles inaccessible footage gracefully (`!file`).
+- [x] **`MID:TID` addressing convention** established (v0.9.3) — colon-separated
+  manifest:trip ID syntax used in progress output; reserved for future batch manager
+- [ ] Store GPS lock time result back into manifest (per-trip `gpsLockSeconds` field)
+- [ ] `pm_gpsinfo` single-trip mode: `pm_gpsinfo MID:TID` — scan first segment of
+  a named trip without specifying the file path manually
+
+---
+
 ### GPS Data Extraction
 **Status:** RESOLVED — ExifTool 13.51+ decodes LIGOGPSINFO correctly
 
@@ -338,9 +356,9 @@ QuadEye is currently a solo project by a Linux sysadmin learning C++ through AI-
 
 ---
 
-*Last updated: 2026-02-17*
+*Last updated: 2026-02-28*
 *Project status: Phase 1 (CLI development)*
-*Current version: 0.6.0m (not yet built)*
+*Current version: 0.9.3 (SN 00070)*
 
 **Audio sync reference:**
 - Audio track always sourced from **Left camera** (driver position)
