@@ -2,30 +2,39 @@
 // Runs exiftool on a Pruveeo D90 .ts file and reports GPS data.
 //
 // Usage:
-//   pm_gpsinfo <file.ts> [options]
+//   pm_gpsinfo [options] <file.ts>
+//   pm_gpsinfo --scan-all-trips [options]
 //
 // Options:
-//   --first-lock     Report first GPS fix with non-zero lat/lon (default)
-//   --all            Report all GPS records
-//   --json           Output as JSON (default)
-//   --csv            Output as CSV
-//   --xml            Output as XML
-//   --exiftool PATH  Path to exiftool binary (default: exiftool)
+//   --first-lock         Report first GPS fix with non-zero lat/lon (default)
+//   --all                Report all GPS records
+//   --json               Output as JSON (default)
+//   --csv                Output as CSV
+//   --xml                Output as XML
+//   --text               Human-readable report
+//   --scan-all-trips     Scan first segment of every trip in all manifests
+//   --exiftool PATH      Path to exiftool binary (default: exiftool)
+//   --exiftool-opts O    Extraction options (default: -ee3 ...)
 //
-// SN: 00069
+// SN: 00070
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <iomanip>
 
+// json.hpp is used only for --scan-all-trips manifest parsing.
+// Single-file mode remains usable without manifest infrastructure.
+#include "json.hpp"
+using json = nlohmann::json;
+
 // ---------------------------------------------------------------------------
-// Minimal JSON output without pulling in json.hpp dependency
-// (pm_gpsinfo is designed to be buildable standalone)
+// Minimal JSON output helpers (hand-rolled to avoid json.hpp in output paths)
 // ---------------------------------------------------------------------------
 
 struct GpsRecord {
@@ -34,7 +43,17 @@ struct GpsRecord {
     double lon     = 0.0;
     double speed   = -1.0;   // km/h; -1 = not in stream
     double heading = -1.0;   // degrees; -1 = not in stream
-    int    index   = 0;      // 0-based record index in stream
+    int    index   = 0;      // 0-based record index in stream (≈ seconds from segment start)
+};
+
+// One row of output for --scan-all-trips
+struct LockScanResult {
+    std::string manifestId;
+    std::string tripId;
+    std::string firstSegFile;  // basename of first Front segment
+    int         segDur  = 0;   // segment duration in seconds (from manifest)
+    int         lockSec = -1;  // seconds to first GPS lock; -1 = no lock found
+    bool        fileErr = false; // true if segment file could not be opened
 };
 
 // ---------------------------------------------------------------------------
@@ -90,19 +109,25 @@ static void printUsage(const char* argv0) {
     std::cerr
         << "pm_gpsinfo — GPS inspection tool (PathMux suite)\n\n"
         << "Usage:\n"
-        << "  " << argv0 << " <file.ts> [options]\n\n"
-        << "Options:\n"
+        << "  " << argv0 << " [options] <file.ts>\n"
+        << "  " << argv0 << " --scan-all-trips [options]\n\n"
+        << "Single-file options:\n"
         << "  --first-lock       Report first valid GPS fix (default)\n"
         << "  --all              Report all GPS records\n"
         << "  --json             JSON output (default)\n"
         << "  --text             Human-readable report\n"
         << "  --csv              CSV output\n"
-        << "  --xml              XML output\n"
+        << "  --xml              XML output\n\n"
+        << "Batch scan options:\n"
+        << "  --scan-all-trips   Scan first segment of every trip across all\n"
+        << "                     manifests; report seconds to first GPS lock\n\n"
+        << "Common options:\n"
         << "  --exiftool PATH    Path to exiftool binary\n"
-        << "  --exiftool-opts O  Extraction options (default: -ee3)\n\n"
+        << "  --exiftool-opts O  Extraction options (default: -ee3 ...)\n\n"
         << "Notes:\n"
         << "  Requires ExifTool 13.51+ for correct Pruveeo D90 GPS decoding.\n"
-        << "  Speed in km/h.  Altitude not reported (D90 values unreliable).\n";
+        << "  Speed in km/h.  Altitude not reported (D90 values unreliable).\n"
+        << "  --scan-all-trips reads manifests from ~/.config/pathmux/\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +185,7 @@ static std::vector<GpsRecord> runExiftool(const std::string& filePath,
 }
 
 // ---------------------------------------------------------------------------
-// Output helpers
+// Output helpers — single-file modes
 // ---------------------------------------------------------------------------
 
 static void outputJson(const std::vector<GpsRecord>& recs,
@@ -372,6 +397,174 @@ static void outputText(const std::vector<GpsRecord>& recs,
 }
 
 // ---------------------------------------------------------------------------
+// scanAllTrips — batch mode: find all manifests, scan first segment per trip.
+// Returns one LockScanResult per trip found.
+// ---------------------------------------------------------------------------
+static std::vector<LockScanResult> scanAllTrips(
+    const std::string& exiftoolPath,
+    const std::string& exiftoolOpts)
+{
+    std::vector<LockScanResult> results;
+
+    const char* home = getenv("HOME");
+    if (!home) {
+        std::cerr << "Error: HOME environment variable not set.\n";
+        return results;
+    }
+    std::string indexFile = std::string(home) + "/.config/pathmux/manifests.json";
+
+    std::ifstream ifs(indexFile);
+    if (!ifs.is_open()) {
+        std::cerr << "Error: Cannot open " << indexFile << "\n"
+                  << "  Has pathmux been run at least once to build manifests?\n";
+        return results;
+    }
+
+    json idx;
+    try { ifs >> idx; }
+    catch (...) {
+        std::cerr << "Error: manifests.json is corrupt or unreadable.\n";
+        return results;
+    }
+
+    if (!idx.contains("manifests") || !idx["manifests"].is_array()) {
+        std::cerr << "Error: No manifests array found in " << indexFile << "\n";
+        return results;
+    }
+
+    for (const auto& jm : idx["manifests"]) {
+        std::string manifestId   = jm.value("id",            "??");
+        std::string manifestFile = jm.value("manifest_file", "");
+
+        if (manifestFile.empty()) continue;
+
+        std::ifstream mfs(manifestFile);
+        if (!mfs.is_open()) {
+            std::cerr << "Warning: Cannot open manifest " << manifestFile
+                      << " — skipping.\n";
+            continue;
+        }
+
+        json mroot;
+        try { mfs >> mroot; }
+        catch (...) {
+            std::cerr << "Warning: Corrupt manifest " << manifestFile
+                      << " — skipping.\n";
+            continue;
+        }
+
+        if (!mroot.contains("trips") || !mroot["trips"].is_array()) continue;
+
+        for (const auto& jt : mroot["trips"]) {
+            std::string tripId = jt.value("id",     "??");
+            int         segdur = jt.value("segdur",  0);
+
+            if (!jt.contains("segments") || !jt["segments"].is_array()
+                    || jt["segments"].empty())
+                continue;
+
+            const auto& seg0  = jt["segments"][0];
+            std::string front = seg0.value("front", "-");
+            if (front == "-" || front.empty()) continue;
+
+            // front is stored as an absolute path in the manifest;
+            // extract basename for display only.
+            std::string fullPath = front;
+            std::string baseName = front;
+            auto slash = front.rfind('/');
+            if (slash != std::string::npos) baseName = front.substr(slash + 1);
+
+            LockScanResult r;
+            r.manifestId  = manifestId;
+            r.tripId      = tripId;
+            r.firstSegFile = baseName;
+            r.segDur       = segdur;
+
+            // Verify file is accessible before handing to exiftool
+            {
+                std::ifstream fcheck(fullPath);
+                if (!fcheck.good()) {
+                    r.fileErr = true;
+                    results.push_back(r);
+                    continue;
+                }
+            }
+
+            std::cerr << "  Scanning " << manifestId << ":" << tripId
+                      << "  " << baseName << " ...\n";
+
+            auto records = runExiftool(fullPath, exiftoolPath, exiftoolOpts);
+            for (const auto& rec : records) {
+                if (rec.lat != 0.0 && rec.lon != 0.0) {
+                    r.lockSec = rec.index;
+                    break;
+                }
+            }
+
+            results.push_back(r);
+        }
+    }
+
+    return results;
+}
+
+// ---------------------------------------------------------------------------
+// outputLockTable — tabular output for --scan-all-trips
+// ---------------------------------------------------------------------------
+static void outputLockTable(const std::vector<LockScanResult>& results) {
+    if (results.empty()) {
+        std::cout << "No trips found in any manifest.\n";
+        return;
+    }
+
+    // Fixed column widths; filename column expands to fit longest name
+    const int W_MID  = 3;
+    const int W_TID  = 3;
+    const int W_DUR  = 6;
+    const int W_LOCK = 6;
+
+    int W_FILE = 20;
+    for (const auto& r : results)
+        W_FILE = std::max(W_FILE, (int)r.firstSegFile.size());
+
+    // Right-pad or left-pad a string to width w
+    auto rpad = [](const std::string& s, int w) -> std::string {
+        if ((int)s.size() >= w) return s.substr(0, w);
+        return s + std::string(w - s.size(), ' ');
+    };
+    auto lpad = [](const std::string& s, int w) -> std::string {
+        if ((int)s.size() >= w) return s.substr(0, w);
+        return std::string(w - s.size(), ' ') + s;
+    };
+
+    // Header
+    std::cout << rpad("MID", W_MID) << "  "
+              << rpad("TID", W_TID) << "  "
+              << lpad("SegDur", W_DUR) << "  "
+              << lpad("LockAt", W_LOCK) << "  "
+              << "First Segment\n";
+
+    // Divider
+    std::cout << std::string(W_MID,  '-') << "  "
+              << std::string(W_TID,  '-') << "  "
+              << std::string(W_DUR,  '-') << "  "
+              << std::string(W_LOCK, '-') << "  "
+              << std::string(W_FILE, '-') << "\n";
+
+    for (const auto& r : results) {
+        std::string durStr  = std::to_string(r.segDur) + "s";
+        std::string lockStr = r.fileErr    ? "!file"
+                            : r.lockSec < 0 ? "none"
+                            : std::to_string(r.lockSec) + "s";
+        std::cout << rpad(r.manifestId,   W_MID) << "  "
+                  << rpad(r.tripId,       W_TID) << "  "
+                  << lpad(durStr,         W_DUR) << "  "
+                  << lpad(lockStr,        W_LOCK) << "  "
+                  << r.firstSegFile << "\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 int main(int argc, char* argv[])
@@ -381,19 +574,20 @@ int main(int argc, char* argv[])
     std::string filePath;
     std::string exiftoolPath = "exiftool";
     std::string exiftoolOpts = "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSSpeed# $GPSTrack#'";
-    bool firstLockOnly = true;   // default mode
-    bool modeSet       = false;
-    std::string format = "json"; // default format
+    bool firstLockOnly   = true;   // default mode
+    bool scanAllTripsMode = false;
+    std::string format   = "json"; // default format
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") { printUsage(argv[0]); return 0; }
-        else if (arg == "--first-lock")  { firstLockOnly = true;  modeSet = true; }
-        else if (arg == "--all")    { firstLockOnly = false; modeSet = true; }
-        else if (arg == "--json")   { format = "json"; }
-        else if (arg == "--text")   { format = "text"; }
-        else if (arg == "--csv")    { format = "csv";  }
-        else if (arg == "--xml")    { format = "xml";  }
+        else if (arg == "--first-lock")     { firstLockOnly = true; }
+        else if (arg == "--all")            { firstLockOnly = false; }
+        else if (arg == "--json")           { format = "json"; }
+        else if (arg == "--text")           { format = "text"; }
+        else if (arg == "--csv")            { format = "csv";  }
+        else if (arg == "--xml")            { format = "xml";  }
+        else if (arg == "--scan-all-trips") { scanAllTripsMode = true; }
         else if (arg == "--exiftool") {
             if (i + 1 < argc) exiftoolPath = argv[++i];
             else { std::cerr << "Error: --exiftool requires a path.\n"; return 1; }
@@ -415,13 +609,24 @@ int main(int argc, char* argv[])
         }
     }
 
+    // --scan-all-trips: batch mode — no file argument needed or accepted
+    if (scanAllTripsMode) {
+        if (!filePath.empty()) {
+            std::cerr << "Error: --scan-all-trips does not accept a file argument.\n";
+            return 1;
+        }
+        std::cerr << "Scanning all manifests for GPS lock times...\n";
+        auto results = scanAllTrips(exiftoolPath, exiftoolOpts);
+        std::cerr << "\n";
+        outputLockTable(results);
+        return 0;
+    }
+
+    // Single-file mode
     if (filePath.empty()) {
         std::cerr << "Error: no input file specified.\n";
         printUsage(argv[0]); return 1;
     }
-
-    // Suppress unused-variable warning for modeSet in simple builds
-    (void)modeSet;
 
     auto records = runExiftool(filePath, exiftoolPath, exiftoolOpts);
 
@@ -438,3 +643,5 @@ int main(int argc, char* argv[])
 
     return 0;
 }
+
+// SN: 00070
