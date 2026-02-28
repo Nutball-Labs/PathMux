@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/BiloxiGeek/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.2 (SN 00069)
+**Current version:** 0.9.3 (SN 00070)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -43,7 +43,7 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 | `ui_helpers.hpp` | Terminal box UI, format helpers, input helpers |
 | `logger.hpp` | Logging |
 | `version.hpp` | Version string from components via macros |
-| `pm_gpsinfo.cpp` | Standalone GPS info utility |
+| `pm_gpsinfo.cpp` | Standalone GPS info utility; `--scan-all-trips` batch lock scanner |
 | `json.hpp` | nlohmann/json v3.11.3 (vendored, do not modify) |
 | `CMakeLists.txt` | Primary build system |
 | `pathmux.1` | Man page (canonical location: `man1/pathmux.1`) |
@@ -56,12 +56,12 @@ Every source file and the Makefile carries a serial number comment at the
 bottom of the file:
 
 ```cpp
-// SN: 00069   ← C++ files and headers
-# SN: 00069    ← Makefile and cmake files
+// SN: 00070   ← C++ files and headers
+# SN: 00070    ← Makefile and cmake files
 ```
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00069`
+- There is one project-wide **high-water mark** SN, currently `00070`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -74,7 +74,7 @@ bottom of the file:
 
 **Example workflow:**
 - Working on a bug fix: change the files, bump their SN to current HWM
-- Cutting a release: increment HWM (e.g. 00069 → 00070), apply to all
+- Cutting a release: increment HWM (e.g. 00070 → 00071), apply to all
   changed files, update `version.hpp` with new patch/minor version
 
 ---
@@ -126,10 +126,20 @@ bottom of the file:
 - Blacklisted names: `pathmux`, `manifests`, `lastpath`
 - MD5-based integrity checking via `updateManifestMd5()`
 
+### Segment File Paths
+- `TripSegment.front/rear/left/right` fields store **absolute paths** in the
+  manifest (e.g. `/z/srcdash/ex1/Front/20260225_044424F.ts`)
+- Do NOT prepend `sourcePath` when constructing file paths from these fields —
+  the path is already complete. Use the value directly.
+- Basename extraction: `front.rfind('/')` + substring for display-only use
+
 ### Base36 IDs
 - Manifests and trips get two-character base36 IDs (0-9, A-Z)
 - Used throughout UI for quick reference: `[G1]`, `6K`, etc.
 - Ambiguity between characters handled, 1 vs l, 0 vs O, etc.
+- **`MID:TID` colon-separated addressing** — established convention for
+  referencing a specific trip across tools (e.g. `CQ:73`). Reserved for
+  future batch manager; use consistently in progress output and CLI args.
 
 ### GPS Extraction
 - First camera developed **Requires ExifTool 13.51+** — EPEL version 13.10 did NOT work
@@ -184,12 +194,14 @@ bottom of the file:
 
 - `selectTrip()` has unused `mode` parameter — fix: `ExportMode /*mode*/`
 - Man page needs update for `-G` interactive flow, `--validate`, `-t` flags
-- `pm_gpsinfo` enhancements: fix argument order to [options] <file.ts> (POSIX convention)
-  - add mode to scan first segment of a trip (or all trips) and report timestamp when GPS lock was first achieved; store result in manifest 
+- `pm_gpsinfo` enhancements:
+  - ~~Fix argument order to [options] \<file.ts\> (POSIX convention)~~ — done v0.9.3
+  - ~~`--scan-all-trips`: scan first segment of every trip, report GPS lock time~~ — done v0.9.3
+  - Store GPS lock time back into manifest (`gpsLockSeconds` field per trip)
+  - `pm_gpsinfo MID:TID` direct addressing — scan named trip without specifying file path
 - GPS extraction to GeoJSON not yet implemented (architecture decided, code pending)
 - Interactive manifest browser: bare Enter at "Output directory" prompt should
   accept default without requiring text input (partial fix in 0.9.2, verify)
-- Standalone utility to read all manifests, find all trips and scan the first segment to discover when GPS was achieved.
 
 ---
 
