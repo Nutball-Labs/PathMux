@@ -10,7 +10,7 @@ if(NOT DEFINED SRC)
 endif()
 
 # --- Read version.hpp -------------------------------------------------------
-file(READ "${SRC}/version.hpp" VER_HPP)
+file(READ "${SRC}/lib/version.hpp" VER_HPP)
 
 string(REGEX MATCH "VERSION_MAJOR ([0-9]+)" _ "${VER_HPP}")
 set(VER_MAJOR ${CMAKE_MATCH_1})
