@@ -80,3 +80,45 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 7. Then resume normal development
 
 ---
+
+## 2026-02-28
+
+### Session 1
+**Focus:** pm_gpsinfo --scan-all-trips batch GPS lock scanner; workflow walkthrough
+
+**Decisions Made:**
+- `MID:TID` colon-separated syntax established as project-wide addressing convention
+  for referencing a specific trip (e.g. `CQ:73`). Reserved for future batch manager.
+  Colon chosen over slash to avoid ambiguity with filesystem paths.
+- `TripSegment.front/rear/left/right` confirmed to store absolute paths in the
+  manifest — not relative. Caught as a bug mid-session (all entries showed `!file`
+  until the `sourcePath +` prepend was removed). Documented in CLAUDE.md.
+- Housekeeping commits (CHANGELOG, ROADMAP, CLAUDE.md) kept separate from code
+  commits — user's explicit preference, confirmed this session.
+- Claude runs commands via Bash tool directly; user does not need external terminal
+  for output review during a session.
+- Session_Log lives in the source tree (`/z/dash/src/`), not in the memory dir.
+
+**Work Done:**
+- Added `--scan-all-trips` mode to `pm_gpsinfo`: reads all manifests, runs exiftool
+  on first Front segment of each trip, reports seconds-to-GPS-lock in a table
+- Fixed path bug: segment fields are absolute, not relative to sourcePath
+- Changed progress output separator from `/` to `:` (`Scanning CQ:73`) for MID:TID
+- Version bumped to 0.9.3, HWM to 00070
+- CHANGELOG, ROADMAP, CLAUDE.md, Session_Log all updated (separate commits)
+- Memory files updated: `pathmux.md` created in memory dir, `MEMORY.md` updated
+
+**Real-World Results from --scan-all-trips:**
+- 35 trips across multiple manifests scanned
+- Most show `0s` lock — warm GPS starts (chip retained last position from prior use)
+- `none` on two ~37s stub segments — genuine cold starts, no fix acquired
+- Older manifests (pre-segdur) show `0s` segdur but GPS still scanned correctly
+
+**Pending (carry forward):**
+- Store GPS lock time back into manifest (`gpsLockSeconds` field per trip)
+- `pm_gpsinfo MID:TID` direct addressing mode (no file path needed)
+- `selectTrip()` unused `mode` parameter — `ExportMode /*mode*/`
+- Man page updates (-G interactive flow, --validate, -t flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+
+---
