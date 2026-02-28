@@ -31,9 +31,11 @@ This document outlines planned features and future development direction for Pat
   First Segment). Handles inaccessible footage gracefully (`!file`).
 - [x] **`MID:TID` addressing convention** established (v0.9.3) — colon-separated
   manifest:trip ID syntax used in progress output; reserved for future batch manager
-- [ ] Store GPS lock time result back into manifest (per-trip `gpsLockSeconds` field)
-- [ ] `pm_gpsinfo` single-trip mode: `pm_gpsinfo MID:TID` — scan first segment of
-  a named trip without specifying the file path manually
+- [x] **`gpsLockSeconds` write-back** (post-0.9.4): `--scan-all-trips` now stores
+  seconds-to-first-lock in the manifest (`Trip::gpsLockSeconds`); `saveTripCache`
+  path maintains MD5 integrity automatically
+- [x] **`pm_gpsinfo MID:TID` direct addressing** (post-0.9.4): invoke single-file
+  GPS inspection by manifest:trip ID — no need to specify the segment file path
 
 ---
 

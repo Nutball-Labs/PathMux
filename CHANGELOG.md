@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## [post-0.9.4 / HWM: 00071] - 2026-02-28
+### Added
+- **`Trip::gpsLockSeconds`**: New field in the `Trip` struct (`-1` = not yet
+  scanned; `>=0` = seconds from segment start to first valid GPS fix). Serialized
+  in manifest JSON; loaded back on next scan. Populated by `--scan-all-trips`.
+- **`pm_gpsinfo MID:TID` direct addressing**: Any single-file GPS inspection can
+  now be invoked with a manifest:trip ID pair instead of a file path.
+  `pm_gpsinfo F0:4P --text` resolves the trip via `ConfigManager`, hands the
+  first Front segment path to the existing single-file pipeline. ID normalization
+  applied (O→0, I→1, L→1, case-insensitive). Error messages distinguish unknown
+  manifest ID from unknown trip ID.
+### Changed
+- **`pm_gpsinfo --scan-all-trips`** now uses `ConfigManager` for all manifest I/O
+  (`loadManifestIndex()`, `loadTripCache()`, `saveTripCache()`) instead of raw
+  JSON parsing. Lock times are written back to the manifest after each scan;
+  MD5 integrity tracking maintained automatically via the `saveTripCache` path.
+  `json.hpp` no longer included directly by `pm_gpsinfo.cpp`.
+
+---
+
 ## [0.9.4 / HWM: 00071] - 2026-02-28
 ### Changed
 - **Library restructure**: Codebase reorganized into `libpathmux.a` (static library)
