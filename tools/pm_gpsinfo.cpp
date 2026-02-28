@@ -109,6 +109,7 @@ static void printUsage(const char* argv0) {
         << "pm_gpsinfo — GPS inspection tool (PathMux suite)\n\n"
         << "Usage:\n"
         << "  " << argv0 << " [options] <file.ts>\n"
+        << "  " << argv0 << " [options] MID:TID\n"
         << "  " << argv0 << " --scan-all-trips [options]\n\n"
         << "Single-file options:\n"
         << "  --first-lock       Report first valid GPS fix (default)\n"
@@ -124,6 +125,7 @@ static void printUsage(const char* argv0) {
         << "  --exiftool PATH    Path to exiftool binary\n"
         << "  --exiftool-opts O  Extraction options (default: -ee3 ...)\n\n"
         << "Notes:\n"
+        << "  MID:TID addresses a trip by manifest ID and trip ID (e.g. F0:4P).\n"
         << "  Requires ExifTool 13.51+ for correct Pruveeo D90 GPS decoding.\n"
         << "  Speed in km/h.  Altitude not reported (D90 values unreliable).\n"
         << "  --scan-all-trips reads manifests from ~/.config/pathmux/\n";
@@ -535,6 +537,62 @@ static void outputLockTable(const std::vector<LockScanResult>& results) {
 }
 
 // ---------------------------------------------------------------------------
+// resolveMidTid — look up MID:TID in manifests, return path to first Front
+// segment of that trip.  Returns "" and prints an error on failure.
+// ---------------------------------------------------------------------------
+static std::string resolveMidTid(const std::string& midtid)
+{
+    auto colon = midtid.find(':');
+    if (colon == std::string::npos || colon == 0 || colon + 1 == midtid.size()) {
+        std::cerr << "Error: '" << midtid << "' is not a valid MID:TID address.\n";
+        return "";
+    }
+
+    // Normalize: uppercase, O→0, I→1, L→1  (mirrors ConfigManager::normalizeId)
+    auto normalize = [](const std::string& s) {
+        std::string out;
+        for (char c : s) {
+            char u = std::toupper((unsigned char)c);
+            if      (u == 'O') u = '0';
+            else if (u == 'I') u = '1';
+            else if (u == 'L') u = '1';
+            out += u;
+        }
+        return out;
+    };
+
+    std::string mid = normalize(midtid.substr(0, colon));
+    std::string tid = normalize(midtid.substr(colon + 1));
+
+    ConfigManager config;
+    auto index = config.loadManifestIndex();
+
+    for (const auto& entry : index) {
+        if (normalize(entry.id) != mid) continue;
+
+        auto trips = config.loadTripCache(entry.manifestFile);
+        for (const auto& trip : trips) {
+            if (normalize(trip.id) != tid) continue;
+
+            if (trip.segments.empty()) {
+                std::cerr << "Error: " << midtid << " has no segments.\n";
+                return "";
+            }
+            const std::string& front = trip.segments[0].front;
+            if (front == "-" || front.empty()) {
+                std::cerr << "Error: " << midtid << " has no Front segment.\n";
+                return "";
+            }
+            return front;
+        }
+        std::cerr << "Error: trip '" << tid << "' not found in manifest '" << mid << "'.\n";
+        return "";
+    }
+    std::cerr << "Error: manifest '" << mid << "' not found.\n";
+    return "";
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 int main(int argc, char* argv[])
@@ -542,6 +600,7 @@ int main(int argc, char* argv[])
     if (argc < 2) { printUsage(argv[0]); return 1; }
 
     std::string filePath;
+    std::string midTid;       // set when positional arg looks like MID:TID
     std::string exiftoolPath = "exiftool";
     std::string exiftoolOpts = "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSSpeed# $GPSTrack#'";
     bool firstLockOnly   = true;   // default mode
@@ -571,18 +630,23 @@ int main(int argc, char* argv[])
             printUsage(argv[0]); return 1;
         }
         else {
-            if (!filePath.empty()) {
-                std::cerr << "Error: multiple file paths given.\n";
-                return 1;
+            // Detect MID:TID addressing: contains ':' but no '/' (not a path)
+            if (arg.find(':') != std::string::npos && arg.find('/') == std::string::npos) {
+                midTid = arg;
+            } else {
+                if (!filePath.empty()) {
+                    std::cerr << "Error: multiple file paths given.\n";
+                    return 1;
+                }
+                filePath = arg;
             }
-            filePath = arg;
         }
     }
 
-    // --scan-all-trips: batch mode — no file argument needed or accepted
+    // --scan-all-trips: batch mode — no file or MID:TID argument accepted
     if (scanAllTripsMode) {
-        if (!filePath.empty()) {
-            std::cerr << "Error: --scan-all-trips does not accept a file argument.\n";
+        if (!filePath.empty() || !midTid.empty()) {
+            std::cerr << "Error: --scan-all-trips does not accept a file or MID:TID argument.\n";
             return 1;
         }
         std::cerr << "Scanning all manifests for GPS lock times...\n";
@@ -590,6 +654,12 @@ int main(int argc, char* argv[])
         std::cerr << "\n";
         outputLockTable(results);
         return 0;
+    }
+
+    // Resolve MID:TID to an absolute file path if that form was given
+    if (!midTid.empty()) {
+        filePath = resolveMidTid(midTid);
+        if (filePath.empty()) return 1;
     }
 
     // Single-file mode
