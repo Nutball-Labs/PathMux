@@ -14,6 +14,7 @@
 #include <array>
 
 namespace fs = std::filesystem;
+using namespace Pathmux;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1521,4 +1522,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00069
+// SN: 00071

@@ -14,6 +14,7 @@
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
+using namespace Pathmux;
 
 // ===========================================================================
 // Static helpers
@@ -806,7 +807,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
     if (doAll)
         std::cout << exported << " file" << (exported != 1 ? "s" : "") << " written.\n";
 }
-// SN: 00013
+// SN: 00071
 
 // ===========================================================================
 // runInteractive — interactive GPS menu entry point

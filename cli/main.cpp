@@ -13,6 +13,7 @@
 #include "version.hpp"
 
 namespace fs = std::filesystem;
+using namespace Pathmux;
 
 void printUsage() {
     std::cout << APP_NAME << " v" << APP_VERSION << "\n"
@@ -262,4 +263,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00069
+// SN: 00071

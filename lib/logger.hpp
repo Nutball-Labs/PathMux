@@ -8,6 +8,8 @@
 #include <sstream>
 #include <ctime>
 
+namespace Pathmux {
+
 // ---------------------------------------------------------------------------
 // LogLevel — controls what gets written to the log file.
 //   OFF    : Nothing written (default).
@@ -120,12 +122,15 @@ private:
     std::ofstream ofs_;
 };
 
+} // namespace Pathmux
+
 // ---------------------------------------------------------------------------
 // Convenience macros — use these throughout the codebase.
+// Fully qualified so they work both inside and outside namespace Pathmux.
 // ---------------------------------------------------------------------------
-#define LOG_NORMAL(msg) Logger::instance().normal(msg)
-#define LOG_DEBUG(msg)  Logger::instance().debug(msg)
-#define LOG_CMD(cmd, exit, out) Logger::instance().logCommand(cmd, exit, out)
+#define LOG_NORMAL(msg) Pathmux::Logger::instance().normal(msg)
+#define LOG_DEBUG(msg)  Pathmux::Logger::instance().debug(msg)
+#define LOG_CMD(cmd, exit, out) Pathmux::Logger::instance().logCommand(cmd, exit, out)
 
 #endif
-// SN: 00033
+// SN: 00071

@@ -1,4 +1,5 @@
 #include "config_manager.hpp"
+#include "platform.hpp"
 #include "json.hpp"
 #include <fstream>
 #include <iostream>
@@ -14,21 +15,17 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
+namespace Pathmux {
+
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
 ConfigManager::ConfigManager() {
-    const char* home = getenv("HOME");
-    if (!home) {
-        std::cerr << "Fatal: HOME environment variable is not set.\n";
-        std::exit(1);
-    }
-    configDir         = std::string(home) + "/.config/pathmux/";
+    configDir         = Platform::getConfigDir();
     settingsFile      = configDir + "pathmux.json";
     locationsFile     = configDir + "locations.json";
     manifestIndexFile = configDir + "manifests.json";
-    ensureConfigDir();
     loadSettings();
 }
 
@@ -1046,4 +1043,7 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
         }
     }
 }
-// SN: 00069
+
+} // namespace Pathmux
+
+// SN: 00071

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+using namespace Pathmux;
+
 void LocationsEditor::run(ConfigManager& config) {
     while (true) {
         std::vector<NamedLocation> locs = config.loadLocations();
@@ -123,4 +125,4 @@ void LocationsEditor::run(ConfigManager& config) {
         std::cout << "  Updated.\n";
     }
 }
-// SN: 00030
+// SN: 00071

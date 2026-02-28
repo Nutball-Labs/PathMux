@@ -10,6 +10,8 @@
 
 namespace fs = std::filesystem;
 
+namespace Pathmux {
+
 namespace {
     std::time_t stringToTimestamp(const std::string& ts) {
         std::tm t = {};
@@ -323,4 +325,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
     return trips;
 }
-// SN: 00069
+
+} // namespace Pathmux
+
+// SN: 00071

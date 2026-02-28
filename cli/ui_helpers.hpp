@@ -7,17 +7,22 @@
 #include <sstream>
 #include <fstream>
 #include <climits>
-#include <cmath>
-#include <cstdio>
-#include <unistd.h>
-#include <sys/ioctl.h>
 #include <filesystem>
+#include <unistd.h>
+
+// Pure math/format helpers (no platform dependencies)
+#include "format_helpers.hpp"
+// Platform abstraction (terminal width)
+#include "platform.hpp"
 
 // ---------------------------------------------------------------------------
 // Terminal UI helpers -- plain ASCII box drawing using / - \ | characters.
 // Works reliably across all terminals, fonts, and locales.
 // ---------------------------------------------------------------------------
 namespace UI {
+
+using Pathmux::truncate;
+using Pathmux::utf8DisplayWidth;
 
 constexpr char CORNER = '+';  // all four corners
 constexpr char H      = '=';  // outer border horizontal (top / bottom)
@@ -31,27 +36,14 @@ constexpr int BOX_MAX = 120;  // cap: avoid absurd widths on huge monitors
 // resize.  Falls back to BOX_MIN if terminal size can't be determined
 // (e.g. output is piped or redirected).
 inline int boxWidth() {
-    struct winsize ws{};
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
-        int w = static_cast<int>(ws.ws_col);
-        if (w < BOX_MIN) w = BOX_MIN;
-        if (w > BOX_MAX) w = BOX_MAX;
-        return w;
-    }
-    return BOX_MIN;
+    int w = Pathmux::Platform::getTerminalWidth();
+    if (w < BOX_MIN) w = BOX_MIN;
+    if (w > BOX_MAX) w = BOX_MAX;
+    return w;
 }
 
 inline int innerWidth() {
     return boxWidth() - 6;  // 1(|) + 2(spaces) + content + 2(spaces) + 1(|)
-}
-
-// ---------------------------------------------------------------------------
-// truncate — truncate string to maxCols, appending "..." if needed.
-// All content is ASCII so size() == visible width.
-// ---------------------------------------------------------------------------
-inline std::string truncate(const std::string& s, int maxCols) {
-    if ((int)s.size() <= maxCols) return s;
-    return s.substr(0, maxCols - 3) + "...";
 }
 
 // ---------------------------------------------------------------------------
@@ -96,23 +88,6 @@ inline void printTitle(const std::string& title) {
     printTop();
     printLine(title);
     printDivider();
-}
-
-// ---------------------------------------------------------------------------
-// utf8DisplayWidth — count display columns, not bytes.
-// Multi-byte UTF-8 sequences count as 1 column each.
-// ---------------------------------------------------------------------------
-inline int utf8DisplayWidth(const std::string& s) {
-    int cols = 0;
-    for (size_t i = 0; i < s.size(); ) {
-        unsigned char c = (unsigned char)s[i];
-        if      (c < 0x80) { ++i;      }   // 1-byte ASCII
-        else if (c < 0xE0) { i += 2;   }   // 2-byte sequence
-        else if (c < 0xF0) { i += 3;   }   // 3-byte sequence (em-dash etc.)
-        else               { i += 4;   }   // 4-byte sequence
-        ++cols;
-    }
-    return cols;
 }
 
 // ---------------------------------------------------------------------------
@@ -361,58 +336,7 @@ inline std::string confirmOutputPath(const std::string& path) {
     return base + ".99" + ext;
 }
 
-// ---------------------------------------------------------------------------
-// Unit format helpers — always store metric, display per useImperial pref.
-// ---------------------------------------------------------------------------
-inline std::string formatDistance(double km, bool imperial) {
-    if (imperial) {
-        double miles = km * 0.621371;
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%.1f mi", miles);
-        return buf;
-    }
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.1f km", km);
-    return buf;
-}
-
-inline std::string formatSpeed(double kmh, bool imperial) {
-    if (imperial) {
-        double mph = kmh * 0.621371;
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%.1f mph", mph);
-        return buf;
-    }
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.1f km/h", kmh);
-    return buf;
-}
-
-inline std::string formatAltitude(double metres, bool imperial) {
-    if (imperial) {
-        double feet = metres * 3.28084;
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%.0f ft", feet);
-        return buf;
-    }
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.0f m", metres);
-    return buf;
-}
-
-// haversineKm — great-circle distance between two lat/lon points in kilometres
-inline double haversineKm(double lat1, double lon1, double lat2, double lon2) {
-    const double R    = 6371.0;
-    const double toRad = M_PI / 180.0;
-    double dLat = (lat2 - lat1) * toRad;
-    double dLon = (lon2 - lon1) * toRad;
-    double a = std::sin(dLat/2) * std::sin(dLat/2)
-             + std::cos(lat1 * toRad) * std::cos(lat2 * toRad)
-             * std::sin(dLon/2) * std::sin(dLon/2);
-    return R * 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
-}
-
 } // namespace UI
 
 #endif
-// SN: 00069
+// SN: 00071

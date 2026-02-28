@@ -5,12 +5,7 @@
 #include <string>
 #include <fstream>
 
-#include "prefs.hpp"
-#include "ui_helpers.hpp"
-#include "version.hpp"
-#include <iostream>
-#include <string>
-#include <fstream>
+using namespace Pathmux;
 
 bool PrefsEditor::run(ConfigManager& config) {
     AppSettings working = config.getSettings();
@@ -371,4 +366,4 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00034
+// SN: 00071

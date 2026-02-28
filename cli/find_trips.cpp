@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <vector>
 
+using namespace Pathmux;
+
 // ---------------------------------------------------------------------------
 // normalizeId — uppercase + remap lookalike chars
 // ---------------------------------------------------------------------------
@@ -198,8 +200,8 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
             for (const auto& t : trips) {
                 std::string crowStr;
                 if (t.startLat != 0.0 && t.endLat != 0.0) {
-                    double km = UI::haversineKm(t.startLat, t.startLon, t.endLat, t.endLon);
-                    crowStr = UI::formatDistance(km, imperial);
+                    double km = haversineKm(t.startLat, t.startLon, t.endLat, t.endLon);
+                    crowStr = formatDistance(km, imperial);
                 }
                 std::string rowBase;
                 {
@@ -341,8 +343,8 @@ void FindTrips::showTripSummary(const std::vector<Trip>& trips,
     for (const auto& t : trips) {
         std::string crowStr;
         if (t.startLat != 0.0 && t.endLat != 0.0) {
-            double km = UI::haversineKm(t.startLat, t.startLon, t.endLat, t.endLon);
-            crowStr = UI::formatDistance(km, imperial);
+            double km = haversineKm(t.startLat, t.startLon, t.endLat, t.endLon);
+            crowStr = formatDistance(km, imperial);
         }
         std::cout << std::left
                   << std::setw(6)  << t.id
@@ -363,8 +365,8 @@ void FindTrips::showTripDetails(const Trip& trip, bool imperial) {
         std::cout << "Note: " << trip.note << "\n";
     std::cout << "Duration:  " << trip.duration << "\n";
     if (trip.startLat != 0.0 && trip.endLat != 0.0) {
-        double km = UI::haversineKm(trip.startLat, trip.startLon, trip.endLat, trip.endLon);
-        std::cout << "Crow's dist: " << UI::formatDistance(km, imperial) << "\n";
+        double km = haversineKm(trip.startLat, trip.startLon, trip.endLat, trip.endLon);
+        std::cout << "Crow's dist: " << formatDistance(km, imperial) << "\n";
     }
     std::cout << std::left << std::setw(20) << "Timestamp"
               << "[ F  B  L  R ]\n";
@@ -410,8 +412,8 @@ void FindTrips::showAllTrees(ConfigManager& config) {
         for (const auto& t : trips) {
             std::string crowStr;
             if (t.startLat != 0.0 && t.endLat != 0.0) {
-                double km = UI::haversineKm(t.startLat, t.startLon, t.endLat, t.endLon);
-                crowStr = UI::formatDistance(km, imperial);
+                double km = haversineKm(t.startLat, t.startLon, t.endLat, t.endLon);
+                crowStr = formatDistance(km, imperial);
             }
             std::cout << "  " << std::left
                       << std::setw(5)  << t.id
@@ -622,4 +624,4 @@ void FindTrips::jsonDump(ConfigManager& config) {
     std::cout << root.dump(2) << "\n";
 }
 
-// SN: 00069
+// SN: 00071

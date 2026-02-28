@@ -7,6 +7,8 @@
 #include "config_manager.hpp"
 #include "json.hpp"
 
+using namespace Pathmux;
+
 class FindTrips {
 public:
     // -I unified interactive browser.  Starts at manifest list home screen.
@@ -48,4 +50,4 @@ private:
 };
 
 #endif
-// SN: 00069
+// SN: 00071

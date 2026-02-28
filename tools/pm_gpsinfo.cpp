@@ -16,7 +16,7 @@
 //   --exiftool PATH      Path to exiftool binary (default: exiftool)
 //   --exiftool-opts O    Extraction options (default: -ee3 ...)
 //
-// SN: 00070
+// SN: 00071
 
 #include <iostream>
 #include <fstream>
@@ -31,7 +31,9 @@
 // json.hpp is used only for --scan-all-trips manifest parsing.
 // Single-file mode remains usable without manifest infrastructure.
 #include "json.hpp"
+#include "platform.hpp"
 using json = nlohmann::json;
+using namespace Pathmux;
 
 // ---------------------------------------------------------------------------
 // Minimal JSON output helpers (hand-rolled to avoid json.hpp in output paths)
@@ -406,12 +408,7 @@ static std::vector<LockScanResult> scanAllTrips(
 {
     std::vector<LockScanResult> results;
 
-    const char* home = getenv("HOME");
-    if (!home) {
-        std::cerr << "Error: HOME environment variable not set.\n";
-        return results;
-    }
-    std::string indexFile = std::string(home) + "/.config/pathmux/manifests.json";
+    std::string indexFile = Platform::getConfigDir() + "manifests.json";
 
     std::ifstream ifs(indexFile);
     if (!ifs.is_open()) {
@@ -644,4 +641,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-// SN: 00070
+// SN: 00071

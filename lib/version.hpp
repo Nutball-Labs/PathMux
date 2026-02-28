@@ -7,7 +7,7 @@
 // 1. Define discrete version components
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 9
-#define VERSION_PATCH 3
+#define VERSION_PATCH 4
 #define VERSION_SUFFIX ""
 
 // 2. Stringification macros
@@ -20,4 +20,4 @@
                     STRINGIFY(VERSION_PATCH) VERSION_SUFFIX
 
 #endif
-// SN: 00070
+// SN: 00071

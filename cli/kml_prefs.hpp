@@ -3,6 +3,8 @@
 
 #include "config_manager.hpp"
 
+using namespace Pathmux;
+
 class KmlPrefsEditor {
 public:
     // Launch interactive KML preferences UI.
@@ -11,4 +13,4 @@ public:
 };
 
 #endif
-// SN: 00014
+// SN: 00071

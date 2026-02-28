@@ -3,6 +3,8 @@
 
 #include "config_manager.hpp"
 
+using namespace Pathmux;
+
 class LocationsEditor {
 public:
     // Launch interactive known locations manager.
@@ -10,4 +12,4 @@ public:
 };
 
 #endif
-// SN: 00014
+// SN: 00071

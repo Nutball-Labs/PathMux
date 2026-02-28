@@ -3,6 +3,8 @@
 
 #include "config_manager.hpp"
 
+using namespace Pathmux;
+
 class PrefsEditor {
 public:
     // Launch interactive preferences UI.
@@ -21,4 +23,4 @@ public:
 };
 
 #endif
-// SN: 00034
+// SN: 00071

@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
 # ---------------------------------------------------------------------------
-# Version — read from version.hpp to keep single source of truth
+# Version — read from lib/version.hpp to keep single source of truth
 # ---------------------------------------------------------------------------
-file(READ "${CMAKE_SOURCE_DIR}/version.hpp" VERSION_HPP)
+file(READ "${CMAKE_SOURCE_DIR}/lib/version.hpp" VERSION_HPP)
 
 string(REGEX MATCH "VERSION_MAJOR ([0-9]+)" _ ${VERSION_HPP})
 set(VER_MAJOR ${CMAKE_MATCH_1})
@@ -47,41 +47,66 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall -Wextra -O2)
 
 # ---------------------------------------------------------------------------
-# Sources
+# Static library — core logic shared by CLI and future Qt6 GUI
 # ---------------------------------------------------------------------------
-set(PATHMUX_SOURCES
-    main.cpp
-    trip_detection.cpp
-    config_manager.cpp
-    find_trips.cpp
-    gpx_export.cpp
-    prefs.cpp
-    kml_prefs.cpp
-    locations.cpp
-    video_build.cpp
+add_library(pathmuxlib STATIC
+    lib/trip_detection.cpp
+    lib/config_manager.cpp
+    lib/platform.cpp
 )
 
-# ---------------------------------------------------------------------------
-# Target
-# ---------------------------------------------------------------------------
-add_executable(pathmux ${PATHMUX_SOURCES})
+# lib/ headers are PUBLIC so all targets linking pathmuxlib get them.
+# Root is included for json.hpp (vendored, not in lib/).
+target_include_directories(pathmuxlib PUBLIC
+    lib/
+    ${CMAKE_SOURCE_DIR}
+)
 
-target_include_directories(pathmux PRIVATE ${CMAKE_SOURCE_DIR})
-
-# ---------------------------------------------------------------------------
-# Platform-specific link libraries
-# ---------------------------------------------------------------------------
 if(UNIX AND NOT APPLE)
-    # Linux — stdc++fs needed on older toolchains, harmless on newer
-    target_link_libraries(pathmux PRIVATE stdc++fs)
+    target_link_libraries(pathmuxlib PUBLIC stdc++fs)
 endif()
+
+# ---------------------------------------------------------------------------
+# CLI executable
+# ---------------------------------------------------------------------------
+add_executable(pathmux
+    cli/main.cpp
+    cli/find_trips.cpp
+    cli/gpx_export.cpp
+    cli/prefs.cpp
+    cli/kml_prefs.cpp
+    cli/locations.cpp
+    cli/video_build.cpp
+)
+
+set_target_properties(pathmux PROPERTIES OUTPUT_NAME pathmux)
+
+# cli/ headers (ui_helpers.hpp etc.) are PRIVATE to the CLI target.
+target_include_directories(pathmux PRIVATE cli/)
+
+target_link_libraries(pathmux PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
+# pm_gpsinfo — standalone GPS inspection tool
+# ---------------------------------------------------------------------------
+add_executable(pm_gpsinfo tools/pm_gpsinfo.cpp)
+target_compile_features(pm_gpsinfo PRIVATE cxx_std_17)
+target_include_directories(pm_gpsinfo PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(pm_gpsinfo PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
+# trip_debug — standalone debug tool (not installed by default)
+# Build with: cmake --build build --target trip_debug
+# ---------------------------------------------------------------------------
+add_executable(trip_debug tools/debug_main.cpp)
+target_link_libraries(trip_debug PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
 # Install targets (for RPM/DEB packaging and EPEL submission)
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS pathmux
+install(TARGETS pathmux pm_gpsinfo
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -89,41 +114,6 @@ install(FILES "${CMAKE_SOURCE_DIR}/pathmux.1"
     DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
     OPTIONAL
 )
-
-# ---------------------------------------------------------------------------
-# trip_debug target — standalone debug tool, not installed by default
-# ---------------------------------------------------------------------------
-set(TRIP_DEBUG_SOURCES
-    debug_main.cpp
-    trip_detection.cpp
-    config_manager.cpp
-)
-
-add_executable(trip_debug ${TRIP_DEBUG_SOURCES})
-target_include_directories(trip_debug PRIVATE ${CMAKE_SOURCE_DIR})
-
-if(UNIX AND NOT APPLE)
-    target_link_libraries(trip_debug PRIVATE stdc++fs)
-endif()
-
-# trip_debug is a dev tool — excluded from install target intentionally.
-# Build with: cmake --build build --target trip_debug
-
-# ---------------------------------------------------------------------------
-# pm_gpsinfo target — standalone GPS inspection tool
-# ---------------------------------------------------------------------------
-add_executable(pm_gpsinfo pm_gpsinfo.cpp)
-target_compile_features(pm_gpsinfo PRIVATE cxx_std_17)
-target_include_directories(pm_gpsinfo PRIVATE ${CMAKE_SOURCE_DIR})
-
-if(UNIX AND NOT APPLE)
-    target_link_libraries(pm_gpsinfo PRIVATE stdc++fs)
-endif()
-
-install(TARGETS pm_gpsinfo
-    RUNTIME DESTINATION bin
-)
-
 
 # ---------------------------------------------------------------------------
 # SN Audit target — scans all source files for SN: comments, writes
@@ -149,7 +139,7 @@ add_custom_target(archive
         -DSRC=${CMAKE_SOURCE_DIR}
         -P ${CMAKE_SOURCE_DIR}/cmake/archive.cmake
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Archiving source (version read from version.hpp at build time)"
+    COMMENT "Archiving source (version read from lib/version.hpp at build time)"
     DEPENDS sn-audit
 )
 
@@ -183,4 +173,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00026
+# SN: 00071

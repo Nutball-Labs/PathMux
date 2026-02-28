@@ -7,6 +7,8 @@
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
 
+using namespace Pathmux;
+
 // ---------------------------------------------------------------------------
 // CollageSlot — one quadrant of a free-form collage.
 // Any camera from any trip can fill any slot.
@@ -175,4 +177,4 @@ private:
 };
 
 #endif
-// SN: 00069
+// SN: 00071

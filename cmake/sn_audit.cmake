@@ -7,10 +7,19 @@ endif()
 
 set(OUTFILE "${SRC}/sn_audit.txt")
 
-# Gather source files
-file(GLOB CPP_FILES "${SRC}/*.cpp")
-file(GLOB HPP_FILES "${SRC}/*.hpp")
-set(ALL_SRC ${CPP_FILES} ${HPP_FILES})
+# Gather source files from all subdirectories
+file(GLOB LIB_CPP   "${SRC}/lib/*.cpp")
+file(GLOB LIB_HPP   "${SRC}/lib/*.hpp")
+file(GLOB CLI_CPP   "${SRC}/cli/*.cpp")
+file(GLOB CLI_HPP   "${SRC}/cli/*.hpp")
+file(GLOB TOOLS_CPP "${SRC}/tools/*.cpp")
+file(GLOB TOOLS_HPP "${SRC}/tools/*.hpp")
+
+set(ALL_SRC
+    ${LIB_CPP} ${LIB_HPP}
+    ${CLI_CPP} ${CLI_HPP}
+    ${TOOLS_CPP} ${TOOLS_HPP}
+)
 
 # Non-code files that also carry SN comments
 foreach(EXTRA

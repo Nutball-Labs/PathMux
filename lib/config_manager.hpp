@@ -7,6 +7,8 @@
 #include "trip_detection.hpp"
 #include "logger.hpp"
 
+namespace Pathmux {
+
 // ---------------------------------------------------------------------------
 // NamedLocation — a user-defined point of interest for KML overlays.
 // Stored in ~/.config/pathmux/locations.json
@@ -295,5 +297,7 @@ private:
         const Trip& trip, const std::string& sourcePath);
 };
 
+} // namespace Pathmux
+
 #endif
-// SN: 00069
+// SN: 00071

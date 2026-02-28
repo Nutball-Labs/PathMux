@@ -4,6 +4,8 @@
 #include <iostream>
 #include <string>
 
+using namespace Pathmux;
+
 bool KmlPrefsEditor::run(ConfigManager& config) {
     KmlSettings working = config.getKmlSettings();
     bool changed = false;
@@ -99,4 +101,4 @@ bool KmlPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00030
+// SN: 00071

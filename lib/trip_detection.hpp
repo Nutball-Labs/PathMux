@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+namespace Pathmux {
+
 // One GPS fix extracted from the LIGOGPSINFO stream via ExifTool 13.51+.
 // Timestamp format: "YYYY:MM:DD HH:MM:SS" (as returned by exiftool -p).
 // Speed in km/h.  Altitude is present in the stream but incorrect
@@ -108,5 +110,7 @@ public:
                                   const std::string& exiftoolOptions  = "-ee3");
 };
 
+} // namespace Pathmux
+
 #endif
-// SN: 00069
+// SN: 00071
