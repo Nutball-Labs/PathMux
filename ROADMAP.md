@@ -105,11 +105,14 @@ Deferred (low priority until relevant):
   - Formula: `tripDur = (segdur * (segCount - 1)) + lastDur`
   - Currently showing placeholder/zero durations — affects every display
 
-- [ ] **0.9.0 library restructure**
-  - Split into `libpathmux` (static) + `pathmux-cli` executable
-  - Prepares codebase for Qt6 GUI and unit testing
-  - Clean public API header
-  - CMake: `add_library` → `add_executable` linking against it
+- [x] **Library restructure** (v0.9.4): Split into `libpathmuxlib` (static) + `pathmux` CLI
+  - `lib/` — `trip_detection`, `config_manager`, `platform`, `format_helpers`, `logger`, umbrella `pathmux.hpp`; all in `namespace Pathmux`
+  - `cli/` — CLI front-end; `using namespace Pathmux;`; `ui_helpers.hpp` retains terminal-only code
+  - `tools/` — `pm_gpsinfo`, `debug_main`; link against `pathmuxlib`
+  - `lib/platform.cpp/.hpp` — OS abstraction: `getHomePath()`, `getConfigDir()`, `getTerminalWidth()` (Linux implemented; Windows/macOS stubs in comments)
+  - `lib/format_helpers.hpp` — pure math/format helpers with no POSIX deps; safe for Qt6 GUI on all platforms
+  - `lib/pathmux.hpp` — umbrella public API header for Qt6 GUI and future consumers
+  - CMakeLists.txt rewritten: `pathmuxlib STATIC` with PUBLIC include propagation
 
 **Medium priority:**
 - [ ] GPS extraction — implementation ready, blocked on ExifTool 13.51 release
@@ -118,9 +121,8 @@ Deferred (low priority until relevant):
 - [ ] `extra_hw_frames` CPU encoder guard
 
 **Low priority / polish:**
-- [ ] `--jsondump` field filtering (`--fields id,date,duration`)
-- [ ] `--csvdump` for fleet operators
-- [ ] `--xmldump` for enterprise integrations
+- [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump`; applies to `--dump` and `--fulldump` as an output serialization modifier (implement after libpathmux.a restructure)
+- [ ] `--dump`/`--fulldump` field filtering (`--fields id,date,duration`)
 - [ ] Batch job system
 
 ---
@@ -246,17 +248,23 @@ If segments are naively concatenated without compensation, sync drift accumulate
 ### Data Export & Scripting
 **Target audience:** Fleet operators, power users, third-party integrations
 
-**`--jsondump` field filtering (planned):**
-- `--jsondump --fields id,date,start_time,duration` — output only requested fields
-- `--jsondump --manifest <ID>` — limit to one manifest
-- `--jsondump --trip <ID>` — single trip
+**Design decision:** Replace separate `--jsondump`, `--csvdump`, `--xmldump` flags with
+a single `--format=[json,csv,xml]` modifier that applies to `--dump` and `--fulldump`.
+Keeps the CLI orthogonal: what-to-dump is separate from how-to-serialize-it.
+
+**`--format` with `--dump`/`--fulldump` (planned):**
+- `--dump --format=json` — JSON output (replaces `--jsondump`)
+- `--dump --format=csv` — CSV output (replaces `--csvdump`)
+- `--dump --format=xml` — XML output (replaces `--xmldump`)
+- `--fulldump --format=json` — full detail in JSON
+- `--dump --fields id,date,start_time,duration` — field filtering (all formats)
+- `--dump --manifest <ID>` — limit to one manifest
 - Makes piping to `jq`, `python`, shell scripts much cleaner for automation
 
-**CSV export (`--csvdump`):**
+**CSV format:**
 - One row per trip, columns for all scalar fields
 - Optional segment expansion: one row per segment
 - Fleet operators can drop directly into Excel, Google Sheets, or fleet management systems
-- Column selection via `--fields` (same syntax as jsondump)
 - Example output:
   ```
   manifest_id,trip_id,date,start_time,duration,segment_count,note
@@ -264,12 +272,12 @@ If segments are naively concatenated without compensation, sync drift accumulate
   F0,9S,2026-02-26,10:06:08,9m 1s,3,fuel stop
   ```
 
-**XML export (`--xmldump`):**
-- Same data as jsondump, XML structure
+**XML format:**
+- Same data as JSON dump, XML structure
 - For integration with older enterprise tooling and ELD/fleet compliance systems
 - Schema designed to be human-readable, not namespace-heavy
 
-**Priority:** Medium — implement after 0.9.0 library restructure so export logic
+**Priority:** Medium — implement after libpathmux.a restructure so export logic
 lives in `libpathmux` and all three formats share the same data pipeline.
 
 ### Video Analysis
@@ -358,7 +366,7 @@ QuadEye is currently a solo project by a Linux sysadmin learning C++ through AI-
 
 *Last updated: 2026-02-28*
 *Project status: Phase 1 (CLI development)*
-*Current version: 0.9.3 (SN 00070)*
+*Current version: 0.9.4 (SN 00071)*
 
 **Audio sync reference:**
 - Audio track always sourced from **Left camera** (driver position)
@@ -468,57 +476,27 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 
 ## Cross-Platform Portability
 
-**Current status:** CLI is ~85% portable. Core C++17 logic works on all platforms. Platform-specific code limited to: home directory detection, config paths, and external tool locations.
+**Current status (v0.9.4):** Platform abstraction layer implemented. CMake build
+system in use. Core C++17 logic is portable. Linux fully exercised; Windows/macOS
+code paths are stubbed and documented in `lib/platform.cpp` — not yet tested.
 
 **Target platforms:** Linux (primary), Windows, macOS
 
-### Platform Abstraction Layer
+### Platform Abstraction Layer ✓ Done (v0.9.4)
 
-**Create `platform.cpp/.hpp` module** to encapsulate platform-specific code:
+`lib/platform.cpp/.hpp` (`namespace Pathmux::Platform`):
+- `getHomePath()` — Linux/macOS: `$HOME`; Windows: `%USERPROFILE%`
+- `getConfigDir()` — Linux: `~/.config/pathmux/`; macOS: `~/Library/Application Support/pathmux/`; Windows: `%APPDATA%/pathmux/`
+- `getTerminalWidth()` — POSIX: `ioctl(TIOCGWINSZ)`; Windows: `GetConsoleScreenBufferInfo`; fallback: 65
+- `lib/format_helpers.hpp` — pure math/format helpers; no POSIX deps; safe for Qt6 GUI on any platform
 
-- **Home directory detection:**
-  - Linux/Mac: `getenv("HOME")`
-  - Windows: `getenv("USERPROFILE")` or `SHGetFolderPath(CSIDL_PROFILE)`
-- **Config directory paths:**
-  - Linux: `~/.config/quadeye/`
-  - Windows: `%APPDATA%\quadeye\`
-  - macOS: `~/Library/Application Support/quadeye/`
-- **Path handling:**
-  - Use `std::filesystem::path` consistently throughout codebase
-  - Handles `/` vs `\` separators automatically
-  - Already C++17 standard, no extra dependencies
-- **External tool discovery:**
-  - Search system PATH first (works on all platforms)
-  - Check platform-specific common locations:
-    - Linux: `/usr/bin/`, `/usr/local/bin/`
-    - Windows: `C:\Program Files\`, user-specified registry entries
-    - macOS: `/usr/local/bin/` (Homebrew), `/opt/homebrew/bin/` (M1/M2 Macs)
-  - Allow user override via config file or environment variable
-  - Tools needed: ffmpeg, ffprobe, exiftool
+Remaining: implement and test Windows/macOS paths when cross-compile CI is set up.
 
-### Build System Migration
+### Build System ✓ Done (CMake, v0.8.21)
 
-**Replace Makefile with CMake:**
-- CMake generates native build files for each platform:
-  - Linux: Makefiles
-  - Windows: Visual Studio solution files or MinGW Makefiles
-  - macOS: Xcode projects or Makefiles
-- Cross-platform by design, industry standard for C++ projects
-- Handles library discovery, compiler flags, install targets automatically
-- Example `CMakeLists.txt` structure:
-  ```cmake
-  cmake_minimum_required(VERSION 3.15)
-  project(QuadEye VERSION 0.6.0 LANGUAGES CXX)
-  set(CMAKE_CXX_STANDARD 17)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  
-  add_executable(quadeye main.cpp trip_detection.cpp config_manager.cpp find_trips.cpp platform.cpp)
-  target_include_directories(quadeye PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  
-  install(TARGETS quadeye DESTINATION bin)
-  ```
-- Preserves serial number audit workflow (custom CMake target)
-- Integrates with Qt6 seamlessly for GUI phase
+CMake 3.16+ in use. `pathmuxlib STATIC` target with PUBLIC include propagation.
+CLI and tools link against it. `sn-audit` and `archive` custom targets preserved.
+CPack configured for RPM/DEB. Integrates with Qt6 for GUI phase.
 
 ### External Dependencies
 
@@ -558,10 +536,10 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 ### Implementation Priority
 
 **Phase 1.5 (After CLI stable, before Qt GUI):**
-- Add `platform.cpp` abstraction layer
-- Migrate from Makefile to CMake
-- Test on Windows and macOS
-- Update documentation for multi-platform builds
+- [x] Add `platform.cpp` abstraction layer (v0.9.4)
+- [x] Migrate from Makefile to CMake (v0.8.21)
+- [ ] Test on Windows and macOS
+- [ ] Update documentation for multi-platform builds
 
 **Rationale:**
 - Small implementation cost now (~1-2 days work)

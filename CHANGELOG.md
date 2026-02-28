@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## [0.9.4 / HWM: 00071] - 2026-02-28
+### Changed
+- **Library restructure**: Codebase reorganized into `libpathmux.a` (static library)
+  plus a thin CLI front-end. Prepares for Phase 2 Qt6 GUI without code duplication.
+  - `lib/` — core library sources: `trip_detection`, `config_manager`, `platform`,
+    `format_helpers`, `logger`, `version`, `pathmux` umbrella header
+  - `cli/` — CLI front-end only: `main`, `find_trips`, `gpx_export`, `prefs`,
+    `kml_prefs`, `locations`, `video_build`, `ui_helpers`
+  - `tools/` — standalone binaries: `pm_gpsinfo`, `debug_main`
+### Added
+- **`lib/platform.cpp/.hpp`**: OS abstraction layer (`namespace Pathmux::Platform`).
+  Provides `getHomePath()`, `getConfigDir()`, and `getTerminalWidth()` replacing
+  direct `getenv("HOME")` and `ioctl(TIOCGWINSZ)` calls. Windows/macOS stubs
+  documented — only Linux path exercised.
+- **`lib/format_helpers.hpp`**: Pure math/format functions extracted from
+  `cli/ui_helpers.hpp` into `namespace Pathmux`: `haversineKm()`,
+  `formatDistance()`, `formatSpeed()`, `formatAltitude()`, `utf8DisplayWidth()`,
+  `truncate()`. No POSIX dependencies — safe to include in Qt6 GUI on all platforms.
+- **`lib/pathmux.hpp`**: Umbrella public API header. Qt6 GUI (and any future consumer)
+  includes only this one file to get the full library interface.
+- **`namespace Pathmux`**: All library types and functions wrapped in `namespace Pathmux`
+  — `Trip`, `TripSegment`, `GpsPoint`, `VideoProfile`, `TripDetection`, `ConfigManager`,
+  `AppSettings`, etc. CLI files use `using namespace Pathmux;` to avoid churn.
+### Maintenance
+- **CMakeLists.txt** rewritten: `pathmuxlib` STATIC target with PUBLIC include
+  propagation; `pathmux` CLI and tools link against it. No manual `-I` flags needed.
+- **cmake/sn_audit.cmake** updated to scan `lib/`, `cli/`, `tools/` subdirectories.
+- **SN**: High-water mark `00071`. All touched files updated.
+
+---
+
 ## [0.9.3 / HWM: 00070] - 2026-02-28
 ### Added
 - **`pm_gpsinfo --scan-all-trips`**: New batch scan mode. Reads all manifests
