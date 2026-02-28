@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/BiloxiGeek/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.3 (SN 00070)
+**Current version:** 0.9.4 (SN 00071)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -29,22 +29,43 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 
 ## Source Files
 
+### Library (`lib/`) — compiled into `libpathmuxlib.a`
+
 | File | Role |
 |---|---|
-| `main.cpp` | CLI argument parsing, orchestration |
-| `trip_detection.cpp/.hpp` | Filesystem scan, trip grouping, ffprobe calls |
-| `config_manager.cpp/.hpp` | JSON manifest read/write, manifest index, settings |
-| `find_trips.cpp/.hpp` | Display: summary, details, interactive browser, -t/-T |
-| `gpx_export.cpp/.hpp` | Interactive GPS menu, extraction, GPX/KML export |
-| `prefs.cpp/.hpp` | Interactive preferences menu |
-| `video_build.cpp/.hpp` | Video build/collage orchestration |
-| `kml_prefs.cpp/.hpp` | KML export preferences |
-| `locations.cpp/.hpp` | Named location management |
-| `ui_helpers.hpp` | Terminal box UI, format helpers, input helpers |
-| `logger.hpp` | Logging |
-| `version.hpp` | Version string from components via macros |
-| `pm_gpsinfo.cpp` | Standalone GPS info utility; `--scan-all-trips` batch lock scanner |
-| `json.hpp` | nlohmann/json v3.11.3 (vendored, do not modify) |
+| `lib/trip_detection.cpp/.hpp` | Filesystem scan, trip grouping, ffprobe calls — `namespace Pathmux` |
+| `lib/config_manager.cpp/.hpp` | JSON manifest read/write, manifest index, settings — `namespace Pathmux` |
+| `lib/platform.cpp/.hpp` | OS abstraction: home/config paths, terminal width — `namespace Pathmux::Platform` |
+| `lib/format_helpers.hpp` | Pure math/format functions (haversine, formatDistance, etc.) — `namespace Pathmux` |
+| `lib/logger.hpp` | Logging singleton — `namespace Pathmux` |
+| `lib/version.hpp` | Version string from components via macros |
+| `lib/pathmux.hpp` | Umbrella public API header |
+
+### CLI front-end (`cli/`) — compiled into `pathmux` binary
+
+| File | Role |
+|---|---|
+| `cli/main.cpp` | CLI argument parsing, orchestration |
+| `cli/find_trips.cpp/.hpp` | Display: summary, details, interactive browser, -t/-T |
+| `cli/gpx_export.cpp/.hpp` | Interactive GPS menu, extraction, GPX/KML export |
+| `cli/prefs.cpp/.hpp` | Interactive preferences menu |
+| `cli/video_build.cpp/.hpp` | Video build/collage orchestration |
+| `cli/kml_prefs.cpp/.hpp` | KML export preferences |
+| `cli/locations.cpp/.hpp` | Named location management |
+| `cli/ui_helpers.hpp` | Terminal box UI and input helpers (POSIX only); includes format_helpers.hpp |
+
+### Tools (`tools/`) — standalone binaries
+
+| File | Role |
+|---|---|
+| `tools/pm_gpsinfo.cpp` | Standalone GPS info utility; `--scan-all-trips` batch lock scanner |
+| `tools/debug_main.cpp` | Trip detection debug/inspection tool |
+
+### Other
+
+| File | Role |
+|---|---|
+| `json.hpp` | nlohmann/json v3.11.3 (vendored, root, do not modify) |
 | `CMakeLists.txt` | Primary build system |
 | `pathmux.1` | Man page (canonical location: `man1/pathmux.1`) |
 
@@ -56,12 +77,12 @@ Every source file and the Makefile carries a serial number comment at the
 bottom of the file:
 
 ```cpp
-// SN: 00070   ← C++ files and headers
-# SN: 00070    ← Makefile and cmake files
+// SN: 00071   ← C++ files and headers
+# SN: 00071    ← Makefile and cmake files
 ```
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00070`
+- There is one project-wide **high-water mark** SN, currently `00071`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -74,7 +95,7 @@ bottom of the file:
 
 **Example workflow:**
 - Working on a bug fix: change the files, bump their SN to current HWM
-- Cutting a release: increment HWM (e.g. 00070 → 00071), apply to all
+- Cutting a release: increment HWM (e.g. 00071 → 00072), apply to all
   changed files, update `version.hpp` with new patch/minor version
 
 ---
