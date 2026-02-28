@@ -107,6 +107,8 @@ Deferred (low priority until relevant):
   license badge and section. Repo is currently private (one collaborator) so
   no urgency, but this must be resolved before the repo goes public.
 - [ ] README refresh for public audience (currently documents internal state)
+- [ ] Packaging audit — verify nothing in current architecture blocks RPM/DEB
+  packaging (see Packaging section below)
 
 **High priority:**
 - [ ] **ffprobe integration for accurate trip duration**
@@ -483,6 +485,65 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 
 **Priority:** Medium — implement after core trip detection and collage generation are solid
 
+
+---
+
+## Packaging
+
+**Goal:** Propose an RPM package for EPEL (RHEL/Alma/Fedora ecosystem) and a DEB
+package for the Debian/Ubuntu equivalent (likely Debian backports or Ubuntu PPA).
+
+**Target repositories:**
+- RPM: EPEL (Extra Packages for Enterprise Linux) — covers Alma 9, RHEL 9, CentOS Stream
+- DEB: Debian mentors / Launchpad PPA — covers Debian stable and Ubuntu LTS
+
+### Packaging Checklist (audit before v1.0)
+
+**CMake install targets** — must be correct before packaging:
+- [ ] `pathmux` binary → `/usr/bin/`
+- [ ] `pm_gpsinfo` binary → `/usr/bin/`
+- [ ] `pm_tripdebug` binary → `/usr/bin/` (after rename from `trip_debug`)
+- [ ] `pathmux.1` man page → `/usr/share/man/man1/`
+- [ ] `LICENSE` file → `/usr/share/licenses/pathmux/`
+- [ ] No install target for `libpathmuxlib.a` — internal static lib, not a public SDK (yet)
+
+**FHS compliance:**
+- [ ] No hardcoded `/home/`, `/root/`, or developer-local paths in any installed file
+- [ ] Config dir uses `Platform::getConfigDir()` — resolves to `~/.config/pathmux/` at runtime; correct for packaged installs
+- [ ] External tool discovery (`ffprobe`, `exiftool`) searches `$PATH` — do not hardcode `/usr/bin/ffprobe`
+- [ ] No files written to `/usr/` at runtime (read-only after install)
+
+**Runtime dependencies (must be declared in package metadata):**
+- `ffmpeg` / `ffprobe` — RPM Fusion on RHEL; `ffmpeg` on Debian/Ubuntu
+- `perl-Image-ExifTool >= 13.51` — EPEL has 13.10 (too old); may need a
+  `Recommends:` rather than hard `Requires:` with a runtime version check and
+  clear error message. DEB: `libimage-exiftool-perl`.
+- No Qt6 dependency until Phase 2 GUI
+
+**Build dependencies (for spec/control file):**
+- `g++` / `gcc-c++` with C++17 support
+- `cmake >= 3.15`
+- `make`
+
+**Packaging files to create:**
+- [ ] `rpm/pathmux.spec` — RPM spec file; references CMake build; handles `%post`
+  man page registration; declares runtime deps
+- [ ] `debian/` directory — `control`, `rules`, `changelog`, `copyright` files
+- [ ] CPack integration in CMakeLists.txt for generating `.rpm` and `.deb` from `cpack`
+  (already partially present — needs review and completion)
+
+**ExifTool version problem:**
+EPEL ships ExifTool 13.10, which does not decode LIGOGPSINFO correctly. The RPM
+package cannot declare `Requires: perl-Image-ExifTool >= 13.51` because that version
+is not in EPEL. Options:
+1. Soft `Recommends:` with a runtime check and a clear "upgrade ExifTool" message
+2. Bundle a `exiftool` wrapper script that checks version and warns
+3. Patch ExifTool decode into the package (impractical)
+4. Wait for EPEL to catch up (Phil Harvey's fixes will eventually land)
+Decision deferred — document the limitation clearly in the README for now.
+
+**Priority:** Medium — keep packaging compatibility in mind during development;
+do a formal audit before cutting v1.0 release candidate.
 
 ---
 
