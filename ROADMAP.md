@@ -100,6 +100,14 @@ Deferred (low priority until relevant):
 
 ### Phase 1 Remaining — Critical Path to 1.0
 
+**v1.0 gate items (must be done before public release):**
+- [ ] Resolve all known bugs and open TODO items
+- [ ] License decision — GPL vs MIT; apply license header to all source files
+  and CMakeLists.txt; add `LICENSE` file to repo root; update README with
+  license badge and section. Repo is currently private (one collaborator) so
+  no urgency, but this must be resolved before the repo goes public.
+- [ ] README refresh for public audience (currently documents internal state)
+
 **High priority:**
 - [ ] **ffprobe integration for accurate trip duration**
   - First segment → `segdur` (60/120/180/300s)

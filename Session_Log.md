@@ -122,3 +122,77 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 - GPS extraction to GeoJSON (architecture decided, code pending)
 
 ---
+
+### Session 2
+**Focus:** libpathmux.a library restructure completion; pm_gpsinfo enhancements;
+v1.0 planning; utility suite scoping
+
+**Decisions Made:**
+- Tarball delivery workflow retired — VSCode + Claude Code + git push is the
+  delivery mechanism. CLAUDE.md updated to reflect this; "cut the tarball" steps
+  now end at `git push origin main`. No `.tgz`, no `present_files`.
+- Session_Log file renamed from per-session files (`Session_Log_20260225.md`) to
+  a single `Session_Log.md` with dated entries — more granular and avoids file
+  proliferation. Renamed via `git mv` to preserve history.
+- `pm_` prefix adopted as the project-wide naming convention for all standalone
+  utility binaries. Consistent with `pm_gpsinfo`; signals a coherent suite.
+- `pm_gpsexport` chosen over `pm_export` — the more specific name makes clear it
+  exports the GPS track, not the trip footage. Making format a runtime flag
+  (`--gpx`, `--kml`) eliminates the need for a separate `pm_convert` tool.
+- `pm_probe` scoped as the camera compatibility/fingerprinting tool: single-file
+  mode for per-segment inspection; `--card` mode fingerprints a full SD card root
+  and produces a structured report suitable for GitHub issue submission to enable
+  new camera support. Primary on-ramp for multi-brand contributions.
+- v1.0 milestone: after resolving known bugs and TODO items, the project is
+  functionally ready for v1.0. Hard dependency: license decision (GPL vs MIT)
+  must be made and propagated to all pertinent source files before repo goes
+  public. Repo currently private with one collaborator.
+
+**Work Done:**
+- **Library restructure completed (v0.9.4, HWM 00071):**
+  - Fixed remaining build errors in `cli/find_trips.cpp` (`UI::haversineKm` →
+    `haversineKm`, `UI::formatDistance` → `formatDistance` — 8 occurrences)
+  - Fixed `-Wcomment` warning in `lib/platform.hpp` (backslash in comment)
+  - Build verified clean; behavior confirmed against original on real footage
+  - Merged `libpathmux-restructure` branch to `main` (fast-forward), removed worktree
+  - Library layout: `lib/` (pathmuxlib.a, `namespace Pathmux`), `cli/` (front-end,
+    `using namespace Pathmux`), `tools/` (pm_gpsinfo, debug_main)
+  - `lib/platform.cpp/.hpp` — OS abstraction: `getHomePath`, `getConfigDir`,
+    `getTerminalWidth`; Linux implemented; Windows/macOS branches documented
+  - `lib/format_helpers.hpp` — pure math/format helpers, no POSIX deps, Qt6-safe
+  - CMakeLists.txt rewritten: `pathmuxlib STATIC` with PUBLIC include propagation
+- **pm_gpsinfo enhancements (post-0.9.4):**
+  - Added `gpsLockSeconds` to `Trip` struct; serialized in config_manager.cpp
+    (only written when `>= 0`; default `-1` on load)
+  - `scanAllTrips()` refactored to use `ConfigManager::loadTripCache()` /
+    `saveTripCache()` — raw JSON parsing eliminated; MD5 integrity automatic
+  - Write-back only when `lockSec >= 0 && trip.gpsLockSeconds != r.lockSec`
+  - `resolveMidTid()` added: resolves `MID:TID` address → absolute front segment
+    path; normalizes O→0, I→1, L→1, uppercase; clear error messages per case
+  - `--scan-all-trips` mutex updated to reject MID:TID args cleanly
+- **PROPOSED_UTILS.md created:** Specifications for `pm_ls`, `pm_audit`,
+  `pm_gpsexport`, `pm_probe` with usage, output format, implementation notes,
+  and priority table
+- CHANGELOG, ROADMAP, CLAUDE.md all updated; Session_Log renamed (`git mv`)
+
+**Portability Discussion:**
+- macOS: near-trivial — POSIX-compatible, `getConfigDir()` macOS branch just needs
+  filling in and testing
+- Windows: moderate — abstraction layer in place; remaining: `_popen` wrapper,
+  `GetConsoleScreenBufferInfo`, path separator handling for manifest storage,
+  `strptime` substitute, tool path detection
+- pm_* tools are thin main() wrappers over library calls — port automatically
+  once libpathmuxlib.a builds on the target platform
+
+**Pending (carry forward):**
+- Resolve all known bugs and TODO items (next session priority)
+- License decision: GPL vs MIT — must be made before repo goes public; all
+  source files will need license headers once decided
+- ffprobe integration for accurate trip duration (high priority)
+- GPS extraction to GeoJSON (architecture decided, ExifTool 13.51+ available)
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- `selectTrip()` unused `mode` parameter — `ExportMode /*mode*/`
+- `trip_debug` → `pm_tripdebug` rename (low priority)
+- pm_ls, pm_audit, pm_gpsexport, pm_probe — proposed, not yet implemented
+
+---
