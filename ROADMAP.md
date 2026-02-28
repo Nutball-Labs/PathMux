@@ -126,6 +126,8 @@ Deferred (low priority until relevant):
 - [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump`; applies to `--dump` and `--fulldump` as an output serialization modifier (implement after libpathmux.a restructure)
 - [ ] `--dump`/`--fulldump` field filtering (`--fields id,date,duration`)
 - [ ] Batch job system
+- [ ] Rename `trip_debug` → `pm_tripdebug` for naming consistency with `pm_gpsinfo`
+  (binary name, CMakeLists.txt target, source file, man page reference)
 
 ---
 
