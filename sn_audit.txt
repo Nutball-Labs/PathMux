@@ -1,0 +1,24 @@
+--- PathMux SN Audit: 2026-02-28 06:41:22 ---
+config_manager.cpp                 00068
+debug_main.cpp                     00023
+find_trips.cpp                     00068
+gpx_export.cpp                     00013
+kml_prefs.cpp                      00030
+locations.cpp                      00030
+main.cpp                           00068
+pm_gpsinfo.cpp                     00068
+prefs.cpp                          00034
+trip_detection.cpp                 00068
+video_build.cpp                    00068
+config_manager.hpp                 00068
+find_trips.hpp                     00068
+gpx_export.hpp                     00013
+kml_prefs.hpp                      00014
+locations.hpp                      00014
+logger.hpp                         00033
+prefs.hpp                          00034
+trip_detection.hpp                 00068
+ui_helpers.hpp                     00068
+version.hpp                        00068
+video_build.hpp                    00068
+CMakeLists.txt                     00026

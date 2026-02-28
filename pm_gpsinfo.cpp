@@ -1,0 +1,440 @@
+// pm_gpsinfo — standalone GPS inspection tool for PathMux suite.
+// Runs exiftool on a Pruveeo D90 .ts file and reports GPS data.
+//
+// Usage:
+//   pm_gpsinfo <file.ts> [options]
+//
+// Options:
+//   --first-lock     Report first GPS fix with non-zero lat/lon (default)
+//   --all            Report all GPS records
+//   --json           Output as JSON (default)
+//   --csv            Output as CSV
+//   --xml            Output as XML
+//   --exiftool PATH  Path to exiftool binary (default: exiftool)
+//
+// SN: 00069
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <cstdio>
+#include <ctime>
+#include <iomanip>
+
+// ---------------------------------------------------------------------------
+// Minimal JSON output without pulling in json.hpp dependency
+// (pm_gpsinfo is designed to be buildable standalone)
+// ---------------------------------------------------------------------------
+
+struct GpsRecord {
+    std::string timestamp;
+    double lat     = 0.0;
+    double lon     = 0.0;
+    double speed   = -1.0;   // km/h; -1 = not in stream
+    double heading = -1.0;   // degrees; -1 = not in stream
+    int    index   = 0;      // 0-based record index in stream
+};
+
+// ---------------------------------------------------------------------------
+// jsonEscape — minimal JSON string escaping
+// ---------------------------------------------------------------------------
+static std::string jsonEscape(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if      (c == '"')  out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
+        else                out += c;
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// csvEscape — wrap in quotes if contains comma, quote, or newline
+// ---------------------------------------------------------------------------
+static std::string csvEscape(const std::string& s) {
+    if (s.find_first_of(",\"\n\r") == std::string::npos) return s;
+    std::string out = "\"";
+    for (char c : s) {
+        if (c == '"') out += "\"\"";
+        else          out += c;
+    }
+    out += "\"";
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// xmlEscape
+// ---------------------------------------------------------------------------
+static std::string xmlEscape(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if      (c == '&')  out += "&amp;";
+        else if (c == '<')  out += "&lt;";
+        else if (c == '>')  out += "&gt;";
+        else if (c == '"')  out += "&quot;";
+        else if (c == '\'') out += "&apos;";
+        else                out += c;
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// printUsage
+// ---------------------------------------------------------------------------
+static void printUsage(const char* argv0) {
+    std::cerr
+        << "pm_gpsinfo — GPS inspection tool (PathMux suite)\n\n"
+        << "Usage:\n"
+        << "  " << argv0 << " <file.ts> [options]\n\n"
+        << "Options:\n"
+        << "  --first-lock       Report first valid GPS fix (default)\n"
+        << "  --all              Report all GPS records\n"
+        << "  --json             JSON output (default)\n"
+        << "  --text             Human-readable report\n"
+        << "  --csv              CSV output\n"
+        << "  --xml              XML output\n"
+        << "  --exiftool PATH    Path to exiftool binary\n"
+        << "  --exiftool-opts O  Extraction options (default: -ee3)\n\n"
+        << "Notes:\n"
+        << "  Requires ExifTool 13.51+ for correct Pruveeo D90 GPS decoding.\n"
+        << "  Speed in km/h.  Altitude not reported (D90 values unreliable).\n";
+}
+
+// ---------------------------------------------------------------------------
+// runExiftool — parse GPS stream from file, return all records.
+// Uses extended format to get speed and heading if available.
+// ---------------------------------------------------------------------------
+static std::vector<GpsRecord> runExiftool(const std::string& filePath,
+                                           const std::string& exiftoolPath,
+                                           const std::string& exiftoolOpts)
+{
+    std::vector<GpsRecord> records;
+
+    std::string cmd = exiftoolPath + " " + exiftoolOpts +
+        " \"" + filePath + "\" 2>/dev/null";
+
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) {
+        std::cerr << "Error: Could not run exiftool. "
+                  << "Is it installed and in PATH?\n";
+        return records;
+    }
+
+    char linebuf[512];
+    int idx = 0;
+
+    while (fgets(linebuf, sizeof(linebuf), pipe)) {
+        std::string line(linebuf);
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r'
+                                  || line.back() == ' '))
+            line.pop_back();
+        if (line.empty()) { ++idx; continue; }
+
+        std::istringstream iss(line);
+        std::string datePart, timePart;
+        double lat, lon, speed = -1.0, heading = -1.0;
+
+        if (!(iss >> datePart >> timePart >> lat >> lon)) {
+            ++idx; continue;
+        }
+        // Speed and heading are optional — don't fail if absent
+        iss >> speed >> heading;
+
+        GpsRecord r;
+        r.timestamp = datePart + " " + timePart;
+        r.lat       = lat;
+        r.lon       = lon;
+        r.speed     = speed;
+        r.heading   = heading;
+        r.index     = idx;
+        records.push_back(r);
+        ++idx;
+    }
+    pclose(pipe);
+    return records;
+}
+
+// ---------------------------------------------------------------------------
+// Output helpers
+// ---------------------------------------------------------------------------
+
+static void outputJson(const std::vector<GpsRecord>& recs,
+                       const std::string& filePath,
+                       bool firstLockOnly)
+{
+    std::cout << "{\n";
+    std::cout << "  \"file\": \"" << jsonEscape(filePath) << "\",\n";
+    std::cout << "  \"total_records\": " << recs.size() << ",\n";
+
+    // Find first lock
+    int firstLockIdx = -1;
+    for (int i = 0; i < (int)recs.size(); ++i) {
+        if (recs[i].lat != 0.0 && recs[i].lon != 0.0) {
+            firstLockIdx = i;
+            break;
+        }
+    }
+
+    std::cout << "  \"first_lock_record\": "
+              << firstLockIdx << ",\n";
+
+    if (firstLockIdx >= 0) {
+        const auto& r = recs[firstLockIdx];
+        std::cout << "  \"first_lock\": {\n";
+        std::cout << "    \"timestamp\": \"" << jsonEscape(r.timestamp) << "\",\n";
+        std::cout << "    \"record_index\": " << r.index << ",\n";
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "    \"lat\": " << r.lat << ",\n";
+        std::cout << "    \"lon\": " << r.lon << "\n";
+        std::cout << "  }";
+    } else {
+        std::cout << "  \"first_lock\": null";
+    }
+
+    if (!firstLockOnly) {
+        std::cout << ",\n  \"records\": [\n";
+        for (int i = 0; i < (int)recs.size(); ++i) {
+            const auto& r = recs[i];
+            std::cout << "    {\n";
+            std::cout << "      \"index\": " << r.index << ",\n";
+            std::cout << "      \"timestamp\": \"" << jsonEscape(r.timestamp) << "\",\n";
+            std::cout << std::fixed << std::setprecision(6);
+            std::cout << "      \"lat\": " << r.lat << ",\n";
+            std::cout << "      \"lon\": " << r.lon;
+            if (r.speed   >= 0.0) std::cout << ",\n      \"speed_kmh\": "  << std::fixed << std::setprecision(1) << r.speed;
+            if (r.heading >= 0.0) std::cout << ",\n      \"heading\": "    << std::fixed << std::setprecision(1) << r.heading;
+            std::cout << "\n    }";
+            if (i + 1 < (int)recs.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ]";
+    }
+
+    std::cout << "\n}\n";
+}
+
+static void outputCsv(const std::vector<GpsRecord>& recs,
+                      const std::string& filePath,
+                      bool firstLockOnly)
+{
+    std::cout << "file,record_index,timestamp,lat,lon,speed_kmh,heading\n";
+
+    auto printRow = [&](const GpsRecord& r) {
+        std::cout << csvEscape(filePath) << ","
+                  << r.index << ","
+                  << csvEscape(r.timestamp) << ","
+                  << std::fixed << std::setprecision(6) << r.lat << ","
+                  << r.lon << ","
+                  << (r.speed   >= 0.0 ? std::to_string(r.speed)   : "") << ","
+                  << (r.heading >= 0.0 ? std::to_string(r.heading)  : "")
+                  << "\n";
+    };
+
+    if (firstLockOnly) {
+        for (const auto& r : recs) {
+            if (r.lat != 0.0 && r.lon != 0.0) { printRow(r); break; }
+        }
+    } else {
+        for (const auto& r : recs) printRow(r);
+    }
+}
+
+static void outputXml(const std::vector<GpsRecord>& recs,
+                      const std::string& filePath,
+                      bool firstLockOnly)
+{
+    std::cout << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    std::cout << "<pm_gpsinfo>\n";
+    std::cout << "  <file>" << xmlEscape(filePath) << "</file>\n";
+    std::cout << "  <total_records>" << recs.size() << "</total_records>\n";
+
+    // Find first lock
+    int firstLockIdx = -1;
+    for (int i = 0; i < (int)recs.size(); ++i) {
+        if (recs[i].lat != 0.0 && recs[i].lon != 0.0) {
+            firstLockIdx = i; break;
+        }
+    }
+
+    if (firstLockIdx >= 0) {
+        const auto& r = recs[firstLockIdx];
+        std::cout << "  <first_lock>\n";
+        std::cout << "    <record_index>" << r.index << "</record_index>\n";
+        std::cout << "    <timestamp>" << xmlEscape(r.timestamp) << "</timestamp>\n";
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "    <lat>" << r.lat << "</lat>\n";
+        std::cout << "    <lon>" << r.lon << "</lon>\n";
+        std::cout << "  </first_lock>\n";
+    } else {
+        std::cout << "  <first_lock/>\n";
+    }
+
+    if (!firstLockOnly) {
+        std::cout << "  <records>\n";
+        for (const auto& r : recs) {
+            std::cout << "    <record>\n";
+            std::cout << "      <index>" << r.index << "</index>\n";
+            std::cout << "      <timestamp>" << xmlEscape(r.timestamp) << "</timestamp>\n";
+            std::cout << std::fixed << std::setprecision(6);
+            std::cout << "      <lat>" << r.lat << "</lat>\n";
+            std::cout << "      <lon>" << r.lon << "</lon>\n";
+            if (r.speed   >= 0.0) std::cout << "      <speed_kmh>" << std::fixed << std::setprecision(1) << r.speed   << "</speed_kmh>\n";
+            if (r.heading >= 0.0) std::cout << "      <heading>"   << std::fixed << std::setprecision(1) << r.heading << "</heading>\n";
+            std::cout << "    </record>\n";
+        }
+        std::cout << "  </records>\n";
+    }
+
+    std::cout << "</pm_gpsinfo>\n";
+}
+
+// ---------------------------------------------------------------------------
+// outputText — human-readable report
+// ---------------------------------------------------------------------------
+static void outputText(const std::vector<GpsRecord>& recs,
+                       const std::string& filePath,
+                       bool firstLockOnly)
+{
+    std::cout << "File:           " << filePath << "\n";
+    std::cout << "Total records:  " << recs.size() << "\n";
+
+    int validCount   = 0;
+    int firstLockIdx = -1;
+    for (int i = 0; i < (int)recs.size(); ++i) {
+        if (recs[i].lat != 0.0 && recs[i].lon != 0.0) {
+            if (firstLockIdx < 0) firstLockIdx = i;
+            ++validCount;
+        }
+    }
+
+    std::cout << "Valid fixes:    " << validCount;
+    if (!recs.empty())
+        std::cout << "  (" << (validCount * 100 / (int)recs.size()) << "% coverage)";
+    std::cout << "\n";
+
+    if (firstLockIdx >= 0) {
+        const auto& r = recs[firstLockIdx];
+        std::cout << "First lock:     record " << r.index
+                  << "  (" << r.index << "s after segment start)\n";
+        std::cout << "  Timestamp:    " << r.timestamp << "\n";
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "  Position:     " << r.lat << ", " << r.lon << "\n";
+        if (r.speed >= 0.0)
+            std::cout << std::fixed << std::setprecision(1)
+                      << "  Speed:        " << r.speed << " km/h  ("
+                      << (r.speed * 0.621371) << " mph)\n";
+        if (r.heading >= 0.0)
+            std::cout << std::fixed << std::setprecision(1)
+                      << "  Heading:      " << r.heading << "\xc2\xb0\n";
+    } else {
+        std::cout << "First lock:     none (no valid GPS fixes found)\n";
+    }
+
+    if (!firstLockOnly && !recs.empty()) {
+        int lastValidIdx = -1;
+        for (int i = (int)recs.size() - 1; i >= 0; --i) {
+            if (recs[i].lat != 0.0 && recs[i].lon != 0.0) {
+                lastValidIdx = i; break;
+            }
+        }
+        if (lastValidIdx >= 0 && lastValidIdx != firstLockIdx) {
+            const auto& r = recs[lastValidIdx];
+            std::cout << "Last fix:       record " << r.index << "\n";
+            std::cout << "  Timestamp:    " << r.timestamp << "\n";
+            std::cout << std::fixed << std::setprecision(6);
+            std::cout << "  Position:     " << r.lat << ", " << r.lon << "\n";
+        }
+
+        // Report dropouts (sequences of zero-coord records > 5s)
+        int dropoutCount = 0;
+        int dropoutStart = -1;
+        for (int i = 0; i < (int)recs.size(); ++i) {
+            bool zero = (recs[i].lat == 0.0 && recs[i].lon == 0.0);
+            if (zero  && dropoutStart < 0) dropoutStart = i;
+            if (!zero && dropoutStart >= 0) {
+                if ((i - dropoutStart) > 5) ++dropoutCount;
+                dropoutStart = -1;
+            }
+        }
+        if (dropoutStart >= 0 && ((int)recs.size() - dropoutStart) > 5)
+            ++dropoutCount;
+
+        if (dropoutCount > 0)
+            std::cout << "GPS dropouts:   " << dropoutCount << " gap(s) > 5s\n";
+        else if (validCount > 0)
+            std::cout << "GPS dropouts:   none\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+int main(int argc, char* argv[])
+{
+    if (argc < 2) { printUsage(argv[0]); return 1; }
+
+    std::string filePath;
+    std::string exiftoolPath = "exiftool";
+    std::string exiftoolOpts = "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSSpeed# $GPSTrack#'";
+    bool firstLockOnly = true;   // default mode
+    bool modeSet       = false;
+    std::string format = "json"; // default format
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") { printUsage(argv[0]); return 0; }
+        else if (arg == "--first-lock")  { firstLockOnly = true;  modeSet = true; }
+        else if (arg == "--all")    { firstLockOnly = false; modeSet = true; }
+        else if (arg == "--json")   { format = "json"; }
+        else if (arg == "--text")   { format = "text"; }
+        else if (arg == "--csv")    { format = "csv";  }
+        else if (arg == "--xml")    { format = "xml";  }
+        else if (arg == "--exiftool") {
+            if (i + 1 < argc) exiftoolPath = argv[++i];
+            else { std::cerr << "Error: --exiftool requires a path.\n"; return 1; }
+        }
+        else if (arg == "--exiftool-opts") {
+            if (i + 1 < argc) exiftoolOpts = argv[++i];
+            else { std::cerr << "Error: --exiftool-opts requires a value.\n"; return 1; }
+        }
+        else if (arg[0] == '-') {
+            std::cerr << "Unknown option: " << arg << "\n";
+            printUsage(argv[0]); return 1;
+        }
+        else {
+            if (!filePath.empty()) {
+                std::cerr << "Error: multiple file paths given.\n";
+                return 1;
+            }
+            filePath = arg;
+        }
+    }
+
+    if (filePath.empty()) {
+        std::cerr << "Error: no input file specified.\n";
+        printUsage(argv[0]); return 1;
+    }
+
+    // Suppress unused-variable warning for modeSet in simple builds
+    (void)modeSet;
+
+    auto records = runExiftool(filePath, exiftoolPath, exiftoolOpts);
+
+    if (records.empty()) {
+        std::cerr << "Warning: no GPS records found in " << filePath << "\n"
+                  << "  Ensure ExifTool 13.51+ is installed.\n";
+        // Still output empty result in requested format
+    }
+
+    if      (format == "csv")  outputCsv(records, filePath, firstLockOnly);
+    else if (format == "xml")  outputXml(records, filePath, firstLockOnly);
+    else if (format == "text") outputText(records, filePath, firstLockOnly);
+    else                       outputJson(records, filePath, firstLockOnly);
+
+    return 0;
+}

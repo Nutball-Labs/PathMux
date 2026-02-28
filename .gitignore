@@ -1,0 +1,22 @@
+# Build output
+build/
+*.o
+*.a
+
+# Archives
+archive/
+*.tar
+*.zip
+*.tgz
+
+# Test video files
+*.ts
+
+# Editor/IDE
+.vscode/
+*.swp
+*~
+
+# Misc
+pm_ls-lR.txt
+
