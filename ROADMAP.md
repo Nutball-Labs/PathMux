@@ -10,14 +10,20 @@ This document outlines planned features and future development direction for Pat
 - [x] Filesystem scan of Front/Rear/Left/Right camera directories
 - [x] Timestamp-based trip grouping with configurable gap threshold
 - [x] JSON manifest caching in `~/.config/quadeye/`
-- [ ] **ffprobe integration for accurate trip duration calculation**
-  - First segment → `segdur` (60/120/180/300 seconds)
-  - Last segment → `lastDur` (actual final clip length)
-  - Formula: `tripDur = (segdur * (segCount - 1)) + lastDur`
-- [ ] Thumbnail detection (`.jpg` sidecar files for each `.ts` segment)
-  - `firstThumb`: Front camera, second segment (or first if only one)
-  - `lastThumb`: Front camera, last segment
-- [ ] Per-segment thumbnail paths for all four cameras
+- [x] **ffprobe integration for accurate trip duration calculation**
+  - `probeSegmentDuration()` called on last Front segment in `closeTrip()`
+  - `probeVideoProfile()` called on first Front segment
+  - Formula: `tripDur = (lastEpoch - firstEpoch) + lastDur`; fallback to
+    timestamp estimate + 180s if ffprobe unavailable
+- [x] Thumbnail detection (`.jpg` sidecar files — v0.9.9)
+  - Per-segment: `frontThumb`, `rearThumb`, `leftThumb`, `rightThumb` in `TripSegment`
+    (absolute path to .jpg sidecar, or "" if absent)
+  - Trip-level: `firstFrontThumb`, `lastFrontThumb`, `firstRearThumb`, `lastRearThumb`,
+    `firstLeftThumb`, `lastLeftThumb`, `firstRightThumb`, `lastRightThumb` in `Trip`
+  - `first*` fields use segments[1] to avoid cold-start frames (garage door etc.);
+    falls back to segments[0] on single-segment trips
+  - `last*` fields always from segments.back()
+  - All 8 trip-level + 4×N per-segment fields serialized to manifest JSON
 
 ### pm_gpsinfo Standalone Utility
 **Status:** Active development alongside main CLI
@@ -111,11 +117,7 @@ Deferred (low priority until relevant):
   packaging (see Packaging section below)
 
 **High priority:**
-- [ ] **ffprobe integration for accurate trip duration**
-  - First segment → `segdur` (60/120/180/300s)
-  - Last segment → `lastDur` (actual final clip length)
-  - Formula: `tripDur = (segdur * (segCount - 1)) + lastDur`
-  - Currently showing placeholder/zero durations — affects every display
+- [x] **ffprobe integration for accurate trip duration** — implemented (see Trip Detection section)
 
 - [x] **Library restructure** (v0.9.4): Split into `libpathmuxlib` (static) + `pathmux` CLI
   - `lib/` — `trip_detection`, `config_manager`, `platform`, `format_helpers`, `logger`, umbrella `pathmux.hpp`; all in `namespace Pathmux`
@@ -138,7 +140,7 @@ Deferred (low priority until relevant):
     3. Quit back to the trip list
   - `defaultExportDir` remains the fallback when the manifest dir is unwritable and
     the user chooses option 1, or when invoked non-interactively (CLI flags only).
-- [ ] Thumbnail detection (`.jpg` sidecar files, `firstThumb`/`lastThumb`)
+- [x] Thumbnail detection — per-camera first/last + per-segment (v0.9.9)
 - [ ] `recordingProfile` config field
 - [ ] `extra_hw_frames` CPU encoder guard
 

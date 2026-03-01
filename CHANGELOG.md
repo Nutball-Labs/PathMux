@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [0.9.9 / SN: 00079] - 2026-03-01
+### Added
+- **Per-camera thumbnail fields** in `TripSegment`: `frontThumb`, `rearThumb`,
+  `leftThumb`, `rightThumb` — absolute path to `.jpg` sidecar, or `""` if absent.
+  Populated at scan time by replacing the `.ts` extension and checking `fs::exists()`.
+- **Trip-level thumbnail convenience fields** in `Trip`: `firstFrontThumb`,
+  `lastFrontThumb`, `firstRearThumb`, `lastRearThumb`, `firstLeftThumb`,
+  `lastLeftThumb`, `firstRightThumb`, `lastRightThumb`.
+  - `first*` fields use `segments[1]` to avoid cold-start frames (garage door,
+    parking lot, etc.); falls back to `segments[0]` on single-segment trips.
+  - `last*` fields always from `segments.back()`.
+- All new fields serialized to manifest JSON (only written when non-empty;
+  backward-compatible load defaults to `""`).
+
+### Notes
+- ffprobe integration for trip duration confirmed complete (was already implemented;
+  ROADMAP checkbox updated to reflect actual state).
+- This completes all Trip Detection & Caching items in the Phase 1 roadmap.
+
+---
+
 ## [0.9.8 / SN: 00079] - 2026-03-01
 ### Added
 - **`manifests_stale.json` archive**: Stale index entries (manifest file missing at

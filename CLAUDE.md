@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/BiloxiGeek/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.8 (SN 00079)
+**Current version:** 0.9.9 (SN 00079)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 

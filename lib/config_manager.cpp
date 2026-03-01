@@ -916,6 +916,15 @@ void ConfigManager::saveTripCache(const std::string& path,
         }
         jTrip["gpsTrackStatus"] = trip.gpsTrackStatus;
 
+        if (!trip.firstFrontThumb.empty()) jTrip["firstFrontThumb"] = trip.firstFrontThumb;
+        if (!trip.lastFrontThumb.empty())  jTrip["lastFrontThumb"]  = trip.lastFrontThumb;
+        if (!trip.firstRearThumb.empty())  jTrip["firstRearThumb"]  = trip.firstRearThumb;
+        if (!trip.lastRearThumb.empty())   jTrip["lastRearThumb"]   = trip.lastRearThumb;
+        if (!trip.firstLeftThumb.empty())  jTrip["firstLeftThumb"]  = trip.firstLeftThumb;
+        if (!trip.lastLeftThumb.empty())   jTrip["lastLeftThumb"]   = trip.lastLeftThumb;
+        if (!trip.firstRightThumb.empty()) jTrip["firstRightThumb"] = trip.firstRightThumb;
+        if (!trip.lastRightThumb.empty())  jTrip["lastRightThumb"]  = trip.lastRightThumb;
+
         {
             json vp;
             vp["width"]       = trip.videoProfile.width;
@@ -958,6 +967,10 @@ void ConfigManager::saveTripCache(const std::string& path,
             jSeg["rear"]      = seg.rear;
             jSeg["left"]      = seg.left;
             jSeg["right"]     = seg.right;
+            if (!seg.frontThumb.empty()) jSeg["frontThumb"] = seg.frontThumb;
+            if (!seg.rearThumb.empty())  jSeg["rearThumb"]  = seg.rearThumb;
+            if (!seg.leftThumb.empty())  jSeg["leftThumb"]  = seg.leftThumb;
+            if (!seg.rightThumb.empty()) jSeg["rightThumb"] = seg.rightThumb;
             jTrip["segments"].push_back(jSeg);
         }
         root["trips"].push_back(jTrip);
@@ -1032,6 +1045,15 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         trip.endLon         = jTrip.value("endLon",         0.0);
         trip.gpsTrackStatus = jTrip.value("gpsTrackStatus", "none");
 
+        trip.firstFrontThumb = jTrip.value("firstFrontThumb", "");
+        trip.lastFrontThumb  = jTrip.value("lastFrontThumb",  "");
+        trip.firstRearThumb  = jTrip.value("firstRearThumb",  "");
+        trip.lastRearThumb   = jTrip.value("lastRearThumb",   "");
+        trip.firstLeftThumb  = jTrip.value("firstLeftThumb",  "");
+        trip.lastLeftThumb   = jTrip.value("lastLeftThumb",   "");
+        trip.firstRightThumb = jTrip.value("firstRightThumb", "");
+        trip.lastRightThumb  = jTrip.value("lastRightThumb",  "");
+
         if (jTrip.contains("videoProfile") && jTrip["videoProfile"].is_object()) {
             const auto& vp       = jTrip["videoProfile"];
             trip.videoProfile.width      = vp.value("width",      1920);
@@ -1067,11 +1089,15 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         if (jTrip.contains("segments") && jTrip["segments"].is_array()) {
             for (const auto& jSeg : jTrip["segments"]) {
                 TripSegment seg;
-                seg.timestamp = jSeg.value("timestamp", "");
-                seg.front     = jSeg.value("front",     "-");
-                seg.rear      = jSeg.value("rear", jSeg.value("back", "-"));
-                seg.left      = jSeg.value("left",      "-");
-                seg.right     = jSeg.value("right",     "-");
+                seg.timestamp  = jSeg.value("timestamp",  "");
+                seg.front      = jSeg.value("front",      "-");
+                seg.rear       = jSeg.value("rear", jSeg.value("back", "-"));
+                seg.left       = jSeg.value("left",       "-");
+                seg.right      = jSeg.value("right",      "-");
+                seg.frontThumb = jSeg.value("frontThumb", "");
+                seg.rearThumb  = jSeg.value("rearThumb",  "");
+                seg.leftThumb  = jSeg.value("leftThumb",  "");
+                seg.rightThumb = jSeg.value("rightThumb", "");
                 trip.segments.push_back(seg);
             }
         }

@@ -25,6 +25,11 @@ struct TripSegment {
     std::string rear;
     std::string left;
     std::string right;
+    // Sidecar thumbnail for each camera — absolute path to .jpg, or "" if absent.
+    std::string frontThumb;
+    std::string rearThumb;
+    std::string leftThumb;
+    std::string rightThumb;
 };
 
 // ---------------------------------------------------------------------------
@@ -73,6 +78,20 @@ struct Trip {
     // User note — free-form text attached to this trip via the -V build menu.
     std::string note;
 
+    // Trip-level thumbnail convenience fields — absolute paths to .jpg sidecars.
+    // firstFront/Rear/Left/Right: from segments[1] (or segments[0] if only one)
+    //   to avoid cold-start frames (garage door, parking lot, etc.).
+    // lastFront/Rear/Left/Right: from segments.back().
+    // Any field is "" if the corresponding camera or sidecar is absent.
+    std::string firstFrontThumb;
+    std::string lastFrontThumb;
+    std::string firstRearThumb;
+    std::string lastRearThumb;
+    std::string firstLeftThumb;
+    std::string lastLeftThumb;
+    std::string firstRightThumb;
+    std::string lastRightThumb;
+
     // Three randomly-chosen source files sampled at scan time for integrity
     // checking.  Selection is deterministic (seeded on startEpoch).
     std::vector<ValidationFile> validationFiles;
@@ -119,4 +138,4 @@ public:
 } // namespace Pathmux
 
 #endif
-// SN: 00074
+// SN: 00079

@@ -21,6 +21,16 @@ namespace {
         return std::mktime(&t);
     }
 
+    // Return the .jpg sidecar path for a video file, or "" if absent.
+    // Replaces the file extension (e.g. .ts → .jpg).
+    std::string thumbFor(const std::string& videoPath) {
+        if (videoPath.empty() || videoPath == "-") return "";
+        auto dot = videoPath.rfind('.');
+        if (dot == std::string::npos) return "";
+        std::string jpg = videoPath.substr(0, dot) + ".jpg";
+        return fs::exists(jpg) ? jpg : "";
+    }
+
     // Probe pixel format and color characteristics from first video stream.
     // Returns defaults if ffprobe fails.
     // Output format: width,height,pix_fmt,color_range,color_space,r_frame_rate
@@ -242,6 +252,20 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         time_t firstEpoch = stringToTimestamp(trip.segments.front().timestamp);
         time_t lastEpoch  = stringToTimestamp(trip.segments.back().timestamp);
 
+        // Trip-level thumbnail convenience fields.
+        // firstThumb: use segments[1] to avoid cold-start frames (garage door,
+        // parking lot, etc.).  Fall back to segments[0] on single-segment trips.
+        const TripSegment& firstSeg = (segCount >= 2) ? trip.segments[1] : trip.segments[0];
+        const TripSegment& lastSeg  = trip.segments.back();
+        trip.firstFrontThumb = firstSeg.frontThumb;
+        trip.firstRearThumb  = firstSeg.rearThumb;
+        trip.firstLeftThumb  = firstSeg.leftThumb;
+        trip.firstRightThumb = firstSeg.rightThumb;
+        trip.lastFrontThumb  = lastSeg.frontThumb;
+        trip.lastRearThumb   = lastSeg.rearThumb;
+        trip.lastLeftThumb   = lastSeg.leftThumb;
+        trip.lastRightThumb  = lastSeg.rightThumb;
+
         // segDetectedDuration: pure timestamp arithmetic.
         // Nominal segment length = spacing between segments[0] and segments[1].
         int nominalSegdur = (segCount > 1)
@@ -307,11 +331,15 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         localtime_r(&fTime, &tmBuf);
         char tsBuf[20];
         std::strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", &tmBuf);
-        seg.timestamp = tsBuf;
-        seg.front     = fPath;
-        seg.rear      = findClosest(fTime, rearFiles);
-        seg.left      = findClosest(fTime, leftFiles);
-        seg.right     = findClosest(fTime, rightFiles);
+        seg.timestamp  = tsBuf;
+        seg.front      = fPath;
+        seg.rear       = findClosest(fTime, rearFiles);
+        seg.left       = findClosest(fTime, leftFiles);
+        seg.right      = findClosest(fTime, rightFiles);
+        seg.frontThumb = thumbFor(seg.front);
+        seg.rearThumb  = thumbFor(seg.rear);
+        seg.leftThumb  = thumbFor(seg.left);
+        seg.rightThumb = thumbFor(seg.right);
         currentTrip.segments.push_back(seg);
         lastTime = fTime;
     }
@@ -337,4 +365,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
 } // namespace Pathmux
 
-// SN: 00076
+// SN: 00079

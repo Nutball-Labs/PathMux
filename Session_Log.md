@@ -7,7 +7,7 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ## 2026-03-01
 
-### Session 3 (Afternoon)
+### Session 3 (Afternoon) — continued
 **Focus:** `--clear-cache` / `--clear-stale` UX rework; stale manifest archive
 
 **Work Done:**
@@ -24,10 +24,19 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 **Files changed:** `lib/config_manager.cpp`, `lib/config_manager.hpp`, `cli/main.cpp`
 
+**v0.9.9 (same session, SN 00079):** Thumbnail detection complete.
+- `TripSegment` gains `frontThumb`, `rearThumb`, `leftThumb`, `rightThumb`
+  (absolute .jpg path or "" if absent; populated by `thumbFor()` helper at scan time)
+- `Trip` gains 8 trip-level convenience fields: `firstFront/Rear/Left/RightThumb`
+  and `lastFront/Rear/Left/RightThumb`
+- `first*` uses segments[1] (cold-start avoidance); falls back to segments[0]
+- All fields serialized in manifest JSON; backward-compatible on load
+- ffprobe duration confirmed already implemented; ROADMAP updated
+- Completes all Phase 1 Trip Detection & Caching roadmap items
+
 **Pending (carry forward):**
 - Man page updates (-G interactive flow, `--validate`, `-t` flags, new stale flags)
 - GPS extraction to GeoJSON (architecture decided, code pending)
-- ffprobe integration for accurate trip duration (high priority)
 - `trip_debug` → `pm_tripdebug` rename (low priority)
 - License decision: GPL vs MIT — required before repo goes public
 
