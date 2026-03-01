@@ -96,6 +96,14 @@ target_include_directories(pm_gpsinfo PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(pm_gpsinfo PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
+# pm_audit — footage integrity checker
+# ---------------------------------------------------------------------------
+add_executable(pm_audit tools/pm_audit.cpp)
+target_compile_features(pm_audit PRIVATE cxx_std_17)
+target_include_directories(pm_audit PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(pm_audit PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
 # pm_ls — non-interactive trip lister
 # ---------------------------------------------------------------------------
 add_executable(pm_ls tools/pm_ls.cpp)
@@ -123,7 +131,7 @@ target_link_libraries(trip_debug PRIVATE pathmuxlib)
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls
+install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -132,6 +140,7 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/man1/pm_gpsinfo.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_gpsexport.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_ls.1"
+    "${CMAKE_SOURCE_DIR}/man1/pm_audit.1"
     DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
     OPTIONAL
 )
