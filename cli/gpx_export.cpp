@@ -628,6 +628,65 @@ std::string GpxExport::writeKml(const json& root,
 }
 
 // ===========================================================================
+// GeoJSON writer (RFC 7946 FeatureCollection)
+// ===========================================================================
+
+std::string GpxExport::writeGeoJson(const json& root,
+                                     int tripIdx,
+                                     const std::string& outPath)
+{
+    const auto& jTrip     = root["trips"][tripIdx];
+    std::string date      = jTrip.value("date",       "unknown");
+    std::string startTime = jTrip.value("start_time", "00:00:00");
+    std::string duration  = jTrip.value("duration",   "");
+    std::string tripId    = jTrip.value("id",         "");
+    int segCount = jTrip.contains("segments") && jTrip["segments"].is_array()
+                   ? (int)jTrip["segments"].size() : 0;
+
+    // Coordinates: [longitude, latitude] per RFC 7946 (lon first)
+    json coords = json::array();
+    if (jTrip.contains("gpsTrack") && jTrip["gpsTrack"].is_array()) {
+        for (const auto& pt : jTrip["gpsTrack"])
+            coords.push_back({ pt.value("lon", 0.0), pt.value("lat", 0.0) });
+    } else {
+        // Fallback: start/end points only
+        double sLat = jTrip.value("startLat", 0.0), sLon = jTrip.value("startLon", 0.0);
+        double eLat = jTrip.value("endLat",   0.0), eLon = jTrip.value("endLon",   0.0);
+        if (sLat != 0.0 || sLon != 0.0) coords.push_back({sLon, sLat});
+        if ((eLat != 0.0 || eLon != 0.0) && (eLat != sLat || eLon != sLon))
+            coords.push_back({eLon, eLat});
+    }
+
+    json doc = {
+        {"type", "FeatureCollection"},
+        {"features", json::array({{
+            {"type", "Feature"},
+            {"geometry", {
+                {"type", "LineString"},
+                {"coordinates", coords}
+            }},
+            {"properties", {
+                {"creator",       "PathMux Dashcam Explorer"},
+                {"trip_id",       tripId},
+                {"date",          date},
+                {"start_time",    startTime},
+                {"duration",      duration},
+                {"segment_count", segCount},
+                {"point_count",   (int)coords.size()}
+            }}
+        }})}
+    };
+
+    std::ofstream ofs(outPath);
+    if (!ofs.is_open()) {
+        std::cerr << "Error: Cannot create: " << outPath << "\n";
+        return "";
+    }
+    ofs << doc.dump(2) << "\n";
+    return outPath;
+}
+
+// ===========================================================================
 // run — main entry point
 // ===========================================================================
 
@@ -807,7 +866,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
     if (doAll)
         std::cout << exported << " file" << (exported != 1 ? "s" : "") << " written.\n";
 }
-// SN: 00072
+// SN: 00075
 
 // ===========================================================================
 // runInteractive — interactive GPS menu entry point
@@ -934,6 +993,7 @@ void GpxExport::runInteractive(const ExportOptions& opts)
             UI::printLine("[G]  Extract GPS into manifest");
             UI::printLine("[X]  Export GPX track file");
             UI::printLine("[K]  Export KML track file");
+            UI::printLine("[J]  Export GeoJSON track file");
             UI::printLine("[Q]  Back");
             UI::printDivider();
             UI::printBottom();
@@ -942,24 +1002,59 @@ void GpxExport::runInteractive(const ExportOptions& opts)
             if (actCmd.empty()) continue;
             char ch = std::toupper((unsigned char)actCmd[0]);
             if (ch == 'Q') continue;
-            if (ch != 'G' && ch != 'X' && ch != 'K') continue;
+            if (ch != 'G' && ch != 'X' && ch != 'K' && ch != 'J') continue;
 
+            // 'J' (GeoJSON) uses same GPS extraction path as 'X' (GPX)
             ExportMode mode =
-                (ch == 'G') ? ExportMode::GpsOnly :
-                (ch == 'X') ? ExportMode::Gpx     : ExportMode::Kml;
+                (ch == 'G')             ? ExportMode::GpsOnly :
+                (ch == 'X' || ch == 'J') ? ExportMode::Gpx : ExportMode::Kml;
 
             // Reload fresh before processing
             if (!loadManifest(manifestFile, root)) break;
 
-            // Output dir prompt for GPX/KML
+            // Output dir prompt for GPX / KML / GeoJSON
             ExportOptions actionOpts = opts;
             actionOpts.manifestPath = manifestFile;
+            std::string geojsonPath;
 
-            if (ch == 'X' || ch == 'K') {
-                std::string& pathOpt = (ch == 'X') ? actionOpts.gpxPath : actionOpts.kmlPath;
+            if (ch == 'X' || ch == 'K' || ch == 'J') {
+                std::string& pathOpt =
+                    (ch == 'X') ? actionOpts.gpxPath :
+                    (ch == 'K') ? actionOpts.kmlPath  : geojsonPath;
                 if (pathOpt.empty()) {
-                    std::string def = opts.defaultExportDir.empty() ? "." : opts.defaultExportDir;
-                    pathOpt = UI::promptLine("Output directory or file", def);
+                    // Default: footage source directory; fall back to global pref
+                    // if source dir is not writable.
+                    bool srcWritable = false;
+                    {
+                        std::string tf = sourcePath + "/.pm_write_test";
+                        std::ofstream tst(tf);
+                        if (tst.is_open()) {
+                            tst.close();
+                            std::error_code ec;
+                            fs::remove(tf, ec);
+                            srcWritable = true;
+                        }
+                    }
+                    std::string defDir;
+                    if (srcWritable) {
+                        defDir = sourcePath;
+                    } else {
+                        std::string globalDef = opts.defaultExportDir.empty()
+                                                ? "(not set)" : opts.defaultExportDir;
+                        std::cout << "\n  Note: " << sourcePath << " is not writable.\n"
+                                  << "  [1] Use global default (" << globalDef << ")\n"
+                                  << "  [2] Enter a path\n"
+                                  << "  [3] Back\n"
+                                  << "  Choice: ";
+                        std::string choice;
+                        std::getline(std::cin, choice);
+                        if (choice == "3" || choice.empty()) continue;
+                        defDir = (choice == "1")
+                                 ? (opts.defaultExportDir.empty() ? "." : opts.defaultExportDir)
+                                 : "";
+                    }
+                    pathOpt = UI::promptLine("Output directory or file", defDir);
+                    if (pathOpt.empty()) continue;  // bare Enter on empty default = back
                 }
             }
 
@@ -1027,22 +1122,27 @@ void GpxExport::runInteractive(const ExportOptions& opts)
                     }
                 }
 
-                // GPX / KML export
-                std::string ext  = (ch == 'K') ? "kml" : "gpx";
+                // GPX / KML / GeoJSON export
+                std::string ext  = (ch == 'K') ? "kml" : (ch == 'J') ? "geojson" : "gpx";
                 std::string stem = buildStem(root["trips"][i]);
-                std::string dirO = (ch == 'K') ? actionOpts.kmlPath  : actionOpts.gpxPath;
-                std::string filO = doAll ? "" : ((ch == 'K') ? actionOpts.kmlFile : actionOpts.gpxFile);
+                std::string dirO = (ch == 'K') ? actionOpts.kmlPath
+                                 : (ch == 'J') ? geojsonPath : actionOpts.gpxPath;
+                std::string filO = doAll ? ""
+                                 : (ch == 'K') ? actionOpts.kmlFile
+                                 : (ch == 'J') ? "" : actionOpts.gpxFile;
 
                 std::string outPath = resolveOutputPath(stem, ext, dirO, filO, actionOpts.force);
                 if (outPath.empty()) { std::cout << "  Skipping trip " << tId << ".\n"; continue; }
 
                 std::string result = (ch == 'K') ? writeKml(root, i, outPath)
-                                                 : writeGpx(root, i, outPath);
+                                   : (ch == 'J') ? writeGeoJson(root, i, outPath)
+                                   :               writeGpx(root, i, outPath);
                 if (result.empty()) { std::cout << "  Export failed for trip " << tId << ".\n"; continue; }
 
                 int ptCount = root["trips"][i].contains("gpsTrack")
                               ? (int)root["trips"][i]["gpsTrack"].size() : 0;
-                std::cout << "  " << (ch == 'K' ? "KML" : "GPX") << " written: " << result
+                std::string fmt = (ch == 'K') ? "KML" : (ch == 'J') ? "GeoJSON" : "GPX";
+                std::cout << "  " << fmt << " written: " << result
                           << "  (" << ptCount << " track points)\n";
                 ++exported;
             }

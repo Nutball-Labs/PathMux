@@ -85,6 +85,13 @@ private:
                          int tripIdx,
                          const std::string& outPath);
 
+    // Write GeoJSON FeatureCollection (RFC 7946).  outPath must be fully resolved.
+    // Coordinates are [longitude, latitude] per spec.
+    // Returns outPath on success, "" on failure.
+    std::string writeGeoJson(const json& root,
+                             int tripIdx,
+                             const std::string& outPath);
+
     // --------------- shared helpers ----------------------------------------
 
     // Load and parse a manifest JSON file.
@@ -104,4 +111,4 @@ private:
 };
 
 #endif
-// SN: 00072
+// SN: 00075
