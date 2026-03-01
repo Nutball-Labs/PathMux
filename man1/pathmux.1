@@ -1,4 +1,4 @@
-.TH PATHMUX 1 "February 2026" "v0.8.99b" "PathMux Dashcam Explorer Manual"
+.TH PATHMUX 1 "March 2026" "v0.9.5c" "PathMux Dashcam Explorer Manual"
 .SH NAME
 pathmux \- Trip manager and video builder for Pruveeo D90 four-channel dashcam footage
 .SH SYNOPSIS
@@ -30,131 +30,53 @@ IDs are reused when manifests are deleted, keeping the list compact.
 Scan
 .I PATH
 for dashcam footage and build a trip manifest.  Always re-scans even if a
-cached manifest exists.
+cached manifest exists.  Prints a one-line summary per trip on completion.
 .TP
-.BI \-p " PATH" ", " \-\-path " PATH"
-Set the active path.  Uses the cached manifest if one exists; scans if not.
+.B \-t
+Print a compact one-line summary for each cached manifest, sorted by most
+recent trip date.  Shows manifest ID, footage path, trip count, and date range.
+Non-interactive; exits after printing.
 .TP
-.B \-t ", " \-\-trips
-Show a one-line summary for every trip in the active manifest (default).
+.B \-T ", " \-\-dump
+Print a multi-line block per manifest listing every trip: date, start time,
+duration, and segment count.  No segment file paths are shown.
+Non-interactive; exits after printing.
 .TP
-.B \-T ", " \-\-alltrips
-Show a full segment tree for every trip (Front/Rear/Left/Right per segment).
+.B \-\-fulldump
+Like
+.B \-T
+but includes all segment file paths for every trip and every camera.
 .TP
-.B \-l ", " \-\-list
-List all cached manifests with their assigned IDs and paths.
+.B \-\-jsondump
+Dump all manifest and trip data as a single JSON document to stdout.
+Segment paths are relative to each manifest's source path.
+Suitable for piping to
+.BR jq (1)
+or scripting.
 .TP
-.B \-I ", " \-\-manifests
-Interactive manifest browser.  Select a manifest then browse its trips.
-Pressing
-.B B
-returns to the manifest list.
-.TP
-.B \-i ", " \-\-inter
-Interactive trip browser for the last-used manifest.
-.TP
-.B \-R ", " \-\-refresh
-Re-scan and refresh the last-used manifest.
+.B \-I ", " \-\-interactive
+Unified interactive browser.  Opens at the manifest list home screen.
+Select a manifest by ID to view its trips; select a trip by ID to view
+details, build video, or export GPS data.
+Press
+.B Q
+at any prompt to return to the previous level or exit.
 .SS "GPS & Export"
 .TP
-.B \-g ", " \-\-gps
-Extract GPS data from footage into the manifest (no file output).
+.B \-G ", " \-\-gps
+Launch the interactive GPS extraction and export menu.
+Presents a list of cached manifests; after selecting a trip, offers GPS
+extraction from footage, and GPX or KML file export.
 Requires ExifTool 13.51 or later.
-.TP
-.B \-G ", " \-\-gpx
-Extract GPS if needed and write a GPX track file.
-.TP
-.BI \-\-gpxpath " DIR"
-Output directory for GPX files (default: current directory).
-.TP
-.BI \-\-gpxfile " NAME"
-Explicit GPX filename.  Use
-.B all
-to write one file per trip with
-.I .1 .2
-suffixes to avoid overwrites.
-.TP
-.B \-K ", " \-\-kml
-Extract GPS if needed and write a KML track file.
-.TP
-.BI \-\-kmlpath " DIR"
-Output directory for KML files (default: current directory).
-.TP
-.BI \-\-kmlfile " NAME"
-Explicit KML filename.  Use
-.B all
-to write one file per trip with
-.I .1 .2
-suffixes to avoid overwrites.
-.TP
-.B \-\-force
-Overwrite existing export files without prompting.
-.PP
-Default output filenames are derived from the first segment timestamp:
-.IR 20260216_095422.gpx " / " 20260216_095422.kml .
-.SS "Video Build"
-.TP
-.B \-V ", " \-\-video
-Launch the interactive video build menu.  Loads the last-used manifest,
-displays trips, and prompts for build options.  Press
-.B M
-to switch to a different manifest.
-.PP
-The following flags may be combined with
-.B \-V
-to pre-set options or run non-interactively.  When
-.B \-\-trip
-is supplied the menu is skipped entirely.
-.TP
-.BI \-\-manifest " ID"
-Select manifest by two-character ID (case-insensitive).  Required for
-non-interactive use.
-.TP
-.BI \-\-trip " N"
-Select trip
-.I N
-(1-based) within the chosen manifest.  Required for non-interactive use.
-.TP
-.B \-\-build-front=yes|no
-Include the Front camera file in output (default: yes).
-.TP
-.B \-\-build-rear=yes|no
-Include the Rear camera file in output (default: yes).
-.TP
-.B \-\-build-left=yes|no
-Include the Left camera file in output (default: yes).
-.TP
-.B \-\-build-right=yes|no
-Include the Right camera file in output (default: yes).
-.TP
-.B \-\-build-collage4k=yes|no
-Build a 3840x2160 H.265 collage (default: yes).
-.TP
-.B \-\-build-collage1080p=yes|no
-Transcode the 4K collage to 1920x1080 H.264 (default: no).
-Always derived from the 4K master; never assembled from source again.
-.TP
-.BI \-\-output-format " FMT"
-Container format for per-camera files:
-.BR mp4 ", " mkv ", " mov ", " avi ", " mpg
-(default: mp4).  Collage files are always MP4.
-.TP
-.BI \-\-output-path " DIR"
-Write output files to
-.IR DIR .
-Overrides the default export directory from preferences.
-.TP
-.BI \-\-on-conflict " ACTION"
-Action when
-.B \-\-man-id
-conflicts with an existing manifest:
-.BR append ", " overwrite ", " fail
-(default when non-interactive: fail).
 .SS "Settings"
 .TP
 .B \-P ", " \-\-prefs
 Launch the interactive preferences editor.  Settings are saved to
 .IR ~/.config/pathmux/pathmux.json .
+.TP
+.B \-\-encoderprefs
+Launch the interactive encoder preferences editor.  Configure hardware
+acceleration (VAAPI, NVENC, etc.) or fall back to software encoding.
 .TP
 .B \-\-kmlprefs
 Launch the interactive KML visual preferences editor (track colors, line
@@ -168,25 +90,73 @@ Set a preference non-interactively.  Currently supported keys:
 .RS
 .TP
 .B gap=\fIN\fR
-Trip gap threshold in seconds.
+Trip gap threshold in seconds (minimum 30).
 .RE
 .TP
-.BI \-\-man-id " XX"
-Assign a specific two-character manifest ID when scanning a new path.
-If the ID is already in use, behaviour depends on
-.BR \-\-on-conflict .
-Interactive sessions prompt the user; non-interactive sessions fail by default.
-.TP
 .B \-\-clear-cache
-Remove all cached manifests.  Settings and known locations are preserved.
+Interactive numbered list; pick one manifest to delete.  The list
+redisplays after each deletion; press
+.B Q
+to exit.
+Settings and known locations are preserved.
+.TP
+.B \-\-clear-cache ALL
+Show the full manifest list, prompt for
+.B y/N
+confirmation, then wipe all manifests.
+.TP
+.B \-\-clear-cache ALL \-\-force
+Wipe all manifests without any prompt.  Suitable for scripted use.
+.TP
+.B \-\-show-config
+Dump raw configuration key/value pairs and exit.
+Useful for verifying the active ffmpeg/ExifTool paths and encoder settings.
+.TP
+.B \-\-validate
+Check all cached manifests for consistency problems: missing files, corrupt
+JSON, and ID conflicts.  Prints a per-manifest report.
+Exits with code
+.B 0
+if all manifests are clean,
+.B 1
+if any problems are found.
+Non-interactive; suitable for cron or scripted health checks.
 .TP
 .B \-v ", " \-\-version
 Print version and exit.
 .TP
 .B \-h ", " \-\-help
 Print a usage summary and exit.
+.SH "VIDEO BUILD"
+Video builds are launched from within the interactive browser
+.RB ( \-I ).
+Select a manifest, then a trip, then choose
+.B [V] Build video
+from the trip detail screen.  The build options menu allows toggling
+per-camera output files, collage resolution, audio extract, output
+format, and output directory.
+.PP
+.B Build actions:
+.TP
+.B GO
+Run the configured build and return to the trip picker on completion.
+.TP
+.B GODONE
+Run the configured build and exit the video builder on completion.
+.TP
+.B [T] Compute duration
+Run ffprobe on every Front camera segment to produce an accurate
+total trip duration.  Displayed as
+.B "Computed duration"
+in the menu header once computed; stored in the manifest for future sessions.
+.PP
+A build log entry is appended to
+.I pm_buildlog.json
+in the footage source directory after each successful build.  The log
+captures the manifest ID, trip ID, output path, build timestamp, output
+duration, which cameras were included, and the full segment list consumed.
 .SH "VIDEO BUILD PIPELINE"
-Per-camera files use ffmpeg concat demuxer with stream copy
+Per-camera files use the ffmpeg concat demuxer with stream copy
 .RB ( "\-c copy" ).
 Only the video and audio streams are mapped
 .RB ( "\-map 0:v:0 \-map 0:a:0" );
@@ -204,15 +174,26 @@ This prevents sync drift from accumulating across a long trip.
 .IP 3. 4
 The four normalized streams are combined with the
 .B xstack
-filter into a 3840x2160 frame (Front/Rear top row, Left/Right bottom row).
+filter into a 3840x2160 frame:
+.PP
+.RS
+.nf
+[ Front ] [ Rear  ]
+[ Right ] [ Left  ]
+.fi
+.RE
 .IP 4. 4
-Audio is taken exclusively from the Left camera
-.RB ( "\-map 2:a:0" ),
-which records the driver position and provides lip-sync reference.
+Audio is taken from the configured collage audio source (default: Left camera,
+the driver position in left-hand-drive countries; change via preferences or
+the
+.B [H]
+option in the build menu).
 .IP 5. 4
 Output is encoded as H.265
 .RB ( "libx265 \-crf 18 \-preset slow" )
-— visually lossless at roughly half the file size of equivalent H.264.
+by default.  Hardware acceleration profiles (VAAPI, NVENC) can be configured
+via
+.BR \-\-encoderprefs .
 .PP
 The optional 1080p collage is a simple transcode of the finished 4K master
 .RB ( "scale=1920:1080" ", " "libx264 \-crf 20 \-preset fast" )
@@ -225,11 +206,12 @@ work — it cannot correctly decode the LIGOGPSINFO binary stream embedded in
 Pruveeo D90 footage.  Phil Harvey fixed the coordinate decode issue in 13.51
 following a bug report.
 .PP
-One GPS fix per second is available.  The extractor scans from t=0 of the
-first segment and uses the first fix with a non-zero latitude and longitude,
-avoiding the cold-start window without wasting a fixed offset on trips where
-the GPS receiver achieves a hot start immediately.  The cold-start fallback
-is 45 seconds if no valid fix is found earlier.
+One GPS fix per second is available.  During the initial trip scan, the
+extractor reads the first Front camera segment to find the first fix with
+a non-zero latitude and longitude, avoiding the cold-start window without
+wasting a fixed offset on trips where the GPS receiver achieves a hot start
+immediately.  The same pass stores the last valid fix from the final segment
+as the trip end coordinate.
 .PP
 Altitude values from the D90 are systematically incorrect (negative) and are
 ignored.  Speed is recorded in km/h; the dashcam OSD converts to mph for
@@ -344,6 +326,13 @@ The preferred sequence assigns a letter first character and digit second
 character (A3, A4 ... Y9) giving 132 slots before spilling into
 letter+letter combinations.  Deleted manifest IDs are returned to the pool
 and reused from the lowest available position.
+.PP
+Trips within a manifest are also assigned two-character base36 IDs.
+A specific trip can be referenced as
+.IR MID : TID
+(e.g.\&
+.BR CQ:73 )
+in tool output and future batch operations.
 .SH FILES
 .TP
 .I ~/.config/pathmux/pathmux.json
@@ -365,18 +354,27 @@ Named locations (Home, Work, etc.) used for KML proximity pin overlays.
 Backup of an overwritten manifest, where
 .I XX
 is the manifest ID.
+.TP
+.I <footage_path>/pm_buildlog.json
+Build provenance log appended after each successful video build.  Each entry
+records the build timestamp, manifest ID, trip ID, output path and filename,
+output duration in seconds, which cameras were included, and the full list of
+source segments consumed.  Entries are never removed by PathMux; the file
+grows over time as builds accumulate.
 .SH "EXIT STATUS"
 .TP
 .B 0
 Success.
 .TP
 .B 1
-Failure (bad arguments, missing path, manifest ID conflict in non-interactive
-mode, or ffmpeg/ExifTool error).
+Failure (bad arguments, missing path, or ffmpeg/ExifTool error).
+.B \-\-validate
+exits 1 if any manifest problems are found.
 .SH "SEE ALSO"
 .BR ffmpeg (1),
 .BR ffprobe (1),
-.BR exiftool (1)
+.BR exiftool (1),
+.BR pm_gpsinfo (1)
 .SH AUTHOR
 Developed by Steve Berg, 2026.
-.\" SN: 00069
+.\" SN: 00074
