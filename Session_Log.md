@@ -5,6 +5,53 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-02
+
+### Session 1 (Afternoon)
+**Focus:** pm_probe; exiftool version policy; GitHub collaborator permissions
+
+**Work Done:**
+- **pm_probe (v0.9.10c, SN 00080):** New `tools/pm_probe.cpp` — camera compatibility profiler.
+  - Single-file mode: `pm_probe <file.ts>` or `pm_probe MID:TID` — reports container,
+    resolution, frame rate, pixel format, color space, duration, stream list, GPS method,
+    first GPS fix (timestamp, lat, lon).
+  - Card mode: `pm_probe --card <path>` — fingerprints full dashcam storage root; finds
+    camera dirs, samples up to 5 segment durations, probes first segment of primary camera.
+    Output formatted for pasting into a GitHub issue.
+  - `--json` flag for all modes.
+  - GPS first fix fields renamed `sample_*` → `first_*` (`first_lat`, `first_lon`,
+    `first_timestamp`, `has_fix`) — clearer naming, not a statistical sample.
+  - Man page: `man1/pm_probe.1` — "PathMux Suite - Camera Profiler".
+  - Added to CMakeLists targets and install list; pathmux.1 SEE ALSO updated.
+
+- **ExifTool version policy (all files):** Dropped all "13.51+" version requirements.
+  PathMux no longer validates exiftool versions. If GPS extraction returns no data or
+  corrupted/garbled data, user is directed to the exiftool maintainer. RPM Requires
+  changed from `exiftool >= 13.51` to `exiftool`. Preemptive: user emailed Phil Harvey
+  and invited him as GitHub collaborator.
+
+- **Man page URL cleanup:** Removed inline `https://exiftool.org` URLs from man page
+  prose (not standard practice). Replaced with "contact the ExifTool maintainer directly"
+  and `SEE ALSO exiftool(1)`.
+
+- **GitHub permissions:** Reviewed collaborator access. Personal repos only support
+  Write or nothing for collaborators (no read-only option). Current collaborators:
+  BiloxiGeek (admin), xplatform12/Chad (write), Phil Harvey invite pending.
+  Decision: leave as-is, both are trusted.
+
+**Files changed:** `tools/pm_probe.cpp` (new), `man1/pm_probe.1` (new),
+`CMakeLists.txt`, `man1/pathmux.1`, `man1/pm_gpsinfo.1`, `man1/pm_gpsexport.1`,
+`lib/gps_export.cpp`, `cli/gpx_export.cpp`, `tools/pm_gpsinfo.cpp`, `README.md`
+
+**Pending (carry forward):**
+- License decision: GPL vs MIT — next session; waiting on Phil Harvey response
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- Open bug: GPX/KML default output path should follow manifest dir, not global defaultExportDir
+- CHANGELOG.md and CLAUDE.md not yet updated for v0.9.10 series
+
+---
+
 ## 2026-03-01
 
 ### Session 3 (Afternoon) — continued
