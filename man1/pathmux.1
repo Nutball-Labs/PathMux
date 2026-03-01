@@ -1,4 +1,4 @@
-.TH PATHMUX 1 "March 2026" "v0.9.5c" "PathMux Dashcam Explorer Manual"
+.TH PATHMUX 1 "March 2026" "v0.9.9" "PathMux Dashcam Explorer Manual"
 .SH NAME
 pathmux \- Trip manager and video builder for multi-channel dashcam footage
 .SH SYNOPSIS
@@ -42,8 +42,9 @@ IDs are reused when manifests are deleted, keeping the list compact.
 .BI \-s " PATH" ", " \-\-scan " PATH"
 Scan
 .I PATH
-for dashcam footage and build a trip manifest.  Always re-scans even if a
-cached manifest exists.  Prints a one-line summary per trip on completion.
+for dashcam footage and build a trip manifest.  If a manifest already exists
+for this path, prompts with three choices: overwrite it, delete it and rescan
+from scratch, or quit.  Prints a one-line summary per trip on completion.
 .TP
 .B \-t
 Print a compact one-line summary for each cached manifest, sorted by most
@@ -79,7 +80,7 @@ at any prompt to return to the previous level or exit.
 .B \-G ", " \-\-gps
 Launch the interactive GPS extraction and export menu.
 Presents a list of cached manifests; after selecting a trip, offers GPS
-extraction from footage, and GPX or KML file export.
+extraction from footage and export as GPX, KML, or GeoJSON (RFC 7946).
 Requires ExifTool; minimum version depends on camera hardware (see
 .BR "GPS EXTRACTION" ).
 .SS "Settings"
@@ -107,28 +108,46 @@ Set a preference non-interactively.  Currently supported keys:
 Trip gap threshold in seconds (minimum 30).
 .RE
 .TP
+.B \-\-show-config
+Dump raw configuration key/value pairs and exit.
+Useful for verifying the active ffmpeg/ExifTool paths and encoder settings.
+.SS "Manifest Management"
+.TP
 .B \-\-clear-cache
-Interactive numbered list; pick one manifest to delete.  The list
-redisplays after each deletion; press
+Interactive list; pick one manifest to delete by ID.  The list redisplays
+after each deletion; enter
 .B Q
-to exit.
-Settings and known locations are preserved.
+to exit.  Settings and known locations are preserved.
 .TP
 .B \-\-clear-cache ALL
 Show the full manifest list, prompt for
 .B y/N
-confirmation, then wipe all manifests.
+confirmation, then wipe all manifests and the manifest index.
 .TP
 .B \-\-clear-cache ALL \-\-force
 Wipe all manifests without any prompt.  Suitable for scripted use.
+.B \-\-force
+may appear anywhere after
+.BR \-\-clear-cache .
 .TP
-.B \-\-show-config
-Dump raw configuration key/value pairs and exit.
-Useful for verifying the active ffmpeg/ExifTool paths and encoder settings.
+.B \-\-show-stale
+Display the stale manifest archive
+.RI ( manifests_stale.json ).
+Stale entries are index entries whose manifest file is no longer present on
+disk; they are automatically archived when PathMux detects them at startup.
+.TP
+.B \-\-clear-stale
+Clear the stale archive after a
+.B y/N
+confirmation prompt.
+.TP
+.B \-\-clear-stale \-\-force
+Clear the stale archive without prompting.
 .TP
 .B \-\-validate
-Check all cached manifests for consistency problems: missing files, corrupt
-JSON, and ID conflicts.  Prints a per-manifest report.
+Check all cached manifests for consistency problems: missing manifest files
+and md5 checksum mismatches (indicating external modification).  Prints a
+per-manifest status report.
 Exits with code
 .B 0
 if all manifests are clean,
@@ -243,7 +262,7 @@ option
 The default value for Pruveeo D90 footage is:
 .PP
 .RS
-.B \-ee3 \-p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSSpeed# $GPSTrack#'
+.B \-ee3 \-p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'
 .RE
 .PP
 This string is passed verbatim between the binary path and the quoted filename.
@@ -256,12 +275,14 @@ The assembled command is:
 .B Important constraints when modifying this value:
 .TP
 .B Field order is fixed.
-The output parser expects exactly five space-separated tokens per line after
+The output parser expects exactly seven space-separated tokens per line after
 the date and time:
 .IR latitude ,
 .IR longitude ,
+.IR altitude ,
 .IR speed ,
-.IR heading .
+.IR heading ,
+.IR accelerometer .
 Do not reorder, add, or remove fields from the
 .B \-p
 format string without corresponding changes to the parser source.
@@ -363,6 +384,14 @@ location; the path is only written to
 .I ~/.config/pathmux/
 when the scanned directory is not writable.
 .TP
+.I ~/.config/pathmux/manifests_stale.json
+Archive of stale manifest index entries — paths whose manifest file was not
+found on disk at startup validation.  Written automatically; never read during
+normal operations.  Display with
+.BR \-\-show-stale ;
+wipe with
+.BR \-\-clear-stale .
+.TP
 .I ~/.config/pathmux/locations.json
 Named locations (Home, Work, etc.) used for KML proximity pin overlays.
 .TP
@@ -388,4 +417,4 @@ exits 1 if any manifest problems are found.
 .BR pm_gpsinfo (1)
 .SH AUTHOR
 Developed by Steve Berg, 2026.
-.\" SN: 00074
+.\" SN: 00079

@@ -60,10 +60,12 @@ values on D90) — stored but ignored. Speed in km/h.
 - [x] `gpsLockSeconds` — seconds to first valid fix, populated by `pm_gpsinfo --scan-all-trips`
 - [x] `firstLockLat/Lon/Timestamp/Record` — first fix with non-zero coordinates
 
-**What's pending:**
-- [ ] Full GeoJSON track extraction — one point per second from all segments, stored as
-  `pm_trip_<ID>_track.geojson` alongside the manifest. Architecture decided, code pending.
-  ExifTool format string: `-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'`
+**What's done:**
+- [x] Full GPS track extraction — one point per second via ExifTool; stored in manifest
+  `gpsTrack` array; `gpsTrackStatus` tracks none/complete per trip
+- [x] GPX export (`[X]` in `-G` flow)
+- [x] KML export (`[K]` in `-G` flow) with visual prefs
+- [x] GeoJSON export (`[J]` in `-G` flow, RFC 7946 FeatureCollection)
 
 ---
 
@@ -85,19 +87,10 @@ values on D90) — stored but ignored. Speed in km/h.
 - [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
 - [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
 
-**GPS track extraction (next major feature):**
-- [ ] Full GeoJSON track extraction — one GPS point/second from all segments; output to
-  `pm_trip_<ID>_track.geojson`. Architecture decided; code pending. (see GPS section above)
-- [ ] GPX/KML export from extracted track data
-
-**GPS export UX fix:**
-- [ ] **GPX/KML output default: manifest directory, not global export dir**
-  When in `-G` flow the manifest context should drive the default output location.
-  If manifest dir not writable: warn + offer (1) global default, (2) enter path, (3) quit.
-
 **Man page:**
-- [ ] Update `pathmux.1` for `-G` interactive flow, `--validate`, `-t`, `--show-stale`,
-  `--clear-stale`, new thumbnail fields
+- [x] Updated `pathmux.1` to v0.9.9 — `-s` scan prompt, GeoJSON in `-G` flow,
+  `Manifest Management` subsection, `--show-stale` / `--clear-stale`, ExifTool
+  format string corrected (7 fields), `manifests_stale.json` in FILES
 
 **pm_* utility suite** (see PROPOSED_UTILS.md for full specs):
 - [ ] `pm_gpsexport` — export GPS track to GPX/KML; `--gpx` / `--kml` runtime flags
@@ -407,7 +400,7 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 3. During collage generation, use sync map to ensure all cameras stay locked to GPS time
 4. Frame padding/dropping handled automatically based on GPS-derived ground truth
 
-**Priority:** High — implementation ready, waiting on ExifTool 13.51 release
+**Priority:** High — implemented; ExifTool 13.51+ required at runtime
 
 ---
 
