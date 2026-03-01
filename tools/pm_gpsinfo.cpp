@@ -16,7 +16,6 @@
 //   --exiftool PATH      Path to exiftool binary (default: exiftool)
 //   --exiftool-opts O    Extraction options (default: -ee3 ...)
 //
-// SN: 00071
 
 #include <iostream>
 #include <fstream>
@@ -684,4 +683,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-// SN: 00071
+// SN: 00072

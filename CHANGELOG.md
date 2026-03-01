@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [0.9.5a / HWM: 00072] - 2026-03-01
+### Fixed
+- **`selectTrip()` unused parameter**: Silenced `-Wunused-parameter` warning by
+  commenting out the `mode` argument name (`ExportMode /*mode*/`) in both
+  declaration (`gpx_export.hpp`) and definition (`gpx_export.cpp`). The parameter
+  is retained in the signature for future use.
+- **Duplicate `// SN:` in `pm_gpsinfo.cpp`**: Removed the stray `// SN:` line
+  from the top-of-file header comment block. Canonical SN belongs at the bottom
+  of the file only; the duplicate caused `sn-audit` to emit two entries for the
+  same file.
+- **`promptLine()` bare-Enter at "Output directory" prompt**: Verified clean —
+  interactive GPS export flow uses `readCommand()`/`getline` throughout with no
+  `cin >>` mixing; `promptLine()` correctly returns the configured default on
+  bare Enter. No code change required.
+
+---
+
 ## [housekeeping / out-of-session] - 2026-02-28
 ### Fixed
 - **`cmake/archive_files.txt`**: Updated all source paths to reflect post-0.9.4

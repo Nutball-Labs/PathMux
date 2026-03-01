@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/BiloxiGeek/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.4 (SN 00071)
+**Current version:** 0.9.5a (SN 00072)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -215,16 +215,16 @@ bump SNs, bump version, commit, and push.
 
 ## Known Issues / Pending Work
 
-- `selectTrip()` has unused `mode` parameter — fix: `ExportMode /*mode*/`
 - Man page needs update for `-G` interactive flow, `--validate`, `-t` flags
 - `pm_gpsinfo` enhancements:
   - ~~Fix argument order to [options] \<file.ts\> (POSIX convention)~~ — done v0.9.3
   - ~~`--scan-all-trips`: scan first segment of every trip, report GPS lock time~~ — done v0.9.3
-  - Store GPS lock time back into manifest (`gpsLockSeconds` field per trip)
-  - `pm_gpsinfo MID:TID` direct addressing — scan named trip without specifying file path
+  - ~~Store GPS lock time back into manifest (`gpsLockSeconds` field per trip)~~ — done post-0.9.4
+  - ~~`pm_gpsinfo MID:TID` direct addressing~~ — done post-0.9.4
 - GPS extraction to GeoJSON not yet implemented (architecture decided, code pending)
-- Interactive manifest browser: bare Enter at "Output directory" prompt should
-  accept default without requiring text input (partial fix in 0.9.2, verify)
+- ~~`selectTrip()` has unused `mode` parameter~~ — fixed v0.9.5a
+- ~~Duplicate `// SN:` in pm_gpsinfo.cpp header~~ — fixed v0.9.5a
+- ~~Interactive manifest browser: bare Enter at "Output directory" prompt~~ — verified clean v0.9.5a
 
 ---
 

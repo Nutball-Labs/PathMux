@@ -5,6 +5,33 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-01
+
+### Session 1
+**Focus:** Bug list triage — items 1–3; v0.9.5a release
+
+**Work Done:**
+- **v0.9.5a (HWM 00072):** Three items from bug queue resolved.
+  - `selectTrip()` unused `mode` parameter silenced with `ExportMode /*mode*/`
+    in both declaration and definition. Retained in signature for future use.
+  - Duplicate `// SN:` removed from top of `pm_gpsinfo.cpp` header block.
+    Canonical SN location is bottom-of-file only; duplicate caused `sn-audit`
+    to emit two rows for `pm_gpsinfo.cpp`.
+  - `promptLine()` bare-Enter at "Output directory" prompt: verified correct —
+    no `cin >>` mixing in the interactive GPS export path; `promptLine()` returns
+    default on bare Enter as intended. No code change needed.
+- CHANGELOG, Session_Log, CLAUDE.md updated; known issues list pruned.
+
+**Pending (carry forward):**
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- ffprobe integration for accurate trip duration (high priority)
+- `trip_debug` → `pm_tripdebug` rename (low priority)
+- pm_ls, pm_audit, pm_gpsexport, pm_probe — proposed, not yet implemented
+- License decision: GPL vs MIT — required before repo goes public
+
+---
+
 ## 2026-02-25
 
 ### Session 1

@@ -97,11 +97,11 @@ private:
 
     // Display the trip selection table and return chosen trip index (0-based),
     // -1 for "all", or -2 for cancel/quit.
-    static int selectTrip(const json& jTrips, ExportMode mode);
+    static int selectTrip(const json& jTrips, ExportMode /*mode*/);
 
     // Count trips in jTrips that have no GPS data yet (gpsTrackStatus != "complete").
     static int countUnscanned(const json& jTrips);
 };
 
 #endif
-// SN: 00071
+// SN: 00072

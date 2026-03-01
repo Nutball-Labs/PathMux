@@ -203,7 +203,7 @@ int GpxExport::countUnscanned(const json& jTrips)
 // ---------------------------------------------------------------------------
 // selectTrip — show trip table, return index (0-based), -1=all, -2=cancel
 // ---------------------------------------------------------------------------
-int GpxExport::selectTrip(const json& jTrips, ExportMode mode)
+int GpxExport::selectTrip(const json& jTrips, ExportMode /*mode*/)
 {
     std::cout << "\n--- Select Trip ---\n";
     std::cout << std::left
@@ -807,7 +807,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
     if (doAll)
         std::cout << exported << " file" << (exported != 1 ? "s" : "") << " written.\n";
 }
-// SN: 00071
+// SN: 00072
 
 // ===========================================================================
 // runInteractive — interactive GPS menu entry point
