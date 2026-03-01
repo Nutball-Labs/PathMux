@@ -31,15 +31,9 @@ cmake ..
 make
 ```
 
-Or using the legacy Makefile:
-
-```bash
-make
-```
-
 ## Quick Start
 
-1. **Compile**: `make`
+1. **Compile**: `cmake .. && make` (from a `build/` subdirectory)
 2. **Run**: `./pathmux` Shows usage.
 3. **Scan**: `./pathmux -s <path>` Scans path for dashcam videos and runs trip detection routines.
 4. **List Manifests**: `./pathmux -t`
@@ -64,7 +58,7 @@ make
 Manifests are stored colocated with the footage:
 
 ```
-/path/to/footage/pm_manifest_<sanitized_path>.json
+/path/to/footage/pm_manifest_<id>.json
 ```
 
 If the footage path is not writable, falls back to `~/.config/pathmux/`. The manifest index at `~/.config/pathmux/manifests.json` tracks all known manifests.
