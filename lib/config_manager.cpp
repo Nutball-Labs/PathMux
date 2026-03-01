@@ -632,15 +632,16 @@ bool ConfigManager::validateManifestIndexReport() {
 
     bool allOk = true;
     for (const auto& e : index) {
-        bool fileExists = fs::exists(e.manifestFile);
-        bool md5ok = true;
+        std::string f    = lookupManifestFilePath(e.path);
+        bool fileExists  = !f.empty();
+        bool md5ok       = true;
         if (fileExists && !e.manifestMd5.empty())
-            md5ok = (fileMd5(e.manifestFile) == e.manifestMd5);
+            md5ok = (fileMd5(f) == e.manifestMd5);
 
         std::string status;
-        if (!fileExists)     status = "MISSING";
-        else if (!md5ok)     status = "MODIFIED";
-        else                 status = "ok";
+        if (!fileExists)  status = "MISSING";
+        else if (!md5ok)  status = "MODIFIED";
+        else              status = "ok";
 
         std::cout << "  [" << e.id << "]  "
                   << std::left << std::setw(8) << status
@@ -654,28 +655,47 @@ bool ConfigManager::validateManifestIndex() {
     auto index = loadManifestIndex();
     if (index.empty()) return true;
 
-    std::vector<int> failed; // indices into index that have problems
+    // Pass 1: resolve actual file path for each entry (handles ID-based migration).
+    // Entries whose manifest file is missing are silently pruned — a missing file
+    // just means "not yet scanned"; no user action required.
+    {
+        std::vector<int> missing;
+        for (int i = 0; i < (int)index.size(); ++i) {
+            std::string f = lookupManifestFilePath(index[i].path);
+            if (f.empty())
+                missing.push_back(i);
+            else
+                index[i].manifestFile = f; // update to resolved (possibly migrated) path
+        }
+        if (!missing.empty()) {
+            for (int i = (int)missing.size() - 1; i >= 0; --i)
+                index.erase(index.begin() + missing[i]);
+            saveManifestIndex(index);
+            std::cout << "  Note: " << missing.size()
+                      << " stale index entr" << (missing.size() == 1 ? "y" : "ies")
+                      << " removed (manifest file not found).\n";
+        }
+    }
+    if (index.empty()) return true;
+
+    // Pass 2: check md5 for entries whose file exists.  Prompt only on mismatch
+    // (file exists but was modified outside PathMux — worth flagging).
+    std::vector<int> modified;
     for (int i = 0; i < (int)index.size(); ++i) {
         const auto& e = index[i];
-        bool fileExists = fs::exists(e.manifestFile);
-        bool md5ok = true;
-        if (fileExists && !e.manifestMd5.empty()) {
-            md5ok = (fileMd5(e.manifestFile) == e.manifestMd5);
-        }
-        if (!fileExists || !md5ok) failed.push_back(i);
+        if (!e.manifestMd5.empty() && fileMd5(e.manifestFile) != e.manifestMd5)
+            modified.push_back(i);
     }
+    if (modified.empty()) return true;
 
-    if (failed.empty()) return true;
-
-    for (int i : failed) {
+    // Process in reverse so erase-by-index stays valid
+    for (int k = (int)modified.size() - 1; k >= 0; --k) {
+        int i = modified[k];
         const auto& e = index[i];
-        bool exists = fs::exists(e.manifestFile);
-        std::cout << "\n  Warning: Manifest problem for path " << e.path << "\n";
-        std::cout << "    File: " << e.manifestFile << "\n";
-        std::cout << "    Reason: " << (exists ? "md5 mismatch (modified outside PathMux)"
-                                               : "manifest file not found") << "\n";
-        std::cout << "\n  [I]  Ignore for this session\n"
-                     "  [R]  Re-scan path\n"
+        std::cout << "\n  Warning: Manifest modified outside PathMux\n"
+                  << "    Path: " << e.path << "\n"
+                  << "    File: " << e.manifestFile << "\n"
+                  << "\n  [I]  Ignore for this session\n"
                      "  [X]  Remove from manifest index\n"
                      "  [Q]  Quit\n"
                      "\nChoice: ";
@@ -688,7 +708,6 @@ bool ConfigManager::validateManifestIndex() {
             saveManifestIndex(index);
             std::cout << "  Removed from index.\n";
         }
-        // I and R: ignore for now (R will trigger rescan via normal flow)
     }
     return true;
 }
@@ -1103,4 +1122,4 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
 
 } // namespace Pathmux
 
-// SN: 00078
+// SN: 00079

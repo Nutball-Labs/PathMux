@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/BiloxiGeek/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.5c (SN 00074)
+**Current version:** 0.9.7a (SN 00078)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -142,9 +142,12 @@ bump SNs, bump version, commit, and push.
 - Stream selection: use `-map 0:d:0` not `-map 0:2` (select by type not index)
 
 ### Manifest Storage
-- Colocated with footage: `<path>/pm_manifest_<sanitized_path>.json`
-- Fallback: `~/.config/pathmux/pm_manifest_<sanitized_path>.json`
-- Path sanitization: strip leading `/`, replace `/` with `_`
+- Colocated with footage: `<path>/pm_manifest_<id>.json` (2-char base36 manifest ID)
+- Fallback: `~/.config/pathmux/pm_manifest_<id>.json` if footage dir not writable
+- `getManifestFilePath()` — write path; calls `ensureManifestId()` to guarantee ID exists
+- `lookupManifestFilePath()` — read-only path; returns "" if not in index; transparently
+  migrates old `pm_manifest_<sanitized_path>.json` filenames to ID-based names via `fs::rename()`
+- `sanitizePath()` retained for migration detection only
 - Manifest index: `~/.config/pathmux/manifests.json`
 - Blacklisted names: `pathmux`, `manifests`, `lastpath`
 - MD5-based integrity checking via `updateManifestMd5()`
