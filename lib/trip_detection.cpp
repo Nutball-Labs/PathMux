@@ -290,10 +290,11 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
         if (!inTrip) {
             currentTrip = Trip();
-            std::tm* tmPtr = std::localtime(&fTime);
+            std::tm tmBuf{};
+            localtime_r(&fTime, &tmBuf);
             char dateBuf[20], timeBuf[20];
-            std::strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", tmPtr);
-            std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", tmPtr);
+            std::strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", &tmBuf);
+            std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &tmBuf);
             currentTrip.date         = dateBuf;
             currentTrip.startTime    = timeBuf;
             currentTrip.startEpoch   = fTime;
@@ -302,9 +303,10 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         }
 
         TripSegment seg;
-        std::tm* tmPtr = std::localtime(&fTime);
+        std::tm tmBuf{};
+        localtime_r(&fTime, &tmBuf);
         char tsBuf[20];
-        std::strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", tmPtr);
+        std::strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", &tmBuf);
         seg.timestamp = tsBuf;
         seg.front     = fPath;
         seg.rear      = findClosest(fTime, rearFiles);
@@ -335,4 +337,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
 } // namespace Pathmux
 
-// SN: 00074
+// SN: 00076

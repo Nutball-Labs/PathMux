@@ -1,21 +1,21 @@
---- PathMux SN Audit: 2026-03-01 07:37:10 ---
-config_manager.cpp                 00074
+--- PathMux SN Audit: 2026-03-01 07:59:19 ---
+config_manager.cpp                 00076
 platform.cpp                       00071
-trip_detection.cpp                 00074
+trip_detection.cpp                 00076
 config_manager.hpp                 00071
 format_helpers.hpp                 00071
 logger.hpp                         00071
 pathmux.hpp                        00071
 platform.hpp                       00071
 trip_detection.hpp                 00074
-version.hpp                        00075
-find_trips.cpp                     00074
+version.hpp                        00076
+find_trips.cpp                     00076
 gpx_export.cpp                     00075
 kml_prefs.cpp                      00071
 locations.cpp                      00071
 main.cpp                           00071
 prefs.cpp                          00071
-video_build.cpp                    00074
+video_build.cpp                    00076
 find_trips.hpp                     00071
 gpx_export.hpp                     00075
 kml_prefs.hpp                      00071

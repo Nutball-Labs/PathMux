@@ -43,8 +43,10 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
 
     // Build timestamp: YYYYMMDD_HHMMSS
     auto now = std::time(nullptr);
+    std::tm tmBuf{};
+    localtime_r(&now, &tmBuf);
     char tsBuf[20];
-    std::strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", std::localtime(&now));
+    std::strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", &tmBuf);
 
     // output_filename_stem: date+time prefix, same stripping as makeOutputName
     std::string date = trip.date;
@@ -1011,8 +1013,10 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
 
     // Generate output filename — user override or auto timestamp
     auto now = std::time(nullptr);
+    std::tm tmBuf{};
+    localtime_r(&now, &tmBuf);
     char tsbuf[32];
-    std::strftime(tsbuf, sizeof(tsbuf), "%Y%m%d_%H%M%S", std::localtime(&now));
+    std::strftime(tsbuf, sizeof(tsbuf), "%Y%m%d_%H%M%S", &tmBuf);
     std::string ts(tsbuf);
 
     std::string baseName = opts.outputFilename.empty()
@@ -1707,4 +1711,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00074
+// SN: 00076

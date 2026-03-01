@@ -564,8 +564,10 @@ void ConfigManager::updateManifestIndex(const std::string& path,
     entry->manifestFile = manifestFile;
     entry->lastScan     = []() -> std::string {
         auto t = std::time(nullptr);
+        std::tm tmBuf{};
+        localtime_r(&t, &tmBuf);
         char buf[32];
-        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", std::localtime(&t));
+        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tmBuf);
         return std::string(buf);
     }();
     entry->tripCount = (int)trips.size();
@@ -1061,4 +1063,4 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
 
 } // namespace Pathmux
 
-// SN: 00074
+// SN: 00076

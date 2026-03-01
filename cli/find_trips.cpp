@@ -529,8 +529,10 @@ void FindTrips::jsonDump(ConfigManager& config) {
     root["pathmux_version"] = APP_VERSION;
     root["generated"] = []() -> std::string {
         auto t = std::time(nullptr);
+        std::tm tmBuf{};
+        localtime_r(&t, &tmBuf);
         char buf[32];
-        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", std::localtime(&t));
+        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tmBuf);
         return std::string(buf);
     }();
     root["manifests"] = json::array();
@@ -626,4 +628,4 @@ void FindTrips::jsonDump(ConfigManager& config) {
     std::cout << root.dump(2) << "\n";
 }
 
-// SN: 00074
+// SN: 00076
