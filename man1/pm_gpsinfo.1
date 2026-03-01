@@ -1,0 +1,188 @@
+.TH PM_GPSINFO 1 "March 2026" "v0.9.10" "PathMux Suite - GPS Inspector"
+.SH NAME
+pm_gpsinfo \- GPS metadata inspector for dashcam footage segments
+.SH SYNOPSIS
+.B pm_gpsinfo
+[\fIOPTIONS\fR] \fIfile.ts\fR
+.br
+.B pm_gpsinfo
+[\fIOPTIONS\fR] \fIMID\fR:\fITID\fR
+.br
+.B pm_gpsinfo
+.B \-\-scan\-all\-trips
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B pm_gpsinfo
+reads GPS metadata from a dashcam footage segment using ExifTool and reports
+the GPS lock time, first fix coordinates, and optionally all GPS records.
+It can also batch-scan every trip across all cached manifests to report
+seconds-to-GPS-lock for fleet analysis.
+.PP
+The tool operates in three modes:
+.TP
+.B Single-file mode
+Probes one \fI.ts\fR segment and reports the GPS lock event and (optionally)
+all GPS records from that file.
+.TP
+.B MID:TID mode
+Resolves a manifest trip address to the first Front camera segment and
+probes that file.  Equivalent to passing the absolute path directly.
+.TP
+.B Batch mode
+.RB ( \-\-scan\-all\-trips )
+Reads all cached manifests, scans the first Front segment of each trip,
+and prints a table of GPS lock times.  Lock times are written back into
+each manifest for display in the interactive browser and
+.BR pm_ls (1).
+.SH OPTIONS
+.SS "Single-file and MID:TID options"
+.TP
+.B \-\-first\-lock
+Report the first GPS record with a valid (non-zero) fix.  This is the
+default mode.
+.TP
+.B \-\-all
+Report all GPS records from the segment, not just the first lock.
+.TP
+.B \-\-json
+Output in JSON format (default).
+.TP
+.B \-\-text
+Output in human-readable text format.
+.TP
+.B \-\-csv
+Output in comma-separated values format.
+.TP
+.B \-\-xml
+Output in XML format.
+.SS "Batch scan options"
+.TP
+.B \-\-scan\-all\-trips
+Scan the first Front camera segment of every trip across all cached
+manifests.  Prints a table showing manifest ID, trip ID, nominal segment
+duration, seconds to first GPS lock, and the segment filename.  Results are
+written back into each manifest (the
+.B gpsLockSeconds
+field) so subsequent tools do not need to re-scan.
+.TP
+.B \-\-scan\-all\-trips
+cannot be combined with a file path or MID:TID argument.
+.SS "Common options"
+.TP
+.BI \-\-exiftool " PATH"
+Path to the ExifTool binary.  Defaults to
+.B exiftool
+(resolved via
+.BR PATH ).
+.TP
+.BI \-\-exiftool\-opts " OPTIONS"
+Override the ExifTool options string.  Defaults to the value stored in
+.I ~/.config/pathmux/pathmux.json
+.RB ( exiftoolOptions ).
+.TP
+.B \-h ", " \-\-help
+Print a usage summary and exit.
+.SH "GPS LOCK"
+GPS receivers require time to acquire a satellite fix after power-on
+(cold start).  The first segment of a trip may contain records with
+zero latitude and longitude while the receiver is searching.
+.B pm_gpsinfo
+scans forward through the GPS stream and reports the first record with a
+non-zero fix.
+.PP
+A
+.B first_lock_record
+of
+.B 0
+means the receiver had a warm start and the fix was already valid at the
+beginning of the segment (typical on short stop-and-go trips).  A value
+greater than 0 is the record index of the first valid fix; dividing by the
+GPS sample rate (one per second) gives seconds to lock.
+.PP
+A result of
+.B none
+means no valid fix was found in the segment at all.  This is normal for
+very short stub segments recorded at startup before the GPS receiver acquired
+a lock.
+.SH "OUTPUT FORMATS"
+.SS JSON (default)
+.nf
+{
+  "file": "/path/to/Front/20260209_043838F.ts",
+  "total_records": 147,
+  "first_lock_record": 0,
+  "first_lock": {
+    "timestamp": "2026:02:09 10:39:14",
+    "record_index": 0,
+    "lat": 30.419000,
+    "lon": -89.025191
+  }
+}
+.fi
+.SS Text
+.nf
+File:           /path/to/Front/20260209_043838F.ts
+Total records:  147
+Valid fixes:    147  (100% coverage)
+First lock:     record 0  (0s after segment start)
+  Timestamp:    2026:02:09 10:39:14
+  Position:     30.419000, -89.025191
+  Speed:        0.0 km/h
+  Heading:      0.0\[de]
+.fi
+.PP
+In
+.B \-\-all
+mode the text report also shows the last fix and a GPS dropout count.
+.SH "SCAN-ALL-TRIPS OUTPUT"
+.nf
+MID  TID  SegDur  LockAt  First Segment
+---  ---  ------  ------  --------------------
+CY   7E     180s      0s  20260225_044424F.ts
+CY   3Z     180s    none  20260225_035430F.ts
+.fi
+.PP
+.B SegDur
+is the nominal segment interval derived from filename timestamp spacing.
+.B LockAt
+is seconds to first GPS fix (0s = immediate; none = no fix found).
+.SH NOTES
+Timestamps in GPS output use the format
+.B "YYYY:MM:DD HH:MM:SS"
+in UTC, as returned by ExifTool.  Filename timestamps are in local time.
+.PP
+Speed is reported in km/h.  Altitude is present in the GPS stream but
+known incorrect on the Pruveeo D90 (returns negative values at sea level)
+and is therefore not reported.
+.PP
+.B ExifTool 13.51+
+is required for correct GPS decoding of Pruveeo D90 footage.  The EPEL
+package (13.10) does not correctly parse the LIGOGPSINFO binary stream.
+Other camera models may work with older ExifTool versions.
+.SH FILES
+.TP
+.I ~/.config/pathmux/pathmux.json
+Application settings including
+.B exiftoolPath
+and
+.BR exiftoolOptions .
+.TP
+.I ~/.config/pathmux/manifests.json
+Manifest index used by MID:TID resolution and
+.BR \-\-scan\-all\-trips .
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Failure (bad arguments, file not found, ExifTool error, or MID:TID not
+resolved).
+.SH "SEE ALSO"
+.BR pathmux (1),
+.BR pm_gpsexport (1),
+.BR pm_ls (1),
+.BR exiftool (1)
+.SH AUTHOR
+Developed by Steve Berg, 2026.
+.\" SN: 00080

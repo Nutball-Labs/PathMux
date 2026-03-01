@@ -127,7 +127,11 @@ install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(FILES "${CMAKE_SOURCE_DIR}/pathmux.1"
+install(FILES
+    "${CMAKE_SOURCE_DIR}/man1/pathmux.1"
+    "${CMAKE_SOURCE_DIR}/man1/pm_gpsinfo.1"
+    "${CMAKE_SOURCE_DIR}/man1/pm_gpsexport.1"
+    "${CMAKE_SOURCE_DIR}/man1/pm_ls.1"
     DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
     OPTIONAL
 )

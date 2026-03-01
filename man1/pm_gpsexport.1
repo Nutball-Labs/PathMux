@@ -1,0 +1,191 @@
+.TH PM_GPSEXPORT 1 "March 2026" "v0.9.10" "PathMux Suite - GPS Exporter"
+.SH NAME
+pm_gpsexport \- non-interactive GPS track exporter for dashcam trips
+.SH SYNOPSIS
+.B pm_gpsexport
+\fIMID\fR:\fITID\fR
+.RB [ \-\-gpx
+.IR PATH ]
+.RB [ \-\-kml
+.IR PATH ]
+.RB [ \-\-geojson
+.IR PATH ]
+.RB [ \-\-force ]
+.RB [ \-\-verbose ]
+.SH DESCRIPTION
+.B pm_gpsexport
+exports the GPS track for a dashcam trip to one or more file formats without
+navigating the interactive GPS menu
+.RB ( pathmux\ \-G ).
+It is suitable for scripting, batch export, and pipeline use.
+.PP
+If the trip's GPS track has not yet been extracted,
+.B pm_gpsexport
+runs ExifTool extraction automatically and stores the result in the manifest
+before writing any output files.  Subsequent invocations for the same trip
+skip extraction and write directly from the cached track.  Extraction runs
+at most once per invocation regardless of how many output formats are
+requested.
+.PP
+A trip is addressed by its
+.IR MID : TID
+(e.g.\&
+.BR CQ:73 ),
+where
+.I MID
+is the two-character manifest ID and
+.I TID
+is the two-character trip ID.  Both are case-insensitive; ambiguous characters
+are normalised
+.RB ( O\(→0 ,
+.BR I\(→1 ,
+.BR L\(→1 ).
+.SH OPTIONS
+.TP
+.BI \-\-gpx " PATH"
+Write a GPX 1.1 track file.
+.TP
+.BI \-\-kml " PATH"
+Write a KML 2.2 track file with a
+.B gx:Track
+element containing per-point timestamps, speed, and heading.
+.TP
+.BI \-\-geojson " PATH"
+Write a GeoJSON FeatureCollection (RFC 7946) with one LineString feature.
+Coordinates are in
+.RI [ longitude ,\  latitude ]
+order per the spec.
+.PP
+At least one format flag is required.  Multiple flags may be combined in a
+single invocation; GPS extraction runs only once.
+.SS "PATH resolution"
+.TP
+PATH omitted
+Auto-name the output file in the current directory using the trip's start
+timestamp as the stem (e.g.\&
+.IR 20260209_043838.gpx ).
+.TP
+PATH ends with /
+Auto-name in the specified directory.
+.TP
+PATH is an existing directory
+Auto-name in that directory.
+.TP
+PATH is a full file path
+Use that path exactly.  Extension is appended if missing.
+.SS "Other options"
+.TP
+.B \-\-force
+Overwrite existing output files without prompting.  Without this flag,
+.B pm_gpsexport
+exits with an error if an output file already exists.
+.TP
+.B \-\-verbose
+Show ExifTool stderr during GPS extraction.  Useful for diagnosing extraction
+failures or understanding minor tag warnings.  Has no effect if extraction is
+skipped (track already in manifest).
+.TP
+.B \-h ", " \-\-help
+Print a usage summary and exit.
+.SH OUTPUT
+Progress messages (extraction dots, status lines) are written to
+.BR stderr .
+Exported file paths are written to
+.B stdout
+on success, one path per line.  This makes the output pipeable:
+.PP
+.RS
+.nf
+pm_gpsexport CQ:73 --gpx /tmp/ | xargs -I{} cp {} /media/usb/
+.fi
+.RE
+.SH "GPS EXTRACTION"
+If GPS has not been extracted for the trip,
+.B pm_gpsexport
+runs ExifTool on every Front camera segment and stores the resulting track
+(one point per second) in the trip manifest.  The manifest MD5 is updated
+automatically so
+.B \-\-validate
+does not flag the file as externally modified.
+.PP
+The ExifTool binary path and options string are read from
+.IR ~/.config/pathmux/pathmux.json .
+For the Pruveeo D90, ExifTool 13.51+ is required.  See
+.BR pathmux (1)
+section
+.B GPS EXTRACTION
+for details on the format string and camera compatibility.
+.SH "OUTPUT FORMATS"
+.SS "GPX 1.1"
+Produces a standard GPX track with one
+.B <trkpt>
+per GPS record.  Each point includes latitude, longitude, an ISO 8601
+timestamp, and speed in metres per second as a
+.B <extensions>
+element.  Elevation is omitted for Pruveeo D90 footage (altitude values
+are unreliable on that model).
+.SS "KML 2.2"
+Produces a KML document containing start and end placemarks and a
+.B gx:Track
+element with per-point timestamps, coordinates, speed, and heading in
+.B ExtendedData
+arrays.  The track line style is solid red; start pin is green, end pin
+is red.  Compatible with Google Earth and other KML viewers.
+.SS "GeoJSON (RFC 7946)"
+Produces a FeatureCollection with one Feature containing a LineString
+geometry.  Properties include
+.BR creator ,
+.BR trip_id ,
+.BR date ,
+.BR start_time ,
+.BR duration ,
+.BR segment_count ,
+and
+.BR point_count .
+.SH EXAMPLES
+.TP
+Export GPX only, auto-named in current directory:
+.B pm_gpsexport CQ:73 --gpx
+.TP
+Export KML to an explicit path:
+.B pm_gpsexport CQ:73 --kml /mnt/maps/trip.kml
+.TP
+Export all three formats in one pass:
+.B pm_gpsexport CQ:73 --gpx /tmp/ --kml /tmp/ --geojson /tmp/
+.TP
+Force overwrite of existing files:
+.B pm_gpsexport CQ:73 --gpx /tmp/trip.gpx --force
+.TP
+Show ExifTool output during extraction:
+.B pm_gpsexport CQ:73 --gpx /tmp/ --verbose
+.SH FILES
+.TP
+.I ~/.config/pathmux/pathmux.json
+Application settings including
+.B exiftoolPath
+and
+.BR exiftoolOptions .
+.TP
+.I ~/.config/pathmux/manifests.json
+Manifest index used for MID:TID resolution.
+.TP
+.I <footage_path>/pm_manifest_<id>.json
+Trip manifest.  Updated in-place after GPS extraction.
+.SH "EXIT STATUS"
+.TP
+.B 0
+All requested output files written successfully.
+.TP
+.B 1
+Failure: MID:TID not resolved, GPS extraction failed, output file exists
+without
+.BR \-\-force ,
+or a write error occurred.
+.SH "SEE ALSO"
+.BR pathmux (1),
+.BR pm_gpsinfo (1),
+.BR pm_ls (1),
+.BR exiftool (1)
+.SH AUTHOR
+Developed by Steve Berg, 2026.
+.\" SN: 00080
