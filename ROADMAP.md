@@ -82,8 +82,9 @@ values on D90) — stored but ignored. Speed in km/h.
 ### Phase 1 Active Work
 
 **Must ship before v1.0 (gate items):**
-- [ ] **License decision** — GPL vs MIT; apply header to all source files + CMakeLists.txt;
-  add `LICENSE` to repo root; update README. Repo is private — no urgency until public release.
+- [ ] **License decision** — GPL vs MIT; CMakeLists.txt already has GPL-2.0 as a
+  placeholder — confirm or change. Apply header to all source files; add `LICENSE`
+  to repo root; update README. Repo is private — no urgency until public release.
 - [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
 - [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
 
@@ -470,48 +471,46 @@ package for the Debian/Ubuntu equivalent (likely Debian backports or Ubuntu PPA)
 
 ### Packaging Checklist (audit before v1.0)
 
-**CMake install targets** — must be correct before packaging:
-- [ ] `pathmux` binary → `/usr/bin/`
-- [ ] `pm_gpsinfo` binary → `/usr/bin/`
-- [ ] `pm_tripdebug` binary → `/usr/bin/` (after rename from `trip_debug`)
-- [ ] `pathmux.1` man page → `/usr/share/man/man1/`
-- [ ] `LICENSE` file → `/usr/share/licenses/pathmux/`
-- [ ] No install target for `libpathmuxlib.a` — internal static lib, not a public SDK (yet)
+**CMake install targets:**
+- [x] `pathmux` binary → `/usr/bin/` — `install(TARGETS pathmux ...)` in CMakeLists.txt
+- [x] `pm_gpsinfo` binary → `/usr/bin/` — same install target
+- [ ] `pm_tripdebug` binary → `/usr/bin/` — blocked on rename from `trip_debug`
+- [x] `pathmux.1` man page → `/usr/share/man/man1/` — `install(FILES ...)` in CMakeLists.txt
+- [ ] `LICENSE` file → `/usr/share/licenses/pathmux/` — blocked on license decision
+- [x] `libpathmuxlib.a` not installed — internal static lib only; correct
 
-**FHS compliance:**
-- [ ] No hardcoded `/home/`, `/root/`, or developer-local paths in any installed file
-- [ ] Config dir uses `Platform::getConfigDir()` — resolves to `~/.config/pathmux/` at runtime; correct for packaged installs
-- [ ] External tool discovery (`ffprobe`, `exiftool`) searches `$PATH` — do not hardcode `/usr/bin/ffprobe`
-- [ ] No files written to `/usr/` at runtime (read-only after install)
+**FHS compliance — verified by architecture:**
+- [x] No hardcoded developer paths — all paths resolved at runtime
+- [x] Config dir via `Platform::getConfigDir()` — correct for packaged installs
+- [x] External tools discovered via `$PATH` — no hardcoded `/usr/bin/ffprobe` etc.
+- [x] No runtime writes to `/usr/` — only `~/.config/pathmux/` and footage dirs
 
-**Runtime dependencies (must be declared in package metadata):**
-- `ffmpeg` / `ffprobe` — RPM Fusion on RHEL; `ffmpeg` on Debian/Ubuntu
-- `perl-Image-ExifTool >= 13.51` — EPEL has 13.10 (too old); may need a
-  `Recommends:` rather than hard `Requires:` with a runtime version check and
-  clear error message. DEB: `libimage-exiftool-perl`.
+**Runtime dependencies:**
+- `ffmpeg` / `ffprobe` — RPM Fusion on RHEL; `ffmpeg` on Debian/Ubuntu (soft dep)
+- `perl-Image-ExifTool >= 13.51` — see ExifTool problem below
 - No Qt6 dependency until Phase 2 GUI
 
-**Build dependencies (for spec/control file):**
-- `g++` / `gcc-c++` with C++17 support
-- `cmake >= 3.15`
-- `make`
+**Build dependencies:**
+- `gcc-c++` with C++17, `cmake >= 3.15`, `make`
 
-**Packaging files to create:**
-- [ ] `rpm/pathmux.spec` — RPM spec file; references CMake build; handles `%post`
-  man page registration; declares runtime deps
+**CPack:**
+- [x] CPack configured in CMakeLists.txt — RPM and DEB generators, package metadata,
+  description. `include(CPack)` active.
+- [ ] `rpm/pathmux.spec` — hand-crafted spec for EPEL submission (CPack-generated
+  spec may need customization for `%post` man page registration and dep handling)
 - [ ] `debian/` directory — `control`, `rules`, `changelog`, `copyright` files
-- [ ] CPack integration in CMakeLists.txt for generating `.rpm` and `.deb` from `cpack`
-  (already partially present — needs review and completion)
 
-**ExifTool version problem:**
-EPEL ships ExifTool 13.10, which does not decode LIGOGPSINFO correctly. The RPM
-package cannot declare `Requires: perl-Image-ExifTool >= 13.51` because that version
-is not in EPEL. Options:
-1. Soft `Recommends:` with a runtime check and a clear "upgrade ExifTool" message
-2. Bundle a `exiftool` wrapper script that checks version and warns
-3. Patch ExifTool decode into the package (impractical)
-4. Wait for EPEL to catch up (Phil Harvey's fixes will eventually land)
-Decision deferred — document the limitation clearly in the README for now.
+**⚠ Known issues to fix before packaging:**
+
+1. **Hard ExifTool Requires in CMakeLists.txt** — `CPACK_RPM_PACKAGE_REQUIRES`
+   currently declares `exiftool >= 13.51`, which will break RPM install on Alma 9
+   since EPEL ships 13.10.  Must be changed to a soft `Recommends:` (or removed)
+   with a runtime version check and clear error message in the app.
+
+2. **License pre-set to GPL-2.0** — `CPACK_PACKAGE_LICENSE` and
+   `CPACK_RPM_PACKAGE_LICENSE` are already set to `GPL-2.0` / `GPLv2` in
+   CMakeLists.txt.  If the license decision is actually MIT, these need updating.
+   Resolve the license decision (v1.0 gate item) and update accordingly.
 
 **Priority:** Medium — keep packaging compatibility in mind during development;
 do a formal audit before cutting v1.0 release candidate.
