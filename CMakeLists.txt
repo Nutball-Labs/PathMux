@@ -53,6 +53,7 @@ add_library(pathmuxlib STATIC
     lib/trip_detection.cpp
     lib/config_manager.cpp
     lib/platform.cpp
+    lib/gps_export.cpp
 )
 
 # lib/ headers are PUBLIC so all targets linking pathmuxlib get them.
@@ -95,6 +96,14 @@ target_include_directories(pm_gpsinfo PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(pm_gpsinfo PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
+# pm_gpsexport — non-interactive GPS track exporter
+# ---------------------------------------------------------------------------
+add_executable(pm_gpsexport tools/pm_gpsexport.cpp)
+target_compile_features(pm_gpsexport PRIVATE cxx_std_17)
+target_include_directories(pm_gpsexport PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(pm_gpsexport PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
 # trip_debug — standalone debug tool (not installed by default)
 # Build with: cmake --build build --target trip_debug
 # ---------------------------------------------------------------------------
@@ -106,7 +115,7 @@ target_link_libraries(trip_debug PRIVATE pathmuxlib)
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS pathmux pm_gpsinfo
+install(TARGETS pathmux pm_gpsinfo pm_gpsexport
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -173,4 +182,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00071
+# SN: 00080

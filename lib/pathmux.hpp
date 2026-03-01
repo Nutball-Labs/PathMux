@@ -7,7 +7,8 @@
 
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
+#include "gps_export.hpp"
 #include "format_helpers.hpp"
 #include "version.hpp"
 
-// SN: 00071
+// SN: 00080

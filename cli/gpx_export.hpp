@@ -58,39 +58,8 @@ private:
                                          const std::string& fileOverride,
                                          bool force);
 
-    // --------------- GPS extraction ----------------------------------------
-
-    // Run ExifTool on every Front segment of the trip at tripIdx.
-    // Populates gpsTrack / startLat / startLon / endLat / endLon in root,
-    // rewrites manifest to disk.
-    // Returns false if ExifTool is not available or produced no data.
-    bool extractGps(json& root,
-                    int tripIdx,
-                    const std::string& manifestFile,
-                    const std::string& exiftoolPath,
-                    const std::string& exiftoolOptions,
-                    bool verbose);
-
-    // --------------- file writers ------------------------------------------
-
-    // Write GPX 1.1.  outPath must be fully resolved before calling.
-    // Returns outPath on success, "" on failure.
-    std::string writeGpx(const json& root,
-                         int tripIdx,
-                         const std::string& outPath);
-
-    // Write KML 2.2.  outPath must be fully resolved before calling.
-    // Returns outPath on success, "" on failure.
-    std::string writeKml(const json& root,
-                         int tripIdx,
-                         const std::string& outPath);
-
-    // Write GeoJSON FeatureCollection (RFC 7946).  outPath must be fully resolved.
-    // Coordinates are [longitude, latitude] per spec.
-    // Returns outPath on success, "" on failure.
-    std::string writeGeoJson(const json& root,
-                             int tripIdx,
-                             const std::string& outPath);
+    // GPS extraction and file writers are free functions in lib/gps_export.hpp.
+    // GpxExport calls them directly; no wrapper methods needed here.
 
     // --------------- shared helpers ----------------------------------------
 
@@ -111,4 +80,4 @@ private:
 };
 
 #endif
-// SN: 00075
+// SN: 00080
