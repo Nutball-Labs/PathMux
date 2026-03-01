@@ -96,6 +96,14 @@ target_include_directories(pm_gpsinfo PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(pm_gpsinfo PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
+# pm_ls — non-interactive trip lister
+# ---------------------------------------------------------------------------
+add_executable(pm_ls tools/pm_ls.cpp)
+target_compile_features(pm_ls PRIVATE cxx_std_17)
+target_include_directories(pm_ls PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(pm_ls PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
 # pm_gpsexport — non-interactive GPS track exporter
 # ---------------------------------------------------------------------------
 add_executable(pm_gpsexport tools/pm_gpsexport.cpp)
@@ -115,7 +123,7 @@ target_link_libraries(trip_debug PRIVATE pathmuxlib)
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS pathmux pm_gpsinfo pm_gpsexport
+install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
