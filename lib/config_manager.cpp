@@ -337,15 +337,62 @@ std::string ConfigManager::sanitizePath(const std::string& path) {
 // Manifest file path
 // ---------------------------------------------------------------------------
 
+std::string ConfigManager::ensureManifestId(const std::string& sourcePath) {
+    auto index = loadManifestIndex();
+    for (const auto& e : index)
+        if (e.path == sourcePath) return e.id;
+    // New path — assign an ID and save a minimal entry
+    std::set<std::string> existing;
+    for (const auto& e : index) existing.insert(e.id);
+    std::string id = generateId(existing, true);
+    ManifestEntry newEntry;
+    newEntry.id   = id;
+    newEntry.path = sourcePath;
+    index.push_back(newEntry);
+    saveManifestIndex(index);
+    return id;
+}
+
+std::string ConfigManager::lookupManifestFilePath(const std::string& sourcePath) {
+    std::string id = getManifestIdForPath(sourcePath);
+    if (id.empty()) return "";
+
+    std::string filename  = "pm_manifest_" + id + ".json";
+    std::string colocated = sourcePath + "/" + filename;
+    if (fs::exists(colocated)) return colocated;
+
+    std::string inConfig = configDir + filename;
+    if (fs::exists(inConfig)) return inConfig;
+
+    // Migration: look for old-style sanitized-path file and rename it
+    std::string oldName = "pm_manifest_" + sanitizePath(sourcePath) + ".json";
+    std::vector<std::string> candidates = {sourcePath + "/" + oldName,
+                                           configDir + oldName};
+    for (const std::string& loc : candidates) {
+        if (fs::exists(loc)) {
+            std::string newLoc = colocated;
+            std::error_code ec;
+            fs::rename(loc, newLoc, ec);
+            if (ec) { newLoc = inConfig; fs::rename(loc, newLoc, ec); }
+            if (!ec) {
+                auto idx = loadManifestIndex();
+                for (auto& e : idx)
+                    if (e.path == sourcePath) { e.manifestFile = newLoc; break; }
+                saveManifestIndex(idx);
+                return newLoc;
+            }
+        }
+    }
+    return "";
+}
+
 std::string ConfigManager::getManifestFilePath(const std::string& sourcePath) {
-    std::string stem = sanitizePath(sourcePath);
-    std::string filename = "pm_manifest_" + stem + ".json";
+    std::string id       = ensureManifestId(sourcePath);
+    std::string filename = "pm_manifest_" + id + ".json";
     std::string preferred = sourcePath + "/" + filename;
 
-    // Check if source path is writable
     std::error_code ec;
     if (fs::exists(sourcePath, ec)) {
-        // Try creating a temp file to test writability
         std::string testFile = sourcePath + "/.pm_write_test";
         std::ofstream test(testFile);
         if (test.is_open()) {
@@ -354,7 +401,6 @@ std::string ConfigManager::getManifestFilePath(const std::string& sourcePath) {
             return preferred;
         }
     }
-    // Fall back to config dir
     std::cerr << "  Warning: " << sourcePath << " is not writable.\n"
               << "  Manifest will be stored in " << configDir << "\n";
     return configDir + filename;
@@ -539,26 +585,18 @@ void ConfigManager::updateManifestIndex(const std::string& path,
                                          const std::vector<Trip>& trips) {
     auto index = loadManifestIndex();
 
-    // Collect existing manifest IDs for uniqueness check
-    std::set<std::string> existingIds;
-    for (const auto& e : index) existingIds.insert(e.id);
-
-    // Find or create entry for this path
+    // Entry is guaranteed to exist — ensureManifestId() was called via
+    // getManifestFilePath() earlier in saveTripCache().
     ManifestEntry* entry = nullptr;
     for (auto& e : index) {
         if (e.path == path) { entry = &e; break; }
     }
+    if (!entry) {
+        std::cerr << "Warning: updateManifestIndex: no index entry for " << path << "\n";
+        return;
+    }
 
     std::string manifestFile = getManifestFilePath(path);
-
-    if (!entry) {
-        ManifestEntry newEntry;
-        newEntry.id           = generateId(existingIds, true); // alpha-first
-        newEntry.path         = path;
-        newEntry.manifestFile = manifestFile;
-        index.push_back(newEntry);
-        entry = &index.back();
-    }
 
     // Update dynamic fields
     entry->manifestFile = manifestFile;
@@ -661,7 +699,8 @@ bool ConfigManager::validateManifestIndex() {
 
 bool ConfigManager::isCached(const std::string& path) {
     if (path.empty()) return false;
-    return fs::exists(getManifestFilePath(path));
+    std::string f = lookupManifestFilePath(path);
+    return !f.empty();
 }
 
 // ---------------------------------------------------------------------------
@@ -891,7 +930,8 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
     if (path.find("pm_manifest_") != std::string::npos && fs::exists(path)) {
         fullFile = path;
     } else {
-        fullFile = getManifestFilePath(path);
+        fullFile = lookupManifestFilePath(path);
+        if (fullFile.empty()) return trips;
     }
 
     std::ifstream ifs(fullFile);
@@ -1063,4 +1103,4 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
 
 } // namespace Pathmux
 
-// SN: 00076
+// SN: 00078

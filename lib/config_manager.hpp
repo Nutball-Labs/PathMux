@@ -281,6 +281,14 @@ private:
     //   /z/srcdash/ex9  →  z_srcdash_ex9
     std::string  sanitizePath(const std::string& path);
 
+    // Ensure sourcePath has a manifest ID; create minimal index entry if new.
+    // Returns the 2-char ID. Write operations only — has index side effects.
+    std::string  ensureManifestId(const std::string& sourcePath);
+
+    // Read-only manifest file path lookup (no index side effects).
+    // Returns "" if not in index. Handles old-style filename migration.
+    std::string  lookupManifestFilePath(const std::string& sourcePath);
+
     // Generate a unique 2-char base36 ID not already in the given set.
     // Manifest IDs prefer alpha first char; trip IDs prefer digit first char.
     std::string  generateId(const std::set<std::string>& existing,
@@ -300,4 +308,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00071
+// SN: 00078
