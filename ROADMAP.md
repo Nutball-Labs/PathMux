@@ -148,6 +148,14 @@ Deferred (low priority until relevant):
 - [ ] Batch job system
 - [ ] Rename `trip_debug` → `pm_tripdebug` for naming consistency with `pm_gpsinfo`
   (binary name, CMakeLists.txt target, source file, man page reference)
+- [x] **Stale manifest archive** (v0.9.8) — pruned index entries archived to
+  `~/.config/pathmux/manifests_stale.json`. `--show-stale` displays it;
+  `--clear-stale [--force]` wipes it.
+- [x] **`--clear-cache` / `--clear-stale` UX rework** (v0.9.8) — options rationalized;
+  `--force` now order-independent after `--clear-cache`; `std::cin >>` replaced
+  with `std::getline` in clearCache().
+- [x] **Usage output: `Manifest management:` section** (v0.9.8) — manifest-related options
+  split into their own labeled section; `--validate` moved there from Settings.
 
 ---
 

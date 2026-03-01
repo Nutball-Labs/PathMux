@@ -26,6 +26,7 @@ ConfigManager::ConfigManager() {
     settingsFile      = configDir + "pathmux.json";
     locationsFile     = configDir + "locations.json";
     manifestIndexFile = configDir + "manifests.json";
+    staleArchiveFile  = configDir + "manifests_stale.json";
     loadSettings();
 }
 
@@ -623,6 +624,18 @@ void ConfigManager::updateManifestIndex(const std::string& path,
 // Startup manifest index validation
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// nowIso8601 — current local time as ISO 8601 string (YYYY-MM-DDTHH:MM:SS).
+// ---------------------------------------------------------------------------
+static std::string nowIso8601() {
+    time_t t = std::time(nullptr);
+    struct tm tm_buf;
+    localtime_r(&t, &tm_buf);
+    char buf[25];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm_buf);
+    return std::string(buf);
+}
+
 bool ConfigManager::validateManifestIndexReport() {
     auto index = loadManifestIndex();
     if (index.empty()) {
@@ -668,12 +681,37 @@ bool ConfigManager::validateManifestIndex() {
                 index[i].manifestFile = f; // update to resolved (possibly migrated) path
         }
         if (!missing.empty()) {
+            // Append pruned entries to the stale archive before removing them.
+            json stale = json::array();
+            {
+                std::ifstream sfs(staleArchiveFile);
+                if (sfs.is_open()) {
+                    try { sfs >> stale; } catch (...) { stale = json::array(); }
+                }
+            }
+            std::string pruneTs = nowIso8601();
+            for (int i : missing) {
+                const auto& e = index[i];
+                json entry;
+                entry["id"]           = e.id;
+                entry["path"]         = e.path;
+                entry["manifestFile"] = e.manifestFile;
+                entry["lastScan"]     = e.lastScan;
+                entry["tripCount"]    = e.tripCount;
+                entry["note"]         = e.note;
+                entry["pruned"]       = pruneTs;
+                stale.push_back(entry);
+            }
+            {
+                std::ofstream sofs(staleArchiveFile);
+                if (sofs.is_open()) sofs << stale.dump(2) << "\n";
+            }
             for (int i = (int)missing.size() - 1; i >= 0; --i)
                 index.erase(index.begin() + missing[i]);
             saveManifestIndex(index);
             std::cout << "  Note: " << missing.size()
                       << " stale index entr" << (missing.size() == 1 ? "y" : "ies")
-                      << " removed (manifest file not found).\n";
+                      << " archived (use --show-stale to review).\n";
         }
     }
     if (index.empty()) return true;
@@ -1062,7 +1100,7 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
         if (!force) {
             std::cout << "Wipe ALL cached manifests? [y/N]: ";
             std::string answer;
-            std::cin >> answer;
+            std::getline(std::cin >> std::ws, answer);
             if (answer != "y" && answer != "Y") { std::cout << "Aborted.\n"; return; }
         }
         for (const auto& e : index) fs::remove(e.manifestFile, ec);
@@ -1082,7 +1120,7 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
                 std::cout << "  [" << e.id << "]  " << e.path << "\n";
             std::cout << "  [Q] Done\n\nManifest ID: ";
             std::string choice;
-            std::cin >> choice;
+            std::getline(std::cin >> std::ws, choice);
             if (choice == "q" || choice == "Q") return;
             std::string choiceUp = choice;
             for (char& c : choiceUp) c = std::toupper((unsigned char)c);
@@ -1118,6 +1156,78 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// showStale — display contents of the stale manifest archive.
+// ---------------------------------------------------------------------------
+
+void ConfigManager::showStale() {
+    std::ifstream ifs(staleArchiveFile);
+    if (!ifs.is_open()) {
+        std::cout << "  No stale entries on record.\n";
+        return;
+    }
+    json j;
+    try { ifs >> j; } catch (...) { j = json::array(); }
+    if (!j.is_array() || j.empty()) {
+        std::cout << "  No stale entries on record.\n";
+        return;
+    }
+
+    std::cout << "\n  Stale Manifest Archive  ("
+              << j.size() << " " << (j.size() == 1 ? "entry" : "entries") << ")\n\n"
+              << "  " << std::left
+              << std::setw(6)  << "ID"
+              << std::setw(22) << "Pruned"
+              << std::setw(5)  << "Trips"
+              << "Path\n"
+              << "  " << std::string(72, '-') << "\n";
+    for (const auto& e : j) {
+        std::string id     = e.value("id",        "??");
+        std::string path   = e.value("path",      "");
+        std::string pruned = e.value("pruned",    "");
+        int         trips  = e.value("tripCount", 0);
+        std::cout << "  [" << std::left << std::setw(3) << id << "]  "
+                  << std::setw(22) << pruned
+                  << std::setw(5)  << trips
+                  << path << "\n";
+    }
+    std::cout << "\n  Use --clear-stale to wipe the archive.\n\n";
+}
+
+// ---------------------------------------------------------------------------
+// clearStale — wipe the stale manifest archive, with optional confirmation.
+// ---------------------------------------------------------------------------
+
+void ConfigManager::clearStale(bool force) {
+    std::ifstream ifs(staleArchiveFile);
+    if (!ifs.is_open()) {
+        std::cout << "  No stale archive to clear.\n";
+        return;
+    }
+    json j;
+    try { ifs >> j; } catch (...) { j = json::array(); }
+    ifs.close();
+    if (!j.is_array() || j.empty()) {
+        std::cout << "  Stale archive is already empty.\n";
+        return;
+    }
+
+    std::cout << "  " << j.size() << " stale "
+              << (j.size() == 1 ? "entry" : "entries") << " on record.\n\n";
+    if (!force) {
+        std::cout << "  Clear stale archive? [y/N]: ";
+        std::string answer;
+        std::getline(std::cin >> std::ws, answer);
+        if (answer != "y" && answer != "Y") {
+            std::cout << "  Aborted.\n";
+            return;
+        }
+    }
+    std::error_code ec;
+    fs::remove(staleArchiveFile, ec);
+    std::cout << "  Stale archive cleared.\n";
 }
 
 } // namespace Pathmux

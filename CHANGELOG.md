@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## [0.9.8 / SN: 00079] - 2026-03-01
+### Added
+- **`manifests_stale.json` archive**: Stale index entries (manifest file missing at
+  startup validation) are now appended to `~/.config/pathmux/manifests_stale.json`
+  before being pruned from the live index. Preserves `id`, `path`, `manifestFile`,
+  `lastScan`, `tripCount`, `note`, and a `pruned` timestamp for troubleshooting.
+- **`--show-stale`**: Displays contents of the stale archive in a formatted table
+  (ID, pruned date, trip count, path).
+- **`--clear-stale [--force]`**: Wipes the stale archive with confirmation prompt;
+  `--force` skips the prompt for scripted use.
+
+### Changed
+- **Usage output**: New `Manifest management:` section groups `--clear-cache`,
+  `--show-stale`, `--clear-stale`, and `--validate` together, separate from Settings.
+  `--show-config` stays in Settings (it shows settings, not manifest state).
+- **`--force` is now order-independent** after `--clear-cache`: previously required
+  to immediately follow `ALL`; now scanned from remaining argv so
+  `--clear-cache ALL --force` and any positional variant both work.
+- **`validateManifestIndex()` stale message** updated: now says "archived" instead
+  of "removed" and cites `--show-stale`.
+
+### Fixed
+- **`clearCache()` used `std::cin >>`**: Both the "Wipe ALL?" prompt and the
+  interactive ID loop now use `std::getline(std::cin >> std::ws, ...)`, consistent
+  with `validateManifestIndex()` and the project input-handling rule (no `cin >>`
+  mixing with `getline`).
+
+---
+
 ## [0.9.5a / HWM: 00072] - 2026-03-01
 ### Fixed
 - **`selectTrip()` unused parameter**: Silenced `-Wunused-parameter` warning by

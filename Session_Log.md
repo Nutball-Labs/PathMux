@@ -7,6 +7,70 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ## 2026-03-01
 
+### Session 3 (Afternoon)
+**Focus:** `--clear-cache` / `--clear-stale` UX rework; stale manifest archive
+
+**Work Done:**
+- **v0.9.8 (SN 00079):** Full manifest management UX pass.
+  - `manifests_stale.json` archive: stale entries pruned from live index are now
+    appended to `~/.config/pathmux/manifests_stale.json` (write-only at runtime).
+    Preserves id, path, manifestFile, lastScan, tripCount, note, and a `pruned` timestamp.
+  - `--show-stale`: displays stale archive in a formatted table.
+  - `--clear-stale [--force]`: wipes stale archive with confirmation; `--force` skips prompt.
+  - New `Manifest management:` section in usage output; `--validate` moved there.
+  - `--force` after `--clear-cache` is now order-independent (scanned from remaining argv).
+  - Fixed two `std::cin >>` calls in `clearCache()` → `std::getline(std::cin >> std::ws, ...)`.
+  - `validateManifestIndex()` stale message updated to say "archived" and cite `--show-stale`.
+
+**Files changed:** `lib/config_manager.cpp`, `lib/config_manager.hpp`, `cli/main.cpp`
+
+**Pending (carry forward):**
+- Man page updates (-G interactive flow, `--validate`, `-t` flags, new stale flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- ffprobe integration for accurate trip duration (high priority)
+- `trip_debug` → `pm_tripdebug` rename (low priority)
+- License decision: GPL vs MIT — required before repo goes public
+
+---
+
+### Session 2 (Morning)
+**Focus:** ID-based manifest filenames; scan-prompt; validation UX fix
+
+**Work Done:**
+- **v0.9.6c (SN 00077):** Added scan-prompt when `-s/--scan` targets a path that
+  already has a manifest. Options: overwrite, delete-and-rescan, or quit.
+- **v0.9.7a (SN 00078):** Switched manifest filenames from `pm_manifest_<sanitized_path>.json`
+  to `pm_manifest_<id>.json`. The 2-char base36 ID is now immediately visible in a
+  directory listing and consistent with MID:TID addressing.
+  - `ensureManifestId()` — write-side: ensures an ID exists before constructing filename
+  - `lookupManifestFilePath()` — read-only: resolves path from index; transparently
+    migrates old sanitized-path filenames via `fs::rename()` on first access
+  - `getManifestFilePath()`, `isCached()`, `loadTripCache()`, `updateManifestIndex()`
+    all updated to use the new helpers
+- **v0.9.7b (SN 00079):** Fixed `validateManifestIndex()` blocking an explicit
+  `-s/--scan` with interactive prompts for every stale entry in the entire index.
+  - Missing manifest entries now silently auto-pruned (one-line note, no prompt)
+  - Interactive prompt reserved for md5-mismatch case only (file exists but externally modified)
+  - `[R]` re-scan option removed (was a no-op)
+  - Both validate functions now use `lookupManifestFilePath()` for accurate file resolution
+
+**Decisions Made:**
+- Stale manifest entries: move to `~/.config/pathmux/manifests_stale.json` (separate file,
+  never read during normal operations) rather than silently discarding. Logged in ROADMAP.
+- `--clear-cache` / `--clear-stale` UX rework scheduled as next session's first task
+  before resuming the main bug/ToDo list.
+
+**Pending (carry forward):**
+- `--clear-cache` / `--clear-stale` UX rework (next session, first item)
+- Implement `manifests_stale.json` archive for pruned entries
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- ffprobe integration for accurate trip duration (high priority)
+- `trip_debug` → `pm_tripdebug` rename (low priority)
+- License decision: GPL vs MIT — required before repo goes public
+
+---
+
 ### Session 1
 **Focus:** Bug list triage — items 1–3; v0.9.5a release
 

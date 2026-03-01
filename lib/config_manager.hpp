@@ -257,6 +257,12 @@ public:
     bool validateManifestIndex();
     bool validateManifestIndexReport();  // non-interactive: print status, return false if any fail
 
+    // --- Stale manifest archive (manifests_stale.json) ---
+    // Entries pruned from the live index are appended here for troubleshooting.
+    // Never read during normal operations; write-only from the runtime perspective.
+    void               showStale();
+    void               clearStale(bool force = false);
+
     // --- Last-used path ---
     void               setLastPath(const std::string& path);
     std::string        getLastPath();
@@ -274,6 +280,7 @@ private:
     std::string  settingsFile;      // ~/.config/pathmux/pathmux.json
     std::string  locationsFile;     // ~/.config/pathmux/locations.json
     std::string  manifestIndexFile; // ~/.config/pathmux/manifests.json
+    std::string  staleArchiveFile;  // ~/.config/pathmux/manifests_stale.json
     AppSettings  settings;
     ConfigState  cfgState = ConfigState::FIRST_RUN;
 
@@ -308,4 +315,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00078
+// SN: 00079

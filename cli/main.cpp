@@ -19,8 +19,8 @@ void printUsage() {
     std::cout << APP_NAME << " v" << APP_VERSION << "\n"
               << "Usage: pathmux [options]\n\n"
               << "Scan & display:\n"
-              << "  -s, --scan <path>       Scan a directory for trips (non-interactive)\n"
-              << "  -T, --dump              Show all manifests and trips (no file listing)\n"
+              << "  -s, --scan <path>       Scan a directory for trips\n"
+              << "  -T, --dump              Show all manifests and trips\n"
               << "      --fulldump          Show all manifests, trips, and segment files\n"
               << "      --jsondump          Dump everything as JSON (scriptable)\n"
               << "  -I, --interactive       Interactive browser\n\n"
@@ -32,15 +32,19 @@ void printUsage() {
               << "      --kmlprefs          Interactive KML visual preferences editor\n"
               << "      --locations         Manage known locations (Home, Work, etc.)\n"
               << "      --set <key=val>     Set a preference non-interactively\n"
-              << "                          Keys: gap=<seconds>\n"
-              << "                          Example: --set gap=1800\n"
-              << "      --clear-cache       Interactive: pick one manifest to delete\n"
-              << "      --clear-cache ALL   Show list, confirm, wipe all\n"
-              << "      --clear-cache ALL --force  Wipe all, no prompt (scriptable)\n"
-              << "      --show-config       Show raw configuration key/value pairs\n"
+              << "                          Keys: gap=<seconds>  Example: --set gap=1800\n"
+              << "      --show-config       Show raw configuration key/value pairs\n\n"
+              << "Manifest management:\n"
+              << "      --clear-cache           Interactive: pick one manifest to delete\n"
+              << "      --clear-cache ALL       List all, confirm, then wipe all manifests\n"
+              << "      --clear-cache ALL --force  Wipe all without prompting (scriptable)\n"
+              << "      --show-stale            Show archived stale manifest entries\n"
+              << "      --clear-stale           Clear the stale archive (with confirmation)\n"
+              << "      --clear-stale --force   Clear the stale archive without prompting\n"
+              << "      --validate              Report manifest health; exit 0=ok 1=problems\n\n"
+              << "General:\n"
               << "  -v, --version           Show version information\n"
-              << "  -h, --help              Show this help message\n"
-              << "  --validate              Report manifest health, exit 0=ok 1=problems\n\n";
+              << "  -h, --help              Show this help message\n\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -116,10 +120,20 @@ int main(int argc, char* argv[]) {
                               && argv[i + 1][0] != '-') {
                 ccArg = argv[++i];
             }
-            if (i + 1 < argc && std::string(argv[i + 1]) == "--force") {
-                ccForce = true; ++i;
+            // --force may appear anywhere after --clear-cache
+            for (int j = i + 1; j < argc; ++j) {
+                if (std::string(argv[j]) == "--force") { ccForce = true; break; }
             }
             config.clearCache(ccArg, ccForce);
+            return 0;
+        }
+        if (arg == "--show-stale") { config.showStale();  return 0; }
+        if (arg == "--clear-stale") {
+            bool csForce = false;
+            for (int j = i + 1; j < argc; ++j) {
+                if (std::string(argv[j]) == "--force") { csForce = true; break; }
+            }
+            config.clearStale(csForce);
             return 0;
         }
         if (arg == "--show-config") { config.showSettings(); return 0; }
@@ -285,4 +299,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00077
+// SN: 00079

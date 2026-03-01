@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/BiloxiGeek/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.7a (SN 00078)
+**Current version:** 0.9.8 (SN 00079)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -231,6 +231,9 @@ bump SNs, bump version, commit, and push.
 - ~~`selectTrip()` has unused `mode` parameter~~ — fixed v0.9.5a
 - ~~Duplicate `// SN:` in pm_gpsinfo.cpp header~~ — fixed v0.9.5a
 - ~~Interactive manifest browser: bare Enter at "Output directory" prompt~~ — verified clean v0.9.5a
+- ~~`--clear-cache` / `--clear-stale` UX rework~~ — done v0.9.8
+- ~~`manifests_stale.json` archive for pruned entries~~ — done v0.9.8
+- ~~Usage output `Manifest management:` section~~ — done v0.9.8
 
 ---
 
