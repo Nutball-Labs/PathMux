@@ -21,7 +21,7 @@ PathMux is a lightweight C++ tool designed to organize and manage multi-camera d
 - g++ with C++17 support
 - CMake 3.16+
 - ffmpeg/ffprobe (RPM Fusion or static build)
-- ExifTool **13.51+** (EPEL 13.10 does **not** work for GPS extraction)
+- ExifTool (minimum version is camera-dependent; see GPS Extraction note below)
 
 ## Build
 
@@ -51,7 +51,9 @@ make
                     # Then [X] export GPX or [K] export KML as needed
 ```
 
-> **Note**: GPS extraction requires ExifTool 13.51+. The EPEL package (13.10) does not correctly decode the Pruveeo D90 LIGOGPSINFO binary stream. Verify with `exiftool -ver`.
+> **Note**: The minimum ExifTool version required for GPS extraction depends on your camera hardware. For the Pruveeo D90 specifically, version 13.51+ is required — the EPEL package (13.10) does not correctly decode the D90's LIGOGPSINFO binary stream. Other cameras may work with older versions. If GPS extraction fails, check your ExifTool version with `exiftool -ver` and consider updating.
+>
+> If updating ExifTool does not resolve extraction for your camera, run `pm_probe --card <path>` to generate a structured camera fingerprint report, then open an issue on this repo with the report attached. In some cases the ExifTool maintainer may need sample footage segments to analyze the embedded GPS stream format — the issue template will guide you through what to provide and how to submit it.
 
 ## Manifest Location
 
