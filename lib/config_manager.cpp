@@ -790,6 +790,13 @@ void ConfigManager::saveTripCache(const std::string& path,
         jTrip["start_epoch"]= trip.startEpoch;
         jTrip["duration"]   = trip.duration;
         jTrip["segdur"]     = trip.segdur;
+        {
+            json dur = json::object();
+            dur["segDetectedDur"] = trip.segDetectedDuration;
+            if (trip.durationFFProbed >= 0)
+                dur["durationFFProbed"] = trip.durationFFProbed;
+            jTrip["durations"] = dur;
+        }
         jTrip["note"]       = trip.note;
 
         if (trip.firstLockLat != 0.0 || trip.firstLockLon != 0.0) {
@@ -907,6 +914,11 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         trip.startEpoch= jTrip.value("start_epoch",  (time_t)0);
         trip.duration  = jTrip.value("duration",     "");
         trip.segdur    = jTrip.value("segdur",        0);
+        if (jTrip.contains("durations") && jTrip["durations"].is_object()) {
+            const auto& dur = jTrip["durations"];
+            trip.segDetectedDuration = dur.value("segDetectedDur",    0);
+            trip.durationFFProbed    = dur.value("durationFFProbed",  -1);
+        }
         trip.note      = jTrip.value("note",         "");
 
         trip.firstLockLat       = jTrip.value("firstLockLat",       0.0);
@@ -1049,4 +1061,4 @@ void ConfigManager::clearCache(const std::string& path, bool force) {
 
 } // namespace Pathmux
 
-// SN: 00071
+// SN: 00074

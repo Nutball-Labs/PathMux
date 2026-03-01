@@ -294,8 +294,10 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
                 std::cout << "  Note: " << selected->note << "\n";
 
             VideoOptions opts = videoBuilder.configureOptions(config, *selected);
+            opts.sourcePath = entry.path;
+            opts.manifestId = config.getManifestIdForPath(entry.path);
 
-            // Persist note edits immediately
+            // Persist note edits and any durationFFProbed computed during options menu
             config.saveTripCache(entry.path, trips);
 
             if (opts.navAction == NavAction::QUIT)           return false;
@@ -624,4 +626,4 @@ void FindTrips::jsonDump(ConfigManager& config) {
     std::cout << root.dump(2) << "\n";
 }
 
-// SN: 00071
+// SN: 00074

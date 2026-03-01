@@ -235,23 +235,28 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     };
 
     Trip currentTrip;
-    // Lambda: close a trip — ffprobe first and last segments for accurate duration.
+    // Lambda: close a trip — compute timestamp-arithmetic duration and probe
+    // the last segment for an ffprobe-refined display string.
     auto closeTrip = [&](Trip& trip) {
-        const std::string& lastFront  = trip.segments.back().front;
-
-        // Duration = (lastSeg start epoch - firstSeg start epoch) + lastSeg duration
-        // firstSeg epoch comes from its filename timestamp (already parsed at scan time)
-        // lastSeg epoch comes from its filename timestamp
-        // lastDur comes from ffprobe on the last segment only
+        const int segCount = (int)trip.segments.size();
         time_t firstEpoch = stringToTimestamp(trip.segments.front().timestamp);
         time_t lastEpoch  = stringToTimestamp(trip.segments.back().timestamp);
-        int    lastDur    = probeSegmentDuration(lastFront, ffprobePath);
 
-        // Fallback if ffprobe fails
+        // segDetectedDuration: pure timestamp arithmetic.
+        // Nominal segment length = spacing between segments[0] and segments[1].
+        int nominalSegdur = (segCount > 1)
+            ? static_cast<int>(stringToTimestamp(trip.segments[1].timestamp) - firstEpoch)
+            : 0;
+        trip.segDetectedDuration = static_cast<int>(lastEpoch - firstEpoch) + nominalSegdur;
+
+        // Probe last segment for display duration string.
+        int lastDur = probeSegmentDuration(trip.segments.back().front, ffprobePath);
+
         if (lastDur == 0) {
-            int diff = static_cast<int>(lastEpoch - firstEpoch) + 180;
-            trip.duration = std::to_string(diff / 60) + "m "
-                          + std::to_string(diff % 60) + "s";
+            // ffprobe failed — fall back to timestamp estimate + one segment margin
+            int estimate = static_cast<int>(lastEpoch - firstEpoch) + 180;
+            trip.duration = std::to_string(estimate / 60) + "m "
+                          + std::to_string(estimate % 60) + "s";
             trip.segdur = 0;
             return;
         }
@@ -260,14 +265,16 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         trip.duration = std::to_string(total / 60) + "m "
                       + std::to_string(total % 60) + "s";
 
-        // segdur: only meaningful if trip has >1 segment, derive from spacing
-        // between first two segment timestamps (avoids probing a second file)
-        if ((int)trip.segments.size() > 1) {
-            time_t seg1Epoch = stringToTimestamp(trip.segments[1].timestamp);
-            trip.segdur = static_cast<int>(seg1Epoch - firstEpoch);
-        } else {
+        // segdur from timestamp spacing.  Skip segments[0]/[1] boundary when
+        // possible to avoid cold-start truncation bias on the first segment.
+        if (segCount >= 3)
+            trip.segdur = static_cast<int>(stringToTimestamp(trip.segments[2].timestamp)
+                                         - stringToTimestamp(trip.segments[1].timestamp));
+        else if (segCount >= 2)
+            trip.segdur = static_cast<int>(stringToTimestamp(trip.segments[1].timestamp)
+                                         - firstEpoch);
+        else
             trip.segdur = lastDur;
-        }
     };
 
     bool inTrip = false;
@@ -328,4 +335,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
 } // namespace Pathmux
 
-// SN: 00071
+// SN: 00074

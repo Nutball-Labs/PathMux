@@ -77,6 +77,11 @@ struct VideoOptions {
 
     // Navigation action — set when user exits Build Options without building.
     NavAction navAction = NavAction::NONE;
+
+    // Provenance — set by the caller before invoking buildTrip() or run().
+    // Used to write pm_buildlog.json in the footage source path.
+    std::string sourcePath;   // footage source path (e.g. /z/srcdash/ex1)
+    std::string manifestId;   // two-char base36 manifest ID (e.g. "CQ")
 };
 
 // ---------------------------------------------------------------------------
@@ -98,7 +103,7 @@ public:
 
     // Called from find_trips interactive browser.
     VideoOptions configureOptions(ConfigManager& config, Trip& trip);
-    void buildTrip(const Trip& trip, const VideoOptions& opts);
+    void buildTrip(Trip& trip, const VideoOptions& opts);
 
 private:
     bool buildCameraFile(const Trip& trip,
@@ -177,4 +182,4 @@ private:
 };
 
 #endif
-// SN: 00071
+// SN: 00074

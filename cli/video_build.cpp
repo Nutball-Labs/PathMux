@@ -3,6 +3,7 @@
 #include <sys/wait.h>
 #include "ui_helpers.hpp"
 #include "version.hpp"
+#include "json.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -15,6 +16,150 @@
 
 namespace fs = std::filesystem;
 using namespace Pathmux;
+using json = nlohmann::json;
+
+// ---------------------------------------------------------------------------
+// appendBuildLog — append one entry to pm_buildlog.json in sourcePath.
+// Records the build configuration, output location, trip duration, and the
+// full segment manifest for provenance.  New entries are appended; the file
+// grows over time and is never truncated by PathMux.
+// ---------------------------------------------------------------------------
+static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outputDuration) {
+    if (opts.sourcePath.empty()) return;
+
+    std::string logFile = opts.sourcePath + "/pm_buildlog.json";
+
+    // Use ordered_json so keys appear in insertion order, not alphabetically.
+    using ojson = nlohmann::ordered_json;
+
+    // Load existing log (parse as regular json, will be re-serialised ordered below)
+    ojson log = ojson::array();
+    {
+        std::ifstream ifs(logFile);
+        if (ifs.is_open()) {
+            try { ifs >> log; } catch (...) { log = ojson::array(); }
+        }
+    }
+
+    // Build timestamp: YYYYMMDD_HHMMSS
+    auto now = std::time(nullptr);
+    char tsBuf[20];
+    std::strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", std::localtime(&now));
+
+    // output_filename_stem: date+time prefix, same stripping as makeOutputName
+    std::string date = trip.date;
+    std::string time = trip.startTime;
+    date.erase(std::remove(date.begin(), date.end(), '-'), date.end());
+    time.erase(std::remove(time.begin(), time.end(), ':'), time.end());
+    if (time.size() > 6) time = time.substr(0, 6);
+
+    // Basename helper
+    auto bn = [](const std::string& p) -> std::string {
+        auto pos = p.rfind('/');
+        return (pos != std::string::npos) ? p.substr(pos + 1) : p;
+    };
+
+    // Build entry — keys in logical reading order:
+    //   1. Build identity    2. Output location + duration
+    //   3. Trip note         4. Per-camera file flags + container format
+    //   5. Collage options   6. Audio extract options
+    //   7. Source segments
+    ojson entry;
+
+    // --- Build identity ---
+    entry["timestamp"]            = std::string(tsBuf);
+    entry["manifest_id"]          = opts.manifestId;
+    entry["trip_id"]              = trip.id;
+
+    // --- Output ---
+    entry["output_path"]          = opts.outputDir.empty() ? "." : opts.outputDir;
+    entry["output_filename_stem"] = date + "_" + time;
+    entry["output_duration"]      = outputDuration;
+
+    // --- Trip note ---
+    entry["note"]                 = trip.note;
+
+    // --- Per-camera files ---
+    entry["front"]                = opts.buildFront;
+    entry["rear"]                 = opts.buildRear;
+    entry["left"]                 = opts.buildLeft;
+    entry["right"]                = opts.buildRight;
+    entry["camera_format"]        = opts.containerFormat.empty()
+                                    ? "mp4" : opts.containerFormat;
+
+    // --- Collage ---
+    entry["collage_4k"]           = opts.buildCollage4K;
+    entry["collage_1080p"]        = opts.buildCollage1080;
+    entry["collage_audio"]        = opts.buildCollage4K
+                                    ? ojson(opts.audioSource) : ojson(nullptr);
+
+    // --- Audio extract ---
+    entry["audio"]                = opts.buildAudio;
+    entry["audio_format"]         = opts.audioExtractFormat.empty()
+                                    ? "m4a" : opts.audioExtractFormat;
+
+    // --- Segments: split into "video" and "audio" sub-objects so it is
+    // unambiguous which camera supplied which type of output.
+    // "video" = cameras consumed for per-camera files and/or collage.
+    // "audio" = the single camera from which the audio track was extracted;
+    //           only present when an audio extract build was run.
+    bool anyCollage  = opts.buildCollage4K || opts.buildCollage1080;
+    bool videoFront  = opts.buildFront  || anyCollage;
+    bool videoRear   = opts.buildRear   || anyCollage;
+    bool videoLeft   = opts.buildLeft   || anyCollage;
+    bool videoRight  = opts.buildRight  || anyCollage;
+
+    ojson segs = ojson::object();
+    segs["source_path"] = opts.sourcePath;
+
+    // Video sub-object — omit entirely if no video outputs were built
+    if (videoFront || videoRear || videoLeft || videoRight) {
+        ojson frontSegs = ojson::array(), rearSegs  = ojson::array();
+        ojson leftSegs  = ojson::array(), rightSegs = ojson::array();
+        for (const auto& seg : trip.segments) {
+            if (videoFront && seg.front != "-" && !seg.front.empty()) frontSegs.push_back(bn(seg.front));
+            if (videoRear  && seg.rear  != "-" && !seg.rear.empty())  rearSegs.push_back(bn(seg.rear));
+            if (videoLeft  && seg.left  != "-" && !seg.left.empty())  leftSegs.push_back(bn(seg.left));
+            if (videoRight && seg.right != "-" && !seg.right.empty()) rightSegs.push_back(bn(seg.right));
+        }
+        ojson vid = ojson::object();
+        if (!frontSegs.empty()) vid["front"] = frontSegs;
+        if (!rearSegs.empty())  vid["rear"]  = rearSegs;
+        if (!leftSegs.empty())  vid["left"]  = leftSegs;
+        if (!rightSegs.empty()) vid["right"] = rightSegs;
+        if (!vid.empty()) segs["video"] = vid;
+    }
+
+    // Audio sub-object — only present when an audio extract was built
+    if (opts.buildAudio) {
+        const std::string& ac = opts.audioExtractCamera;
+        ojson camSegs = ojson::array();
+        for (const auto& seg : trip.segments) {
+            std::string f;
+            if      (ac == "front") f = seg.front;
+            else if (ac == "rear")  f = seg.rear;
+            else if (ac == "right") f = seg.right;
+            else                    f = seg.left;
+            if (f != "-" && !f.empty()) camSegs.push_back(bn(f));
+        }
+        if (!camSegs.empty()) {
+            ojson aud = ojson::object();
+            aud[ac] = camSegs;
+            segs["audio"] = aud;
+        }
+    }
+
+    entry["segments"] = segs;
+
+    log.push_back(entry);
+
+    std::ofstream ofs(logFile);
+    if (!ofs.is_open()) {
+        std::cerr << "Warning: Could not write buildlog: " << logFile << "\n";
+        return;
+    }
+    ofs << log.dump(2) << "\n";
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1038,6 +1183,11 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
                       + "   " + trip.date + "  " + trip.startTime
                       + "   " + trip.duration
                       + "  (" + std::to_string(trip.segments.size()) + " segs)");
+        if (trip.durationFFProbed >= 0) {
+            std::string cd = std::to_string(trip.durationFFProbed / 60) + "m "
+                           + std::to_string(trip.durationFFProbed % 60) + "s";
+            UI::printLine("  Computed duration:           " + cd);
+        }
         {
             std::string noteDisplay = trip.note.empty() ? "(none)"
                 : trip.note.substr(0, 48) + (trip.note.size() > 48 ? "..." : "");
@@ -1060,12 +1210,13 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
         UI::printLine();
         UI::printLine("  Audio extract:");
         UI::printLine("  [S]  Extract audio      " + yn(opts.buildAudio));
-        UI::printLine("  [T]  Audio camera       " + opts.audioExtractCamera);
+        UI::printLine("  [K]  Audio camera       " + opts.audioExtractCamera);
         UI::printLine("  [U]  Audio format       " + opts.audioExtractFormat);
         UI::printLine();
         UI::printLine("  [N]  Set Note");
         UI::printLine("  [O]  Output directory  "
                       + (opts.outputDir.empty() ? "(current directory)" : opts.outputDir));
+        UI::printLine("  [T]  Compute duration  (ffprobes all Front segments - may be slow)");
         UI::printLine("  [OFF] Deselect All");
         UI::printLine();
         UI::printLine("  [V]  Validate Trip Against Source");
@@ -1163,7 +1314,7 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
             continue;
         }
         if (ch == 'S') { opts.buildAudio = !opts.buildAudio; continue; }
-        if (ch == 'T') {
+        if (ch == 'K') {
             static const std::vector<std::string> cams =
                 {"left","right","front","rear"};
             int cur = 0;
@@ -1171,6 +1322,26 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
                 if (cams[i] == opts.audioExtractCamera) { cur = i; break; }
             opts.audioExtractCamera = cams[UI::promptChoice("Audio extract camera",
                                                              cams, cur)];
+            continue;
+        }
+        if (ch == 'T') {
+            // Compute duration by ffprobing all Front segments.
+            std::cout << "  Probing " << trip.segments.size() << " segment(s)...\n";
+            std::string ffprobe = config.getFfprobePath();
+            int total = 0;
+            for (const auto& seg : trip.segments) {
+                if (seg.front != "-" && !seg.front.empty()) {
+                    double d = getFileDuration(seg.front, ffprobe);
+                    if (d > 0.0) total += static_cast<int>(d);
+                }
+            }
+            if (total > 0) {
+                trip.durationFFProbed = total;
+                std::cout << "  Computed duration: "
+                          << total / 60 << "m " << total % 60 << "s\n";
+            } else {
+                std::cout << "  Could not probe segments (ffprobe unavailable or no Front files).\n";
+            }
             continue;
         }
         if (ch == 'U') {
@@ -1292,7 +1463,7 @@ void VideoBuilder::validateTrip(const Trip& trip, const std::string& sourcePath)
 // buildTrip — public entry point for find_trips interactive browser.
 // Dispatches build steps from a fully-configured VideoOptions.
 // ---------------------------------------------------------------------------
-void VideoBuilder::buildTrip(const Trip& trip, const VideoOptions& opts) {
+void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     namespace fs = std::filesystem;
 
     auto collectSegments = [&](const std::string TripSegment::* field)
@@ -1345,7 +1516,13 @@ void VideoBuilder::buildTrip(const Trip& trip, const VideoOptions& opts) {
         }
         buildAudioFile(trip, audioSegs, opts);
     }
+
     std::cout << "\nBuild complete.\n";
+
+    // Append build provenance to pm_buildlog.json in the footage source path.
+    int outDur = (trip.durationFFProbed >= 0)
+                 ? trip.durationFFProbed : trip.segDetectedDuration;
+    appendBuildLog(trip, opts, outDur);
 }
 
 // ---------------------------------------------------------------------------
@@ -1408,10 +1585,12 @@ void VideoBuilder::run(ConfigManager& config) {
         if (!trip.note.empty())
             std::cout << "  Note: " << trip.note << "\n";
 
-        // Configure build options — [N] may edit trip.note
+        // Configure build options — [N] may edit trip.note, [T] may set durationFFProbed
         VideoOptions opts = configureOptions(config, trip);
+        opts.sourcePath = selManifest;
+        opts.manifestId = config.getManifestIdForPath(selManifest);
 
-        // Persist any note edits back to manifest immediately
+        // Persist note edits and any durationFFProbed computed during options menu
         config.saveTripCache(selManifest, selectedTrips);
 
         // Handle navigation actions from Build Options menu
@@ -1508,6 +1687,12 @@ void VideoBuilder::run(ConfigManager& config) {
 
         std::cout << "\nBuild complete.\n";
 
+        // Persist durationFFProbed (if [T] was used) and append buildlog.
+        config.saveTripCache(selManifest, selectedTrips);
+        int outDur = (trip.durationFFProbed >= 0)
+                     ? trip.durationFFProbed : trip.segDetectedDuration;
+        appendBuildLog(trip, opts, outDur);
+
         if (!renamedFiles.empty()) {
             std::cout << "\n  NOTE: The following files were renamed to avoid overwriting existing files:\n";
             for (const auto& [orig, renamed] : renamedFiles) {
@@ -1522,4 +1707,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00071
+// SN: 00074

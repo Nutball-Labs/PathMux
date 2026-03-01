@@ -59,7 +59,9 @@ struct Trip {
     std::string date;
     std::string startTime;
     std::string duration;
-    int         segdur   = 0;   // segment duration in seconds (ffprobe first seg)
+    int         segdur              = 0;  // nominal segment interval (seconds), derived from timestamp spacing
+    int         segDetectedDuration = 0;  // trip duration from timestamp arithmetic only (pre-ffprobe)
+    int         durationFFProbed    = -1; // sum of all Front segment ffprobe durations; -1 = not yet computed
     std::vector<TripSegment> segments;
 
     // Epoch timestamp for ID-stable matching across rescans.
@@ -117,4 +119,4 @@ public:
 } // namespace Pathmux
 
 #endif
-// SN: 00071
+// SN: 00074
