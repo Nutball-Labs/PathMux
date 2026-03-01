@@ -44,10 +44,10 @@ struct GpsInfo {
     std::string method;         // "LIGOGPSINFO", "standard", "none"
     int         streamIndex = -1;
     std::string exiftoolNote;   // version requirement if any
-    std::string sampleTimestamp;
-    double      sampleLat   = 0.0;
-    double      sampleLon   = 0.0;
-    bool        hasSample   = false;
+    std::string firstTimestamp;
+    double      firstLat    = 0.0;
+    double      firstLon    = 0.0;
+    bool        hasFix      = false;
 };
 
 struct FileProbe {
@@ -237,10 +237,10 @@ static GpsInfo detectGps(const std::vector<StreamInfo>& streams,
             continue;
         if (lat == 0.0 && lon == 0.0) continue;
 
-        g.hasSample       = true;
-        g.sampleTimestamp = datePart + " " + timePart;
-        g.sampleLat       = lat;
-        g.sampleLon       = lon;
+        g.hasFix          = true;
+        g.firstTimestamp  = datePart + " " + timePart;
+        g.firstLat        = lat;
+        g.firstLon        = lon;
 
         // If we got data but didn't detect LIGOGPSINFO by stream tag,
         // mark it as standard GPS metadata
@@ -376,11 +376,11 @@ static void printFileProbe(const FileProbe& p)
         std::cout << "GPS method:   Not detected\n";
     }
 
-    if (p.gps.hasSample) {
+    if (p.gps.hasFix) {
         std::cout << std::fixed << std::setprecision(6)
-                  << "GPS sample:   " << p.gps.sampleTimestamp
-                  << "  lat=" << p.gps.sampleLat
-                  << "  lon=" << p.gps.sampleLon << "\n";
+                  << "GPS first fix: " << p.gps.firstTimestamp
+                  << "  lat=" << p.gps.firstLat
+                  << "  lon=" << p.gps.firstLon << "\n";
     }
 }
 
@@ -539,11 +539,11 @@ static void probeCard(const std::string& root, bool jsonMode,
         jGps["method"]       = probe.gps.method;
         jGps["stream_index"] = probe.gps.streamIndex;
         jGps["exiftool_note"] = probe.gps.exiftoolNote;
-        if (probe.gps.hasSample) {
-            jGps["sample"] = {
-                {"timestamp", probe.gps.sampleTimestamp},
-                {"lat",       probe.gps.sampleLat},
-                {"lon",       probe.gps.sampleLon}
+        if (probe.gps.hasFix) {
+            jGps["first_fix"] = {
+                {"timestamp", probe.gps.firstTimestamp},
+                {"lat",       probe.gps.firstLat},
+                {"lon",       probe.gps.firstLon}
             };
         }
         j["gps"] = jGps;
@@ -604,11 +604,11 @@ static void probeCard(const std::string& root, bool jsonMode,
         std::cout << "GPS method:   Not detected\n";
     }
 
-    if (probe.gps.hasSample) {
+    if (probe.gps.hasFix) {
         std::cout << std::fixed << std::setprecision(6)
-                  << "GPS sample:   " << probe.gps.sampleTimestamp
-                  << "  lat=" << probe.gps.sampleLat
-                  << "  lon=" << probe.gps.sampleLon << "\n";
+                  << "GPS first fix: " << probe.gps.firstTimestamp
+                  << "  lat=" << probe.gps.firstLat
+                  << "  lon=" << probe.gps.firstLon << "\n";
     }
 
     std::cout << "\n--- Submit this report to: "
@@ -698,10 +698,10 @@ int main(int argc, char* argv[])
             {"method",        probe.gps.method},
             {"stream_index",  probe.gps.streamIndex},
             {"exiftool_note", probe.gps.exiftoolNote},
-            {"has_sample",    probe.gps.hasSample},
-            {"sample_timestamp", probe.gps.sampleTimestamp},
-            {"sample_lat",    probe.gps.sampleLat},
-            {"sample_lon",    probe.gps.sampleLon}
+            {"has_fix",       probe.gps.hasFix},
+            {"first_timestamp", probe.gps.firstTimestamp},
+            {"first_lat",     probe.gps.firstLat},
+            {"first_lon",     probe.gps.firstLon}
         };
         std::cout << j.dump(2) << "\n";
     } else {
