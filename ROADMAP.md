@@ -128,6 +128,16 @@ Deferred (low priority until relevant):
 
 **Medium priority:**
 - [ ] GPS extraction — implementation ready, blocked on ExifTool 13.51 release
+- [ ] **GPX/KML output default: manifest directory, not global export dir**
+  - When the user is already in the interactive GPS export flow (`-G`), they are
+    working within the context of a specific manifest. The output default should
+    be the directory containing that manifest file, not `defaultExportDir` from prefs.
+  - If the manifest directory is not writable: warn the user and offer three choices:
+    1. Write to global default output dir (`defaultExportDir`)
+    2. Enter a new path manually
+    3. Quit back to the trip list
+  - `defaultExportDir` remains the fallback when the manifest dir is unwritable and
+    the user chooses option 1, or when invoked non-interactively (CLI flags only).
 - [ ] Thumbnail detection (`.jpg` sidecar files, `firstThumb`/`lastThumb`)
 - [ ] `recordingProfile` config field
 - [ ] `extra_hw_frames` CPU encoder guard

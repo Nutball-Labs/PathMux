@@ -216,6 +216,9 @@ bump SNs, bump version, commit, and push.
 ## Known Issues / Pending Work
 
 - Man page needs update for `-G` interactive flow, `--validate`, `-t` flags
+- GPX/KML output default should be manifest directory, not global `defaultExportDir` —
+  when in `-G` flow the manifest context should drive the default; if unwritable: warn +
+  offer (1) global default, (2) enter new path, (3) quit back to trip list
 - `pm_gpsinfo` enhancements:
   - ~~Fix argument order to [options] \<file.ts\> (POSIX convention)~~ — done v0.9.3
   - ~~`--scan-all-trips`: scan first segment of every trip, report GPS lock time~~ — done v0.9.3
