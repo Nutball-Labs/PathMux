@@ -1,26 +1,39 @@
 .TH PATHMUX 1 "March 2026" "v0.9.5c" "PathMux Dashcam Explorer Manual"
 .SH NAME
-pathmux \- Trip manager and video builder for Pruveeo D90 four-channel dashcam footage
+pathmux \- Trip manager and video builder for multi-channel dashcam footage
 .SH SYNOPSIS
 .B pathmux
 [\fIOPTIONS\fR] [\fIPATH\fR]
 .SH DESCRIPTION
 .B pathmux
-scans storage containing footage from a Pruveeo D90 360\[de] four-channel dashcam
-(Front, Rear, Left, Right cameras), groups video segments into trips based on
+scans dashcam footage directories, groups video segments into trips based on
 timestamp gaps, and caches the results as JSON manifests.  Trips can be browsed
 interactively, exported as GPX or KML tracks, and assembled into per-camera MP4
 files or a synchronized 4K collage.
 .PP
-Dashcam footage is stored as MPEG-TS segments named
+PathMux was developed and tested against the Pruveeo D90 360\[de] four-channel
+dashcam (Front, Rear, Left, Right cameras) — the only hardware available during
+initial development.  The architecture is designed to support other multi-camera
+dashcams; additional camera profiles will be added as hardware becomes available
+for testing.
+.PP
+Footage is expected in subdirectories named
+.BR Front ,
+.BR Rear ,
+.BR Left ,
+and
+.BR Right ,
+with segment filenames matching
 .IR YYYYMMDD_HHMMSS_X.ts .
 The Front camera is the primary anchor for trip detection; the other cameras are
 fuzzy-matched within a configurable time window.  All timestamp comparisons use
 Unix epoch arithmetic to handle midnight and year boundaries correctly.
 .PP
-Manifests are cached in
+Trip manifests are written to the scanned footage directory as
+.IR pm_manifest_<id>.json .
+If that directory is not writable, manifests fall back to
 .IR ~/.config/pathmux/ .
-Each cached path is assigned a two-character alphanumeric manifest ID from an
+Each scanned path is assigned a two-character alphanumeric manifest ID from an
 unambiguous character set (ambiguous pairs such as O/0 and I/1 are collapsed).
 IDs are reused when manifests are deleted, keeping the list compact.
 .SH OPTIONS
@@ -67,7 +80,8 @@ at any prompt to return to the previous level or exit.
 Launch the interactive GPS extraction and export menu.
 Presents a list of cached manifests; after selecting a trip, offers GPS
 extraction from footage, and GPX or KML file export.
-Requires ExifTool 13.51 or later.
+Requires ExifTool; minimum version depends on camera hardware (see
+.BR "GPS EXTRACTION" ).
 .SS "Settings"
 .TP
 .B \-P ", " \-\-prefs
@@ -199,12 +213,14 @@ The optional 1080p collage is a simple transcode of the finished 4K master
 .RB ( "scale=1920:1080" ", " "libx264 \-crf 20 \-preset fast" )
 with the audio stream copied without re-encoding.
 .SH "GPS EXTRACTION"
-GPS extraction requires ExifTool 13.51 or later.  The EPEL package (13.10)
-does
-.B not
-work — it cannot correctly decode the LIGOGPSINFO binary stream embedded in
-Pruveeo D90 footage.  Phil Harvey fixed the coordinate decode issue in 13.51
-following a bug report.
+GPS extraction uses ExifTool to read GPS metadata from footage segments.
+The required ExifTool version depends on the camera hardware.  For the
+Pruveeo D90 specifically, version 13.51 or later is required; earlier
+versions including the EPEL package (13.10) cannot correctly decode the
+LIGOGPSINFO binary stream embedded in D90 footage.  The fix was applied
+by the ExifTool maintainer in version 13.51 following a bug report.
+Other dashcam models may work with older ExifTool versions if they use a
+standard GPS metadata format rather than a proprietary binary stream.
 .PP
 One GPS fix per second is available.  During the initial trip scan, the
 extractor reads the first Front camera segment to find the first fix with
@@ -336,26 +352,21 @@ in tool output and future batch operations.
 .SH FILES
 .TP
 .I ~/.config/pathmux/pathmux.json
-Application settings and manifest ID table.
+Application settings.
 .TP
-.I ~/.config/pathmux/<sanitized_path>.json
-Cached trip manifest for a scanned path.  The path is sanitized by stripping
-the leading
-.B /
-and replacing remaining
-.B /
-characters with
-.BR _ .
+.I ~/.config/pathmux/manifests.json
+Manifest index — maps each scanned footage path to its two-character ID.
+.TP
+.I <scanned_path>/pm_manifest_<id>.json
+Cached trip manifest written to the scanned directory.  This is the primary
+location; the path is only written to
+.I ~/.config/pathmux/
+when the scanned directory is not writable.
 .TP
 .I ~/.config/pathmux/locations.json
 Named locations (Home, Work, etc.) used for KML proximity pin overlays.
 .TP
-.I ~/.config/pathmux/<sanitized_path>.XX.bak
-Backup of an overwritten manifest, where
-.I XX
-is the manifest ID.
-.TP
-.I <footage_path>/pm_buildlog.json
+.I <scanned_path>/pm_buildlog.json
 Build provenance log appended after each successful video build.  Each entry
 records the build timestamp, manifest ID, trip ID, output path and filename,
 output duration in seconds, which cameras were included, and the full list of
