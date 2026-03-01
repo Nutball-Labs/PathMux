@@ -1,0 +1,167 @@
+.TH PM_PROBE 1 "March 2026" "v0.9.10" "PathMux Suite - Camera Profiler"
+.SH NAME
+pm_probe \- camera compatibility profiler for the PathMux suite
+.SH SYNOPSIS
+.B pm_probe
+.RB [ \-\-json ]
+.I file.ts
+.PP
+.B pm_probe
+.RB [ \-\-json ]
+.I MID\fR:\fITID
+.PP
+.B pm_probe
+.B \-\-card
+.I PATH
+.RB [ \-\-json ]
+.SH DESCRIPTION
+.B pm_probe
+inspects dashcam footage files and reports video characteristics,
+stream layout, and GPS metadata format.  It is primarily intended to
+help users determine whether an unsupported camera model is compatible
+with PathMux, and to collect the information needed to request support
+for a new camera via a GitHub issue.
+.PP
+Single-file and
+.I MID:TID
+modes probe one segment and print a concise report.
+.PP
+Card mode
+.RB ( \-\-card )
+walks an entire dashcam storage root, identifies camera subdirectories,
+samples segment durations, and probes the first segment of the primary
+camera directory.  The report is formatted to be pasted directly into
+a GitHub issue.
+.SH OPTIONS
+.TP
+.I file.ts
+Probe a single footage segment.  The path must be absolute or resolvable
+from the current directory.
+.TP
+.I MID\fR:\fITID
+Probe the first Front camera segment of a known trip identified by its
+manifest ID and trip ID.  Uses the PathMux manifest index to resolve the
+segment path.
+.TP
+.B \-\-card \fIPATH
+Fingerprint a dashcam storage root.
+.I PATH
+should be the top-level directory that contains the camera subdirectories
+.RB ( Front/ ,
+.BR Rear/ ,
+etc.).  Candidate camera directories are identified as any first-level
+subdirectory of
+.I PATH
+that contains video files.  Up to five segments are sampled for duration
+measurements; the full probe is performed on the first segment of the
+primary camera directory.
+.TP
+.B \-\-json
+Emit JSON output instead of the default text report.  Suitable for
+automated processing.
+.TP
+.B \-h ", " \-\-help
+Print a usage summary and exit.
+.SH OUTPUT
+.SS Text — single-file mode
+.nf
+File:         /z/srcdash/ex2/Front/20260209_043838F.ts
+Container:    MPEG-TS (.ts)
+Resolution:   1920x1080
+Frame rate:   25/1
+Pixel format: yuvj420p  (full-range)
+Color space:  bt709
+Duration:     180s
+Streams:      video(0) audio(1) data(2)
+GPS method:   LIGOGPSINFO (stream 2)  \(em ExifTool 13.51+ required
+GPS sample:   2026:02:09 10:39:14  lat=30.419000  lon=-89.025191
+.fi
+.SS Text \(em card mode
+.nf
+--- pm_probe SD Card Fingerprint ---
+Root:         /media/sdcard
+Camera dirs:  Front/ Rear/ Left/ Right/
+Extensions:   .jpg .ts
+Filename pattern (sample):
+  Front/20260209_043838F.ts
+  Front/20260209_044140F.ts
+Segment lengths observed: 180s 180s 180s (stub at end noted if present)
+Video profile (Front, first segment):
+  Resolution:   1920x1080
+  Frame rate:   25/1
+  Pixel format: yuvj420p (full-range)
+  Color space:  bt709
+GPS method:   Standard GPS metadata
+GPS sample:   2026:02:09 10:39:14  lat=30.419000  lon=-89.025191
+
+--- Submit this report to: https://github.com/BiloxiGeek/PathMux/issues ---
+.fi
+.SH "GPS METHOD VALUES"
+.TP
+.B LIGOGPSINFO
+The file contains a private binary data stream tagged
+.B LIGO
+in the container.  This is the format used by Pruveeo D90 footage.
+ExifTool 13.51 or later is required to extract GPS data from this stream.
+.TP
+.B Standard GPS metadata
+GPS metadata was successfully extracted by ExifTool using the configured
+extraction options, but no
+.B LIGO
+private data stream was detected.  The camera uses a standard or
+otherwise identifiable GPS metadata format.
+.TP
+.B Not detected
+No GPS data was found.  Either the camera does not record GPS, the footage
+was recorded without a GPS fix, or the configured ExifTool options are
+incompatible with the camera's GPS format.
+.SH EXAMPLES
+.TP
+Probe a single file:
+.B pm_probe /mnt/sdcard/Front/20260209_043838F.ts
+.TP
+Probe a trip's first segment via MID:TID:
+.B pm_probe X1:87
+.TP
+Fingerprint an entire SD card:
+.B pm_probe \-\-card /mnt/sdcard
+.TP
+Machine-readable card fingerprint for a GitHub issue:
+.B pm_probe \-\-card /mnt/sdcard \-\-json
+.SH "REQUESTING CAMERA SUPPORT"
+If your dashcam is not a Pruveeo D90 and PathMux does not correctly scan
+its footage, run:
+.PP
+.RS
+.B pm_probe \-\-card \fIPATH\fB \-\-json > camera_report.json
+.RE
+.PP
+Open a GitHub issue at
+.B https://github.com/BiloxiGeek/PathMux/issues
+and attach
+.IR camera_report.json .
+Include the camera make and model in the issue title.
+.SH FILES
+.TP
+.I ~/.config/pathmux/manifests.json
+Manifest index — used only when resolving
+.I MID:TID
+arguments.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Probe completed successfully (GPS may or may not have been found).
+.TP
+.B 1
+Invalid arguments, file not found, or
+.I MID:TID
+not in the manifest index.
+.SH "SEE ALSO"
+.BR pathmux (1),
+.BR pm_gpsinfo (1),
+.BR pm_gpsexport (1),
+.BR ffprobe (1),
+.BR exiftool (1)
+.SH AUTHOR
+Developed by Steve Berg, 2026.
+.\" SN: 00080

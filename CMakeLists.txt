@@ -120,6 +120,14 @@ target_include_directories(pm_gpsexport PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(pm_gpsexport PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
+# pm_probe — camera compatibility profiler
+# ---------------------------------------------------------------------------
+add_executable(pm_probe tools/pm_probe.cpp)
+target_compile_features(pm_probe PRIVATE cxx_std_17)
+target_include_directories(pm_probe PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(pm_probe PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
 # trip_debug — standalone debug tool (not installed by default)
 # Build with: cmake --build build --target trip_debug
 # ---------------------------------------------------------------------------
@@ -131,7 +139,7 @@ target_link_libraries(trip_debug PRIVATE pathmuxlib)
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit
+install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_probe
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -141,6 +149,7 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/man1/pm_gpsexport.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_ls.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_audit.1"
+    "${CMAKE_SOURCE_DIR}/man1/pm_probe.1"
     DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
     OPTIONAL
 )
