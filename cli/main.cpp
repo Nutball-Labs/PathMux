@@ -204,6 +204,28 @@ int main(int argc, char* argv[]) {
         if (!std::filesystem::exists(scanPath)) {
             std::cerr << "Error: path does not exist: " << scanPath << "\n"; return 1;
         }
+
+        // Warn if a manifest already exists for this path
+        std::string existingMid = config.getManifestIdForPath(scanPath);
+        if (!existingMid.empty()) {
+            std::cout << "\n  Warning: existing manifest [" << existingMid << "] found for:\n"
+                      << "    " << scanPath << "\n\n"
+                      << "  [1]  Continue and overwrite\n"
+                      << "  [2]  Delete existing manifest and rescan (fresh start)\n"
+                      << "  [3]  Quit\n\n"
+                      << "  Choice: ";
+            std::string choice;
+            std::getline(std::cin, choice);
+            if (choice != "1" && choice != "2") {
+                std::cout << "  Scan cancelled.\n";
+                return 0;
+            }
+            if (choice == "2") {
+                config.clearCache(scanPath, false);
+                std::cout << "  Existing manifest deleted.\n";
+            }
+        }
+
         std::cout << "Scanning: " << scanPath
                   << "  (gap=" << config.getGapThreshold() << "s)\n";
         auto trips = detector.detectTrips(scanPath,
@@ -263,4 +285,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00071
+// SN: 00077

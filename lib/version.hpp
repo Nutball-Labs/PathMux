@@ -8,7 +8,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 9
 #define VERSION_PATCH 6
-#define VERSION_SUFFIX "b"
+#define VERSION_SUFFIX "c"
 
 // 2. Stringification macros
 #define STRINGIFY_HELPER(x) #x
@@ -20,4 +20,4 @@
                     STRINGIFY(VERSION_PATCH) VERSION_SUFFIX
 
 #endif
-// SN: 00076
+// SN: 00077
