@@ -194,14 +194,16 @@ set(CPACK_PACKAGE_LICENSE "GPL-2.0")
 # RPM specific
 set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
 set(CPACK_RPM_PACKAGE_LICENSE "GPLv2")
-set(CPACK_RPM_PACKAGE_REQUIRES "exiftool >= 13.51")
+set(CPACK_RPM_PACKAGE_REQUIRES "exiftool")
 # Note: ffmpeg is in RPM Fusion, not EPEL. Document as soft dependency.
 # Users must install ffmpeg from RPM Fusion separately.
+# Note: exiftool GPS support is camera-dependent. If GPS extraction fails,
+# users should contact the ExifTool maintainer at https://exiftool.org
 set(CPACK_RPM_PACKAGE_DESCRIPTION
 "PathMux scans multi-camera dashcam storage, groups video segments into trips,
 caches results as JSON manifests, and builds per-camera MP4 files or
 synchronized 4K collages. Initial support targets the Pruveeo D90 four-channel
-dashcam. Requires ffmpeg (RPM Fusion) and ExifTool 13.51+ for full
+dashcam. Requires ffmpeg (RPM Fusion) and ExifTool for full
 functionality.")
 
 # DEB specific

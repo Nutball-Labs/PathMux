@@ -140,8 +140,10 @@ bool extractGps(json& root,
     std::cout << "\n";
 
     if (!gotAny) {
-        std::cerr << "\n  No GPS records parsed. Check exiftool version (13.51+ required)\n"
-                  << "  and verify exiftoolOptions format string matches your camera.\n";
+        std::cerr << "\n  No GPS records returned by exiftool.\n"
+                  << "  Verify the exiftoolOptions format string matches your camera.\n"
+                  << "  If your camera's GPS format is not supported, contact the\n"
+                  << "  ExifTool maintainer at https://exiftool.org\n";
         return false;
     }
 

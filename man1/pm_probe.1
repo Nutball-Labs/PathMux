@@ -73,7 +73,7 @@ Pixel format: yuvj420p  (full-range)
 Color space:  bt709
 Duration:     180s
 Streams:      video(0) audio(1) data(2)
-GPS method:   LIGOGPSINFO (stream 2)  \(em ExifTool 13.51+ required
+GPS method:   LIGOGPSINFO (stream 2)
 GPS first fix: 2026:02:09 10:39:14  lat=30.419000  lon=-89.025191
 .fi
 .SS Text \(em card mode
@@ -102,7 +102,10 @@ GPS first fix: 2026:02:09 10:39:14  lat=30.419000  lon=-89.025191
 The file contains a private binary data stream tagged
 .B LIGO
 in the container.  This is the format used by Pruveeo D90 footage.
-ExifTool 13.51 or later is required to extract GPS data from this stream.
+ExifTool must support the LIGOGPSINFO stream format for extraction to work.
+If GPS extraction fails for your camera, contact the ExifTool maintainer
+at
+.BR https://exiftool.org .
 .TP
 .B Standard GPS metadata
 GPS metadata was successfully extracted by ExifTool using the configured

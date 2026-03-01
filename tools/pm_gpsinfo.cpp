@@ -125,7 +125,7 @@ static void printUsage(const char* argv0) {
         << "  --exiftool-opts O  Extraction options (default: -ee3 ...)\n\n"
         << "Notes:\n"
         << "  MID:TID addresses a trip by manifest ID and trip ID (e.g. F0:4P).\n"
-        << "  Requires ExifTool 13.51+ for correct Pruveeo D90 GPS decoding.\n"
+        << "  GPS extraction requires exiftool to be installed and configured.\n"
         << "  Speed in km/h.  Altitude not reported (D90 values unreliable).\n"
         << "  --scan-all-trips reads manifests from ~/.config/pathmux/\n";
 }
@@ -671,7 +671,8 @@ int main(int argc, char* argv[])
 
     if (records.empty()) {
         std::cerr << "Warning: no GPS records found in " << filePath << "\n"
-                  << "  Ensure ExifTool 13.51+ is installed.\n";
+                  << "  Verify exiftool is installed and options match your camera.\n"
+                  << "  If your camera's GPS format is unsupported, contact https://exiftool.org\n";
         // Still output empty result in requested format
     }
 

@@ -8,7 +8,7 @@ PathMux is a lightweight C++ tool designed to organize and manage multi-camera d
 - **Fast Caching**: Scans once and saves a manifest in `<path>` for instant subsequent loads.
 - **Multi-Camera Support**: Automatically aligns Front, Rear, Left, and Right camera segments by timestamp.
 - **Ignore Hidden**: Automatically ignores hidden dot files (`.` files).
-- **GPS Extraction**: Extracts per-second GPS tracks via ExifTool 13.51+ including lat, lon, altitude, speed, heading, and accelerometer data.
+- **GPS Extraction**: Extracts per-second GPS tracks via ExifTool including lat, lon, altitude, speed, heading, and accelerometer data.
 - **GPS Export**: Exports tracks to GPX, KML, or GeoJSON (FeatureCollection, one feature per track point).
 - **Base36 IDs**: Manifests and trips get short two-character base36 IDs for quick reference.
 - **Crow's Distance**: Haversine displacement calculation between trip start and end points.
@@ -51,9 +51,7 @@ make
                     # Then [X] export GPX or [K] export KML as needed
 ```
 
-> **Note**: The minimum ExifTool version required for GPS extraction depends on your camera hardware. For the Pruveeo D90 specifically, version 13.51+ is required — the EPEL package (13.10) does not correctly decode the D90's LIGOGPSINFO binary stream. Other cameras may work with older versions. If GPS extraction fails, check your ExifTool version with `exiftool -ver` and consider updating.
->
-> If updating ExifTool does not resolve extraction for your camera, run `pm_probe --card <path>` to generate a structured camera fingerprint report, then open an issue on this repo with the report attached. In some cases the ExifTool maintainer may need sample footage segments to analyze the embedded GPS stream format — the issue template will guide you through what to provide and how to submit it.
+> **Note**: GPS extraction relies entirely on ExifTool. PathMux passes the configured options string to ExifTool and parses its output — it does not validate ExifTool versions or maintain a camera compatibility list. If GPS extraction fails for your camera, that is an ExifTool compatibility issue; contact the ExifTool maintainer at https://exiftool.org. Run `pm_probe --card <path>` to generate a structured camera fingerprint report you can attach to an ExifTool bug report.
 
 ## Manifest Location
 
@@ -69,7 +67,7 @@ If the footage path is not writable, falls back to `~/.config/pathmux/`. The man
 
 **Confirmed Working**
 
-- **Pruveeo D90 360°** — developed and tested on this camera. Produces MPEG-2 Transport Stream (`.ts`) segments in `Front/`, `Rear/`, `Left/`, `Right/` subdirectories with `YYYYMMDD_HHMMSS_X.ts` filename convention. GPS extraction via ExifTool 13.51+ from embedded LIGOGPSINFO stream.
+- **Pruveeo D90 360°** — developed and tested on this camera. Produces MPEG-2 Transport Stream (`.ts`) segments in `Front/`, `Rear/`, `Left/`, `Right/` subdirectories with `YYYYMMDD_HHMMSS_X.ts` filename convention. GPS extraction via ExifTool from embedded LIGOGPSINFO stream.
 
 **Adding Support for Other Cameras**
 
@@ -88,7 +86,7 @@ If you have a dashcam that PathMux doesn't recognize, the following information 
    ```bash
    exiftool -ee3 -G1 -a -s yourfile.ts | grep -i gps | head -40
    ```
-   This shows what GPS fields are present and their format. ExifTool 13.51+ is required for some camera formats.
+   This shows what GPS fields are present and their format.
 
 5. **Segment duration** — typical segment length in seconds (60, 120, 180, 300 are common).
 

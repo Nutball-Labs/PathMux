@@ -155,10 +155,11 @@ Speed is reported in km/h.  Altitude is present in the GPS stream but
 known incorrect on the Pruveeo D90 (returns negative values at sea level)
 and is therefore not reported.
 .PP
-.B ExifTool 13.51+
-is required for correct GPS decoding of Pruveeo D90 footage.  The EPEL
-package (13.10) does not correctly parse the LIGOGPSINFO binary stream.
-Other camera models may work with older ExifTool versions.
+GPS extraction requires ExifTool to be installed and the options string
+to match the camera's GPS format.  If extraction returns no records,
+verify your ExifTool installation.  If your camera's GPS format is not
+supported by ExifTool, contact the maintainer at
+.BR https://exiftool.org .
 .SH FILES
 .TP
 .I ~/.config/pathmux/pathmux.json

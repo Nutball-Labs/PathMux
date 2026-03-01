@@ -210,7 +210,7 @@ static GpsInfo detectGps(const std::vector<StreamInfo>& streams,
         if (s.codecType == "data" && s.codecTag.find("LIGO") != std::string::npos) {
             g.method      = "LIGOGPSINFO";
             g.streamIndex = s.index;
-            g.exiftoolNote = "ExifTool 13.51+ required";
+            g.exiftoolNote = "GPS in private LIGO stream — requires exiftool with LIGOGPSINFO support";
             break;
         }
     }

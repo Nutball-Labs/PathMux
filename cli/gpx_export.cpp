@@ -380,8 +380,8 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
                       << " (" << segCount << " segments)";
             if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, opts.exiftoolOptions, m_verbose)) {
                 std::cout << "\nGPS extraction failed for trip " << tId << ".\n"
-                          << "Make sure ExifTool 13.51+ is installed (EPEL 13.10 does NOT work).\n"
-                          << "  exiftool -ver\n";
+                          << "Verify exiftool is installed and the options match your camera format.\n"
+                          << "If GPS is unsupported for your camera, contact https://exiftool.org\n";
                 continue;
             }
             std::cout << "GPS extracted.\n";
@@ -392,8 +392,8 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
                       << " (" << segCount << " segments)";
             if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, opts.exiftoolOptions, m_verbose)) {
                 std::cout << "\nGPS extraction failed for trip " << tId << ".\n"
-                          << "Make sure ExifTool 13.51+ is installed (EPEL 13.10 does NOT work).\n"
-                          << "  exiftool -ver\n";
+                          << "Verify exiftool is installed and the options match your camera format.\n"
+                          << "If GPS is unsupported for your camera, contact https://exiftool.org\n";
                 continue;
             }
             std::cout << "GPS saved to manifest.\n";
