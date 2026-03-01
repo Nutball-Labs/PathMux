@@ -9,7 +9,7 @@ This document outlines planned features and future development direction for Pat
 ### Trip Detection & Caching
 - [x] Filesystem scan of Front/Rear/Left/Right camera directories
 - [x] Timestamp-based trip grouping with configurable gap threshold
-- [x] JSON manifest caching in `~/.config/quadeye/`
+- [x] JSON manifest caching in ~~`~/.config/quadeye/`~~ `~/.config/pathmux/`
 - [x] **ffprobe integration for accurate trip duration calculation**
   - `probeSegmentDuration()` called on last Front segment in `closeTrip()`
   - `probeVideoProfile()` called on first Front segment
@@ -46,118 +46,76 @@ This document outlines planned features and future development direction for Pat
 ---
 
 ### GPS Data Extraction
-**Status:** RESOLVED — ExifTool 13.51+ decodes LIGOGPSINFO correctly
 
-- **Phil Harvey (ExifTool author) fixed coordinate decode issue** in response to GitHub issue
-- ExifTool 13.51+ (pending release) successfully extracts GPS data from Pruveeo D90
-- One GPS record per second from LIGOGPSINFO binary stream
-- Fields available: timestamp, latitude, longitude, speed, heading/track
-- Altitude field present but incorrect (negative values) — not needed for QuadEye
+**ExifTool status:** Phil Harvey fixed LIGOGPSINFO coordinate decode in response to GitHub issue.
+ExifTool 13.51+ released and working. EPEL ships 13.10 (too old) — runtime version check
+with clear error message is the packaging solution (can't declare hard `Requires >= 13.51`).
 
-**Implementation plan:**
-- Extract GPS at t=45s from first segment → `startLat/Lon` (avoids cold start issues)
-- Extract from last segment → `endLat/Lon`
-- Store in manifest during trip scan
-- Command: `exiftool -ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude#' segment.ts`
-- Parse output: one line per second, space-delimited
+**One GPS record per second** from LIGOGPSINFO binary stream:
+fields: timestamp, lat, lon, speed, heading/track. Altitude present but incorrect (negative
+values on D90) — stored but ignored. Speed in km/h.
 
-**Known limitations:**
-- Altitude values incorrect (negative) — ignore this field
-- Speed in km/h (D90 OSD displays mph after conversion)
-- Requires ExifTool 13.51+ — EPEL version 13.10 does NOT work
+**What's done:**
+- [x] `startLat/Lon` and `endLat/Lon` extracted during trip scan and stored in manifest
+- [x] `gpsLockSeconds` — seconds to first valid fix, populated by `pm_gpsinfo --scan-all-trips`
+- [x] `firstLockLat/Lon/Timestamp/Record` — first fix with non-zero coordinates
 
-### Manifest Schema Additions (Pending GPS Resolution)
-```json
-{
-  "startLat": 30.401234,
-  "startLon": -89.025678,
-  "endLat": 30.398569,
-  "endLon": -89.027191,
-  "gpsTrackStatus": "none",
-  "gpsTrack": []
-}
-```
-
-### Known CLI Bugs — Status
-
-**Fixed this cycle (0.8.17a–e):**
-- ~~Interactive manifest browser breaks beyond 26 cached paths~~ — base36 2-char IDs
-- ~~`L` back command broken by `normalizeId`~~ — raw uppercase for keywords
-- ~~`ALL` keyword corrupted by `normalizeId`~~ — same fix
-- ~~New scan not showing trip IDs~~ — reload from cache after save
-- ~~Note input silently discarded~~ — `>> std::ws` was eating the input
-- ~~Trip notes not displaying in Build Options~~ — unconditional display
-- ~~`-V/--video` dead entrypoint~~ — removed
-- ~~`[note]` tag in trip list~~ — replaced with inline note + truncation
-
-**Still open — prioritized:**
-
-Critical / low-hanging fruit (do these next):
-- ~~`getenv("HOME")` has no null guard~~ — already guarded with fatal error exit
-- ~~`-s/--scan` doesn't validate next argv isn't another flag~~ — already validates, rejects flags and missing args
-- ~~`stringToTimestamp` should be in anonymous namespace~~ — already in anonymous namespace in trip_detection.cpp
-- ~~Gap threshold — 900s (15 min) default, configurable via --prefs, 30s floor clamp~~ — already correct in code
-
-Deferred (low priority until relevant):
-- `std::localtime` not thread-safe — irrelevant until parallelism added
-- Path reconstruction lossy if original path contained underscores — edge case, needs design thought for 0.9.0 library restructure
+**What's pending:**
+- [ ] Full GeoJSON track extraction — one point per second from all segments, stored as
+  `pm_trip_<ID>_track.geojson` alongside the manifest. Architecture decided, code pending.
+  ExifTool format string: `-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'`
 
 ---
 
-### Phase 1 Remaining — Critical Path to 1.0
+### Completed Infrastructure
 
-**v1.0 gate items (must be done before public release):**
-- [ ] Resolve all known bugs and open TODO items
-- [ ] License decision — GPL vs MIT; apply license header to all source files
-  and CMakeLists.txt; add `LICENSE` file to repo root; update README with
-  license badge and section. Repo is currently private (one collaborator) so
-  no urgency, but this must be resolved before the repo goes public.
-- [ ] README refresh for public audience (currently documents internal state)
-- [ ] Packaging audit — verify nothing in current architecture blocks RPM/DEB
-  packaging (see Packaging section below)
+- [x] **Library restructure** (v0.9.4) — `libpathmuxlib` (static) + `pathmux` CLI + `tools/`
+- [x] **Manifest ID-based filenames** (v0.9.7a) — `pm_manifest_<id>.json`; transparent migration
+- [x] **Stale manifest archive** (v0.9.8) — `manifests_stale.json`; `--show-stale` / `--clear-stale`
+- [x] **Manifest management UX** (v0.9.8) — `Manifest management:` help section; `--force` order-independent
+- [x] **Per-camera thumbnails** (v0.9.9) — `TripSegment` + `Trip` thumb fields; cold-start skip logic
 
-**High priority:**
-- [x] **ffprobe integration for accurate trip duration** — implemented (see Trip Detection section)
+---
 
-- [x] **Library restructure** (v0.9.4): Split into `libpathmuxlib` (static) + `pathmux` CLI
-  - `lib/` — `trip_detection`, `config_manager`, `platform`, `format_helpers`, `logger`, umbrella `pathmux.hpp`; all in `namespace Pathmux`
-  - `cli/` — CLI front-end; `using namespace Pathmux;`; `ui_helpers.hpp` retains terminal-only code
-  - `tools/` — `pm_gpsinfo`, `debug_main`; link against `pathmuxlib`
-  - `lib/platform.cpp/.hpp` — OS abstraction: `getHomePath()`, `getConfigDir()`, `getTerminalWidth()` (Linux implemented; Windows/macOS stubs in comments)
-  - `lib/format_helpers.hpp` — pure math/format helpers with no POSIX deps; safe for Qt6 GUI on all platforms
-  - `lib/pathmux.hpp` — umbrella public API header for Qt6 GUI and future consumers
-  - CMakeLists.txt rewritten: `pathmuxlib STATIC` with PUBLIC include propagation
+### Phase 1 Active Work
 
-**Medium priority:**
-- [ ] GPS extraction — implementation ready, blocked on ExifTool 13.51 release
+**Must ship before v1.0 (gate items):**
+- [ ] **License decision** — GPL vs MIT; apply header to all source files + CMakeLists.txt;
+  add `LICENSE` to repo root; update README. Repo is private — no urgency until public release.
+- [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
+- [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
+
+**GPS track extraction (next major feature):**
+- [ ] Full GeoJSON track extraction — one GPS point/second from all segments; output to
+  `pm_trip_<ID>_track.geojson`. Architecture decided; code pending. (see GPS section above)
+- [ ] GPX/KML export from extracted track data
+
+**GPS export UX fix:**
 - [ ] **GPX/KML output default: manifest directory, not global export dir**
-  - When the user is already in the interactive GPS export flow (`-G`), they are
-    working within the context of a specific manifest. The output default should
-    be the directory containing that manifest file, not `defaultExportDir` from prefs.
-  - If the manifest directory is not writable: warn the user and offer three choices:
-    1. Write to global default output dir (`defaultExportDir`)
-    2. Enter a new path manually
-    3. Quit back to the trip list
-  - `defaultExportDir` remains the fallback when the manifest dir is unwritable and
-    the user chooses option 1, or when invoked non-interactively (CLI flags only).
-- [x] Thumbnail detection — per-camera first/last + per-segment (v0.9.9)
+  When in `-G` flow the manifest context should drive the default output location.
+  If manifest dir not writable: warn + offer (1) global default, (2) enter path, (3) quit.
+
+**Man page:**
+- [ ] Update `pathmux.1` for `-G` interactive flow, `--validate`, `-t`, `--show-stale`,
+  `--clear-stale`, new thumbnail fields
+
+**pm_* utility suite** (see PROPOSED_UTILS.md for full specs):
+- [ ] `pm_gpsexport` — export GPS track to GPX/KML; `--gpx` / `--kml` runtime flags
+- [ ] `pm_ls` — quick manifest listing; `pm_audit` — integrity check across all manifests
+- [ ] `pm_probe` — camera fingerprinting tool; single-file mode + `--card` SD card report
+- [ ] Rename `trip_debug` → `pm_tripdebug` (binary, CMakeLists target, source, man page)
+
+**CLI polish:**
+- [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump` as a
+  serialization modifier on `--dump` / `--fulldump`
+- [ ] `--dump`/`--fulldump` field filtering (`--fields id,date,duration`)
 - [ ] `recordingProfile` config field
 - [ ] `extra_hw_frames` CPU encoder guard
 
-**Low priority / polish:**
-- [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump`; applies to `--dump` and `--fulldump` as an output serialization modifier (implement after libpathmux.a restructure)
-- [ ] `--dump`/`--fulldump` field filtering (`--fields id,date,duration`)
-- [ ] Batch job system
-- [ ] Rename `trip_debug` → `pm_tripdebug` for naming consistency with `pm_gpsinfo`
-  (binary name, CMakeLists.txt target, source file, man page reference)
-- [x] **Stale manifest archive** (v0.9.8) — pruned index entries archived to
-  `~/.config/pathmux/manifests_stale.json`. `--show-stale` displays it;
-  `--clear-stale [--force]` wipes it.
-- [x] **`--clear-cache` / `--clear-stale` UX rework** (v0.9.8) — options rationalized;
-  `--force` now order-independent after `--clear-cache`; `std::cin >>` replaced
-  with `std::getline` in clearCache().
-- [x] **Usage output: `Manifest management:` section** (v0.9.8) — manifest-related options
-  split into their own labeled section; `--validate` moved there from Settings.
+**Known deferred (low priority, no blocker):**
+- `std::localtime` not thread-safe — irrelevant until parallelism added
+- Path reconstruction lossy if source path contains underscores — edge case; design
+  deferred post-library-restructure (already done — revisit if it surfaces)
 
 ---
 
@@ -166,7 +124,7 @@ Deferred (low priority until relevant):
 ### Tile-Based Trip Browser
 - Main window displays trips as tiles in a scrollable grid
 - Each tile shows:
-  - **Left side:** Animated thumbnail (firstThumb ↔ lastThumb cycling slowly, ~2-3 second loop)
+  - **Left side:** Animated thumbnail (`firstFrontThumb` ↔ `lastFrontThumb` cycling slowly, ~2-3 second loop; per-camera data available for richer previews)
   - **Right side:** Trip metadata
     - Date and start time
     - Trip duration (`tripDur` from manifest)
@@ -398,9 +356,9 @@ QuadEye is currently a solo project by a Linux sysadmin learning C++ through AI-
 
 ---
 
-*Last updated: 2026-02-28*
+*Last updated: 2026-03-01*
 *Project status: Phase 1 (CLI development)*
-*Current version: 0.9.4 (SN 00071)*
+*Current version: 0.9.9 (SN 00079)*
 
 **Audio sync reference:**
 - Audio track always sourced from **Left camera** (driver position)
