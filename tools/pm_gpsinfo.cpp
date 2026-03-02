@@ -211,7 +211,7 @@ static void outputJson(const std::vector<GpsRecord>& recs,
     if (firstLockIdx >= 0) {
         const auto& r = recs[firstLockIdx];
         std::cout << "  \"first_lock\": {\n";
-        std::cout << "    \"timestamp\": \"" << jsonEscape(r.timestamp) << "\",\n";
+        std::cout << "    \"timestamp_utc\": \"" << jsonEscape(r.timestamp) << "\",\n";
         std::cout << "    \"record_index\": " << r.index << ",\n";
         std::cout << std::fixed << std::setprecision(6);
         std::cout << "    \"lat\": " << r.lat << ",\n";
@@ -227,7 +227,7 @@ static void outputJson(const std::vector<GpsRecord>& recs,
             const auto& r = recs[i];
             std::cout << "    {\n";
             std::cout << "      \"index\": " << r.index << ",\n";
-            std::cout << "      \"timestamp\": \"" << jsonEscape(r.timestamp) << "\",\n";
+            std::cout << "      \"timestamp_utc\": \"" << jsonEscape(r.timestamp) << "\",\n";
             std::cout << std::fixed << std::setprecision(6);
             std::cout << "      \"lat\": " << r.lat << ",\n";
             std::cout << "      \"lon\": " << r.lon;
@@ -247,7 +247,7 @@ static void outputCsv(const std::vector<GpsRecord>& recs,
                       const std::string& filePath,
                       bool firstLockOnly)
 {
-    std::cout << "file,record_index,timestamp,lat,lon,speed_kmh,heading\n";
+    std::cout << "file,record_index,timestamp_utc,lat,lon,speed_kmh,heading\n";
 
     auto printRow = [&](const GpsRecord& r) {
         std::cout << csvEscape(filePath) << ","
@@ -290,7 +290,7 @@ static void outputXml(const std::vector<GpsRecord>& recs,
         const auto& r = recs[firstLockIdx];
         std::cout << "  <first_lock>\n";
         std::cout << "    <record_index>" << r.index << "</record_index>\n";
-        std::cout << "    <timestamp>" << xmlEscape(r.timestamp) << "</timestamp>\n";
+        std::cout << "    <timestamp_utc>" << xmlEscape(r.timestamp) << "</timestamp_utc>\n";
         std::cout << std::fixed << std::setprecision(6);
         std::cout << "    <lat>" << r.lat << "</lat>\n";
         std::cout << "    <lon>" << r.lon << "</lon>\n";
@@ -304,7 +304,7 @@ static void outputXml(const std::vector<GpsRecord>& recs,
         for (const auto& r : recs) {
             std::cout << "    <record>\n";
             std::cout << "      <index>" << r.index << "</index>\n";
-            std::cout << "      <timestamp>" << xmlEscape(r.timestamp) << "</timestamp>\n";
+            std::cout << "      <timestamp_utc>" << xmlEscape(r.timestamp) << "</timestamp_utc>\n";
             std::cout << std::fixed << std::setprecision(6);
             std::cout << "      <lat>" << r.lat << "</lat>\n";
             std::cout << "      <lon>" << r.lon << "</lon>\n";
@@ -325,7 +325,7 @@ static void outputText(const std::vector<GpsRecord>& recs,
                        const std::string& filePath,
                        bool firstLockOnly)
 {
-    std::cout << "File:           " << filePath << "\n";
+    std::cout << "File:           " << filePath << "  (filename = local time)\n";
     std::cout << "Total records:  " << recs.size() << "\n";
 
     int validCount   = 0;
@@ -346,7 +346,7 @@ static void outputText(const std::vector<GpsRecord>& recs,
         const auto& r = recs[firstLockIdx];
         std::cout << "First lock:     record " << r.index
                   << "  (" << r.index << "s after segment start)\n";
-        std::cout << "  Timestamp:    " << r.timestamp << "\n";
+        std::cout << "  Timestamp:    " << r.timestamp << "  (UTC)\n";
         std::cout << std::fixed << std::setprecision(6);
         std::cout << "  Position:     " << r.lat << ", " << r.lon << "\n";
         if (r.speed >= 0.0)
@@ -370,7 +370,7 @@ static void outputText(const std::vector<GpsRecord>& recs,
         if (lastValidIdx >= 0 && lastValidIdx != firstLockIdx) {
             const auto& r = recs[lastValidIdx];
             std::cout << "Last fix:       record " << r.index << "\n";
-            std::cout << "  Timestamp:    " << r.timestamp << "\n";
+            std::cout << "  Timestamp:    " << r.timestamp << "  (UTC)\n";
             std::cout << std::fixed << std::setprecision(6);
             std::cout << "  Position:     " << r.lat << ", " << r.lon << "\n";
         }
@@ -684,4 +684,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-// SN: 00072
+// SN: 00080
