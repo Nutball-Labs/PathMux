@@ -94,10 +94,10 @@ values on D90) — stored but ignored. Speed in km/h.
   format string corrected (7 fields), `manifests_stale.json` in FILES
 
 **pm_* utility suite** (see PROPOSED_UTILS.md for full specs):
-- [ ] `pm_gpsexport` — export GPS track to GPX/KML; `--gpx` / `--kml` runtime flags
-- [ ] `pm_ls` — quick manifest listing; `pm_audit` — integrity check across all manifests
-- [ ] `pm_probe` — camera fingerprinting tool; single-file mode + `--card` SD card report
-- [ ] Rename `trip_debug` → `pm_tripdebug` (binary, CMakeLists target, source, man page)
+- [x] `pm_gpsexport` — export GPS track to GPX/KML; `--gpx` / `--kml` runtime flags
+- [x] `pm_ls` — quick manifest listing; `pm_audit` — integrity check across all manifests
+- [x] `pm_probe` — camera fingerprinting tool; single-file mode + `--card` SD card report
+- [x] Rename `trip_debug` → `pm_tripdebug` (binary, CMakeLists target, source, man page)
 
 **CLI polish:**
 - [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump` as a
@@ -474,7 +474,7 @@ package for the Debian/Ubuntu equivalent (likely Debian backports or Ubuntu PPA)
 **CMake install targets:**
 - [x] `pathmux` binary → `/usr/bin/` — `install(TARGETS pathmux ...)` in CMakeLists.txt
 - [x] `pm_gpsinfo` binary → `/usr/bin/` — same install target
-- [ ] `pm_tripdebug` binary → `/usr/bin/` — blocked on rename from `trip_debug`
+- [x] `pm_tripdebug` binary → `/usr/bin/`
 - [x] `pathmux.1` man page → `/usr/share/man/man1/` — `install(FILES ...)` in CMakeLists.txt
 - [ ] `LICENSE` file → `/usr/share/licenses/pathmux/` — blocked on license decision
 - [x] `libpathmuxlib.a` not installed — internal static lib only; correct
@@ -787,10 +787,16 @@ The clean separation is: **profile handles "how do I find and parse your files"*
 - Solicit USB sticks with sample footage from community members
 - Test brands in priority order:
   1. Pruveeo D90 (primary, already supported)
-  2. TeslaCam (large user base, very different format)
-  3. BlackVue (popular multi-camera system)
-  4. Viofo (budget-friendly, common)
-  5. Thinkware, Garmin, others as data becomes available
+  2. **Cobra CCDC4500** (Costco special — SD card in hand shortly for analysis)
+     - Front (1080p) + rear/interior (720p); `.MOV` H.264 container
+     - GPS source: TBD — needs `exiftool`/`ffprobe` analysis once SD card in hand
+     - Filenames: `CLIP_YYYYMMDD_HHMMSS_F.MOV` (front), `CLIP_YYYYMMDD_HHMMSS_R.MOV` (rear)
+     - Segments: 1, 3, or 5 minute (user-configurable)
+     - TODO: Deep-dive on file layout, GPS extraction method, quirks
+  3. TeslaCam (large user base, very different format)
+  4. BlackVue (popular multi-camera system)
+  5. Viofo (budget-friendly, common)
+  6. Thinkware, Garmin, others as data becomes available
 
 **Profile validation:**
 - Each new profile requires:

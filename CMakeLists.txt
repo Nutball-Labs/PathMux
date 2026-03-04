@@ -128,18 +128,18 @@ target_include_directories(pm_probe PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(pm_probe PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
-# trip_debug — standalone debug tool (not installed by default)
-# Build with: cmake --build build --target trip_debug
+# pm_tripdebug — standalone debug tool (not installed by default)
+# Build with: cmake --build build --target pm_tripdebug
 # ---------------------------------------------------------------------------
-add_executable(trip_debug tools/debug_main.cpp)
-target_link_libraries(trip_debug PRIVATE pathmuxlib)
+add_executable(pm_tripdebug tools/pm_tripdebug.cpp)
+target_link_libraries(pm_tripdebug PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
 # Install targets (for RPM/DEB packaging and EPEL submission)
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_probe
+install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_probe pm_tripdebug
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -150,6 +150,7 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/man1/pm_ls.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_audit.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_probe.1"
+    "${CMAKE_SOURCE_DIR}/man1/pm_tripdebug.1"
     DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
     OPTIONAL
 )
@@ -214,4 +215,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00080
+# SN: 00081

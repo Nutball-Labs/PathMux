@@ -1,5 +1,91 @@
 # CHANGELOG
 
+## [0.9.10e / SN: 00081] - 2026-03-04
+### Changed
+- **`trip_debug` renamed to `pm_tripdebug`**: source (`tools/pm_tripdebug.cpp`),
+  CMake target, install target, and man page (`man1/pm_tripdebug.1`) all updated
+  to the `pm_` naming convention. Completes the pm_* utility suite rename.
+- **`pm_tripdebug` added to install targets**: now included in RPM/DEB packaging
+  alongside the other pm_* tools.
+
+---
+
+## [0.9.10d / SN: 00080] - 2026-03-02
+### Fixed
+- **`pm_gpsinfo` timezone labels**: UTC vs local time now correctly labeled in
+  timestamp output — no more ambiguity in GPS inspection output.
+- **`VERSION_SUFFIX` in `version.hpp`**: Suffix component (e.g. `"d"`) is now set
+  directly in `version.hpp` rather than inferred at runtime, so `pathmux -v` always
+  reports the correct suffix. Must be updated on every suffix bump.
+
+---
+
+## [0.9.10c / SN: 00080] - 2026-03-02
+### Added
+- **`pm_probe`** — camera compatibility profiler (`tools/pm_probe.cpp`):
+  - Single-file mode: `pm_probe <file.ts>` or `pm_probe MID:TID` — reports
+    container, resolution, frame rate, pixel format, color space, duration,
+    stream list, GPS method, and first GPS fix (timestamp, lat, lon).
+  - Card mode: `pm_probe --card <path>` — fingerprints full dashcam SD card root;
+    finds camera dirs, samples up to 5 segment durations, probes primary camera.
+    Output formatted for pasting into a GitHub issue.
+  - `--json` flag for all modes.
+  - Man page: `man1/pm_probe.1` — "PathMux Suite - Camera Profiler".
+
+### Changed
+- **ExifTool version policy removed**: PathMux no longer validates or requires a
+  minimum ExifTool version. If GPS extraction returns no or corrupted data, users
+  should contact the ExifTool maintainer. `rpm/pathmux.spec` Requires changed from
+  `exiftool >= 13.51` to `exiftool`.
+- **Man page URL cleanup**: Removed inline `https://exiftool.org` URLs from man page
+  prose (non-standard). Replaced with "contact the ExifTool maintainer directly"
+  and `SEE ALSO exiftool(1)`.
+- **GPS first-fix fields renamed** `sample_*` → `first_*` (`first_lat`,
+  `first_lon`, `first_timestamp`, `has_fix`) — clearer naming; not a statistical
+  sample.
+
+---
+
+## [0.9.10b / SN: 00080] - 2026-03-02
+### Added
+- **`pm_audit`** — footage integrity checker (`tools/pm_audit.cpp`):
+  - Checks ValidationFile sample against disk (exists + MD5).
+  - Status values: `OK` / `MISSING` / `MODIFIED` / `NO_VALIDATION` / `CORRUPT`.
+  - `--deep`: ffprobe pass on every Front segment to detect truncated files.
+  - `--json`: machine-readable output; exit 0 = all OK, exit 1 = problems found.
+  - Man page: `man1/pm_audit.1` — "PathMux Suite - Footage Auditor".
+
+---
+
+## [0.9.10a / SN: 00080] - 2026-03-02
+### Added
+- **`pm_ls`** — non-interactive trip lister (`tools/pm_ls.cpp`):
+  - Default: one line per trip (MID TID date start duration segs distance GPS).
+  - `MID:TID` argument: multi-line trip detail block.
+  - `--json`: machine-readable output for jq pipelines.
+  - Respects `useImperial` pref for distance display.
+- **Man pages** for `pm_gpsinfo`, `pm_gpsexport`, `pm_ls` (`man1/pm_gpsinfo.1`,
+  `man1/pm_gpsexport.1`, `man1/pm_ls.1`); `pathmux.1` SEE ALSO updated for all
+  new utilities.
+
+---
+
+## [0.9.10 / SN: 00080] - 2026-03-02
+### Added
+- **`pm_gpsexport`** — standalone non-interactive GPS track exporter
+  (`tools/pm_gpsexport.cpp`): `MID:TID --gpx/--kml/--geojson PATH [--force]
+  [--verbose]`; extracts GPS if needed, writes one or more formats, paths to stdout.
+- **`lib/gps_export.hpp/.cpp`**: `extractGps()`, `writeGpx()`, `writeKml()`,
+  `writeGeoJson()` extracted from `cli/gpx_export.cpp` into `namespace Pathmux`
+  (libpathmuxlib). Enables tools and future GUI to share GPS write logic.
+
+### Changed
+- `cli/gpx_export.cpp`: GPS/track writer implementations removed; call sites
+  updated to `Pathmux::` namespace.
+- `pathmux.hpp`: `gps_export.hpp` added to umbrella header.
+
+---
+
 ## [0.9.9 / SN: 00079] - 2026-03-01
 ### Added
 - **Per-camera thumbnail fields** in `TripSegment`: `frontThumb`, `rearThumb`,

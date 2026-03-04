@@ -11,17 +11,17 @@ namespace fs = std::filesystem;
 using namespace Pathmux;
 
 void printUsage() {
-    std::cout << "trip_debug v" << APP_VERSION << "\n"
-              << "Usage: trip_debug [options] <path_to_dashcam_folder>\n\n"
+    std::cout << "pm_tripdebug v" << APP_VERSION << "\n"
+              << "Usage: pm_tripdebug [options] <path_to_dashcam_folder>\n\n"
               << "Options:\n"
               << "  -v, --version   Show version and exit\n"
               << "  -h, --help      Show this help message\n"
               << "  -T, --tree      Show full segment tree for all trips and exit\n"
               << "  -f, --full      Interactive mode: summary + drill-down by trip ID\n\n"
               << "Examples:\n"
-              << "  ./trip_debug /mnt/dashcam         (summary list)\n"
-              << "  ./trip_debug -T /mnt/dashcam      (full tree, all trips)\n"
-              << "  ./trip_debug -f /mnt/dashcam      (interactive drill-down)\n";
+              << "  ./pm_tripdebug /mnt/dashcam         (summary list)\n"
+              << "  ./pm_tripdebug -T /mnt/dashcam      (full tree, all trips)\n"
+              << "  ./pm_tripdebug -f /mnt/dashcam      (interactive drill-down)\n";
 }
 
 void showSummaryList(const std::string& path, const std::vector<Trip>& trips) {
@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help")    { printUsage(); return 0; }
         if (arg == "-v" || arg == "--version") {
-            std::cout << APP_NAME << " trip_debug v" << APP_VERSION << "\n";
+            std::cout << APP_NAME << " pm_tripdebug v" << APP_VERSION << "\n";
             return 0;
         }
         if (arg == "-T" || arg == "--tree")  { treeMode = true; continue; }
@@ -167,7 +167,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "Exiting trip_debug.\n";
+    std::cout << "Exiting pm_tripdebug.\n";
     return 0;
 }
-// SN: 00071
+// SN: 00081
