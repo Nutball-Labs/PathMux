@@ -59,7 +59,7 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 | File | Role |
 |---|---|
 | `tools/pm_gpsinfo.cpp` | Standalone GPS info utility; `--scan-all-trips` batch lock scanner |
-| `tools/debug_main.cpp` | Trip detection debug/inspection tool |
+| `tools/pm_tripdebug.cpp` | Trip detection debug/inspection tool |
 
 ### Other
 
@@ -130,8 +130,26 @@ bump SNs, bump version, commit, and push.
 - Filenames: `YYYYMMDD_HHMMSS_X.ts` (video) + `YYYYMMDD_HHMMSS_X.jpg` (thumbnail)
 - Front camera is primary for trip detection
 - Other cameras fuzzy-matched within ±5 seconds of Front timestamps
-- Will need sample formatting from other cameras that use an alternate filename and/or directory structure
-  - Eventually will need a template to provide user submission through a github issue
+- Optional cameras (e.g. rear not connected): handle **both** empty-directory and
+  absent-directory cases gracefully — different cameras behave differently
+
+### CameraProfile / StorageFormat Abstraction (Planned)
+- Camera format detection will be extracted from `trip_detection.cpp` into a
+  separate `CameraProfile`/`StorageFormat` layer in the library
+- `TripDetection` consumes the profile; the rest of the pipeline sees a normalized
+  description and does not care what brand produced the footage
+- Separation goal: field bug reports for a new camera layout only require updating
+  the detection layer, not touching trip detection logic
+- What a profile captures: directory layout, filename pattern, container format,
+  number of active cameras, GPS extraction method
+- Detection approach: auto-detect by probing SD card structure; hybrid
+  (auto-detect + user confirmation) is the long-term target
+- `pm_probe --card` is the natural entry point for profile detection
+- User support model for unknown layouts: `pm_probe --card <path>` + `ls -alR`
+  pasted into a GitHub issue — gives everything needed to add support without
+  having the hardware in hand
+- See ROADMAP.md "Multi-Brand Dashcam Support" for full architecture and JSON
+  profile format spec
 
 ### Trip Detection
 - Gap threshold: configurable, default 900s (15 minutes)

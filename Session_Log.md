@@ -5,6 +5,49 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-04
+
+### Session 1
+**Focus:** Housekeeping — backfill docs, rename trip_debug, record CameraProfile architecture
+
+**Work Done:**
+- **CHANGELOG.md backfilled:** Entries for v0.9.10 through v0.9.10d were missing;
+  all added from git log and Session_Log.
+- **ROADMAP.md:** Corrected utility suite checkboxes (pm_gpsexport, pm_ls, pm_audit,
+  pm_probe, pm_tripdebug all marked done). Added CameraProfile extraction TODO under
+  Phase 1 Active Work. Added `Optional Camera Handling` and `User Support Model`
+  sections to Multi-Brand Dashcam Support.
+- **`trip_debug` → `pm_tripdebug` (v0.9.10e, SN 00081):**
+  - `git mv tools/debug_main.cpp tools/pm_tripdebug.cpp`
+  - All "trip_debug" strings in source updated to "pm_tripdebug"
+  - CMake target and install target renamed; `pm_tripdebug` added to packaging install
+  - `man1/pm_tripdebug.1` created — "PathMux Suite - Trip Detection Debugger"
+  - `pathmux.1` SEE ALSO updated; `lib/version.hpp` suffix bumped to "e"
+- **CameraProfile/StorageFormat architecture decision recorded** (from 2026-03-04
+  planning session on claude.ai):
+  - Camera format detection to be extracted from `trip_detection.cpp` into a
+    separate library layer; TripDetection consumes it; rest of pipeline sees
+    normalized output
+  - Goal: field bug reports only require updating detection layer, not trip logic
+  - `pm_probe --card` is the natural entry point; output formatted for GitHub issues
+  - Optional cameras: must handle both empty-dir and absent-dir gracefully
+  - Simulation plan: Front/Left/Right populated, Rear empty/absent
+  - Cobra Drive HD dual-view card incoming as first non-D90 test case
+  - Added to CLAUDE.md architecture section and ROADMAP Multi-Brand section
+
+**Files changed:** `tools/pm_tripdebug.cpp` (renamed from debug_main.cpp),
+`man1/pm_tripdebug.1` (new), `CMakeLists.txt`, `lib/version.hpp`, `man1/pathmux.1`,
+`ROADMAP.md`, `CHANGELOG.md`, `CLAUDE.md`
+
+**Pending (carry forward):**
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- Open bug: GPX/KML default output path should follow manifest dir, not global defaultExportDir
+- CameraProfile/StorageFormat layer implementation (architecture decided, code pending)
+
+---
+
 ## 2026-03-02
 
 ### Session 1 (Afternoon)

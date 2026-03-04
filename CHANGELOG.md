@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [housekeeping] - 2026-03-04
+### Documentation
+- **CHANGELOG.md backfilled** for v0.9.10 through v0.9.10d — entries were missing.
+- **CLAUDE.md** updated: version/HWM to v0.9.10e/SN 00081; fixed stale
+  `debug_main.cpp` → `pm_tripdebug.cpp` in tools table; added
+  `CameraProfile/StorageFormat Abstraction` architecture section; added
+  optional-camera (empty-dir vs absent-dir) note.
+- **ROADMAP.md**: utility suite checkboxes corrected (pm_gpsexport, pm_ls,
+  pm_audit, pm_probe, pm_tripdebug all marked done); added CameraProfile
+  extraction TODO under Phase 1; added `Optional Camera Handling` and
+  `User Support Model` sections to Multi-Brand Dashcam Support.
+
+---
+
 ## [0.9.10e / SN: 00081] - 2026-03-04
 ### Changed
 - **`trip_debug` renamed to `pm_tripdebug`**: source (`tools/pm_tripdebug.cpp`),

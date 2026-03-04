@@ -88,6 +88,12 @@ values on D90) — stored but ignored. Speed in km/h.
 - [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
 - [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
 
+**Camera profile abstraction:**
+- [ ] Extract camera format detection from `trip_detection.cpp` into a
+  `CameraProfile`/`StorageFormat` layer; `TripDetection` consumes it; rest of
+  pipeline sees normalized output. Enables per-camera bug fixes without touching
+  trip detection. See "Multi-Brand Dashcam Support" section for full spec.
+
 **Man page:**
 - [x] Updated `pathmux.1` to v0.9.9 — `-s` scan prompt, GeoJSON in `-G` flow,
   `Manifest Management` subsection, `--show-stale` / `--clear-stale`, ExifTool
@@ -780,6 +786,33 @@ The clean separation is: **profile handles "how do I find and parse your files"*
   - GPX import (for separate GPS tracks)
   - Manual GPX overlay (user provides their own GPS data)
   - None (trips still work, just no GPS features)
+
+### Optional Camera Handling
+
+Some cameras are physically optional (e.g. D90 rear camera not connected). The
+resulting SD card may have either an empty camera directory or no directory at all —
+different cameras handle this differently. Both cases must be handled gracefully:
+
+1. **Directory present but empty** — scan finds no segments; channel treated as absent
+2. **Directory completely absent** — no directory entry at all
+
+The collage pipeline's dead-camera placeholder logic already covers the absent-channel
+case at render time. Detection-layer handling for both cases must be verified during
+camera profile implementation.
+
+**Simulation plan (before Cobra card arrives):**
+Populate `Front/`, `Left/`, `Right/` with real D90 segments; leave `Rear/` empty or
+absent. Exercises both detection and collage code paths for a 3-camera configuration.
+
+### User Support Model for Unknown Layouts
+
+When a user reports an unsupported camera:
+1. User runs: `pm_probe --card <path>` and `ls -alR <path>`
+2. Pastes both into a GitHub issue using the camera support issue template
+3. That output gives everything needed to reverse-engineer the layout and write a
+   camera profile — no hardware required
+
+`pm_probe --card` output is specifically formatted for this use case.
 
 ### Testing Strategy
 
