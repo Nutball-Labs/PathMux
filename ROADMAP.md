@@ -864,5 +864,10 @@ When a user reports an unsupported camera:
 - "It just works" reputation across brands
 - Manufacturers start testing against QuadEye during product development
 
+### Under Consideration
+- 💡 PathMux Viewer (mobile companion app) — video playback, incident/segment
+  marking, and GPS track review for iOS/Android; reads and writes a sidecar
+  project file synced via cloud storage; marked segments and edits picked up
+  by desktop on next render; no rendering or ffmpeg dependency
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
