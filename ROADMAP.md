@@ -67,6 +67,11 @@ values on D90) — stored but ignored. Speed in km/h.
 - [x] KML export (`[K]` in `-G` flow) with visual prefs
 - [x] GeoJSON export (`[J]` in `-G` flow, RFC 7946 FeatureCollection)
 
+**What might be done in the future:**
+- Pull altitude data from a publically accessible database and rewrite the manifest with accurate
+  data.  Would be off for any sample on a bridge or over water but close enough to be overly detailed
+  to our purposes.  Have to be mindful of too much traffic to the outside resource and it should be
+  an optional process triggered by the user on purpose and then run in a background thread.
 ---
 
 ### Completed Infrastructure
