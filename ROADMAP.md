@@ -48,19 +48,19 @@ This document outlines planned features and future development direction for Pat
 ### GPS Data Extraction
 
 **ExifTool status:** Phil Harvey fixed LIGOGPSINFO coordinate decode in response to GitHub issue.
-ExifTool 13.51+ released and working. EPEL ships 13.10 (too old) — runtime version check
-with clear error message is the packaging solution (can't declare hard `Requires >= 13.51`).
+ExifTool 13.51+ released and working. PathMux does not validate the ExifTool version at
+runtime — if GPS extraction returns no data, the user contacts the ExifTool maintainer directly.
 
 **One GPS record per second** from LIGOGPSINFO binary stream:
 fields: timestamp, lat, lon, speed, heading/track. Altitude present but incorrect (negative
 values on D90) — stored but ignored. Speed in km/h.
 
-**What's done:**
+**Scan-time GPS (during trip detection):**
 - [x] `startLat/Lon` and `endLat/Lon` extracted during trip scan and stored in manifest
 - [x] `gpsLockSeconds` — seconds to first valid fix, populated by `pm_gpsinfo --scan-all-trips`
 - [x] `firstLockLat/Lon/Timestamp/Record` — first fix with non-zero coordinates
 
-**What's done:**
+**Full track extraction (user-initiated):**
 - [x] Full GPS track extraction — one point per second via ExifTool; stored in manifest
   `gpsTrack` array; `gpsTrackStatus` tracks none/complete per trip
 - [x] GPX export (`[X]` in `-G` flow)

@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## [housekeeping] - 2026-03-05
+### Documentation & Infrastructure
+- **`man1/pathmux.1`**: Expanded `-G` section with full interactive flow reference
+  (trip picker commands, action menu, output directory logic). Added `BRAG BOARD`
+  section — community encode timing leaderboard seeded with placeholder entries;
+  points users to `buildHistory` JSON block for submission.
+- **`cmake/sn_audit.cmake`**: Updated to glob `*.md` files and match HTML comment
+  SN format (`<!-- SN: -->`). All three SN formats now covered.
+- **SN stamps**: `<!-- SN: 00081 -->` added to all `.md` files in the project
+  (CHANGELOG, CLAUDE, ROADMAP, README, Session_Log, PROPOSED_UTILS,
+  pathmux_project_brief, ROADMAP_MacOS, ROADMAP_WINDOWS). HTML comment —
+  invisible when rendered, greppable in raw file.
+- **`.gitignore`**: Added `sn_audit.txt` — working audit file, not for commit.
+- **CLAUDE.md**: Remote URL updated to `Nutball-Labs/PathMux`; SN convention
+  updated to document all three formats; GPX/KML default output path bug cleared
+  (verified fixed in v0.9.6a).
+- **ROADMAP.md**: Fixed duplicate `What's done:` header in GPS section; updated
+  ExifTool status note to reflect current no-version-check policy.
+- **Nutball-Labs GitHub org**: Both PathMux and SRoute repos moved to
+  `github.com/Nutball-Labs`. Local remote updated accordingly.
+
+---
+
 ## [housekeeping] - 2026-03-04
 ### Documentation
 - **CHANGELOG.md backfilled** for v0.9.10 through v0.9.10d — entries were missing.
