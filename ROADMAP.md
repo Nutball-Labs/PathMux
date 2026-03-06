@@ -360,6 +360,17 @@ design so POI timestamps can be attached to trips from the start.
   - Uses ImageMagick's `convert` command
   - Generated on-demand or as background task after scan
 
+### Combo Compass/Speedometer Gauge Widget (Shower Thought 2026-03-06)
+- Unified round gauge widget for any view that needs heading and/or speed
+- **Layout:** Compass rose in the center; speed displayed on a semicircular bar graph around the perimeter
+- **Speed color bands:**
+  - Blue: 0–25 mph
+  - Green: 25–70 mph
+  - Yellow: 71–79 mph
+  - Red: 80–100 mph
+- Applies to both the Qt6 GUI playback overlay and any CLI-side ASCII/text equivalent
+- Source: GitHub issue #4
+
 ### UI/UX Polish
 - Keyboard shortcuts for common actions
 - Drag-and-drop trip reordering

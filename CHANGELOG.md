@@ -37,6 +37,36 @@
 
 ---
 
+## [0.9.10f / SN: 00081] - 2026-03-06
+### Added
+- **`pm_findgpslock`** — new standalone GPS lock diagnostic scanner (`tools/pm_findgpslock.cpp`):
+  - Accepts one or more `.ts` files; prints a header line per file then GPS samples
+    until the first fully-locked reading (valid lat/lon AND synchronized clock).
+  - Pre-lock samples labelled `NO_POS`, `NO_TIME`, or `NO_POS+NO_TIME`; normal output
+    is two lines per file (header + sample 0 already locked).
+  - `--verbose` flag passes ExifTool stderr to terminal for diagnostics.
+  - Added to CMake build and install targets.
+- **`pm_gpsexport --dump`** — prints all extracted GPS track points to stdout in a
+  tabular format (index, timestamp, lat, lon, speed, heading, alt); useful for
+  quick inspection without opening a GeoJSON file.
+- **`gpsTrack` manifest fields**: `pre_position_lock_samples` and
+  `pre_time_lock_samples` now stored per-trip after GPS extraction — count of
+  skipped records before position and clock lock respectively.
+
+### Fixed
+- **`gps_export.cpp` ExifTool quiet flag**: extraction now passes `-q` when not in
+  verbose mode, suppressing `[Minor] Tag not defined` ANSI warnings that were
+  leaking to the terminal. Remaining stderr still redirected to `/dev/null`.
+- **Cold-start clock skip**: GPS records with `year < 2000` are now skipped during
+  extraction (covers `1900:01:00` all-zero register and `1970:01:01` epoch variants).
+  Previously only zero lat/lon was checked.
+
+### Changed
+- **`pm_gpsexport` progress output**: progress dots moved from stdout to stderr;
+  exported file paths remain on stdout. Allows clean pipeline use.
+
+---
+
 ## [0.9.10e / SN: 00081] - 2026-03-04
 ### Changed
 - **`trip_debug` renamed to `pm_tripdebug`**: source (`tools/pm_tripdebug.cpp`),

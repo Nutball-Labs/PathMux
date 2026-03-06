@@ -5,6 +5,63 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-06
+
+### Session 1
+**Focus:** GPS lock diagnostic tooling; pm_findgpslock; gps_export quiet-mode fix; v0.9.10f
+
+**Code Changes (v0.9.10f):**
+- **`tools/pm_findgpslock.cpp`** — new standalone tool. Scans one or more `.ts` files
+  via ExifTool; prints header + GPS samples up to the first fully-locked record
+  (valid lat/lon AND year ≥ 2000). Pre-lock rows labelled `NO_POS`, `NO_TIME`,
+  `NO_POS+NO_TIME`. Normal output is two lines per file. `--verbose` passes ExifTool
+  stderr to terminal. Added to CMake build and install.
+- **`lib/gps_export.cpp`** — ExifTool now called with `-q` in non-verbose mode,
+  suppressing `[Minor] Tag 'Main:GPSDateTime' not defined` ANSI warnings that were
+  polluting the terminal. Remaining stderr redirected to `/dev/null`.
+  Added year < 2000 clock check: cold-start records with unsynchronized GPS clock
+  (`1900:01:00`, `1970:01:01`) are now skipped in addition to zero lat/lon records.
+  New manifest fields: `pre_position_lock_samples`, `pre_time_lock_samples` — count
+  of skipped records before lock, stored per-trip after extraction.
+- **`tools/pm_gpsexport.cpp`** — added `--dump` flag: prints all track points to
+  stdout in a tabular format for quick diagnostic inspection. Progress dots moved
+  from stdout to stderr so file paths remain cleanly on stdout for pipeline use.
+- **`lib/version.hpp`** — bumped VERSION_SUFFIX to `"f"` (v0.9.10f).
+
+**GPS Lock Research:**
+- Ran `pm_findgpslock` against all February `.ts` files in `/z/srcdash/ex*/Front/`
+  with filenames starting `0` (03:xx–09:xx range, early morning).
+- Result: essentially universal GPS lock on sample 0 for that time range.
+  Single exception: `20260225_035430F.ts` — 0 samples extracted (stub/corrupt file,
+  present in both ex9 and ex10 from a duplicated SD card copy, not a real exception).
+- **Conclusion withheld**: early-morning result is a narrow slice. 1900-date records
+  previously observed while browsing suggest cold-start is real in the broader dataset.
+  Full corpus scan launched via `nohup /z/srcdash/find_lock/run_findgpslock.sh`.
+  Results to be analyzed in a follow-up session.
+- `run_findgpslock.sh` written to `/z/srcdash/find_lock/` — iterates all
+  `*/Front/*.ts` files, writes per-file output to `<stem>.findgpslock.txt`,
+  skips already-processed files (safe to restart).
+
+**Shower Thought Recorded (ROADMAP):**
+- **Combo Compass/Speedometer Gauge Widget** — unified round gauge: compass rose
+  center, speed on semicircular bar around perimeter; color bands (blue 0–25, green
+  25–70, yellow 71–79, red 80–100 mph). Applies to Qt6 playback overlay and any
+  CLI ASCII equivalent. Source: GitHub issue #4.
+
+**Files Changed:** `tools/pm_findgpslock.cpp` (new), `lib/gps_export.cpp`,
+`tools/pm_gpsexport.cpp`, `CMakeLists.txt`, `lib/version.hpp`, `ROADMAP.md`,
+`CHANGELOG.md`, `Session_Log.md`
+
+**Pending (carry forward):**
+- GPS lock corpus scan in progress — analyze results when complete
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+- Named locations: SSC Bldg 1007 (30.3679, -89.6117), 11 Oxford Dr Gulfport (30.4189, -89.0252)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- CameraProfile/StorageFormat implementation (architecture decided, code pending)
+- Cobra CCDC4500 SD card expected ~2026-03-08 — GPS source TBD
+
+---
+
 ## 2026-03-05
 
 ### Session 1

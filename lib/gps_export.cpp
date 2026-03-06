@@ -80,13 +80,19 @@ bool extractGps(json& root,
 
     json trackArray = json::array();
     bool gotAny     = false;
+    int prePositionLockCount = 0;  // records with zero lat/lon (no position fix yet)
+    int preTimeLockCount     = 0;  // records with valid position but unsynchronized clock
 
     for (int si = 0; si < segCount; ++si) {
         std::string frontPath = segs[si].value("front", "-");
         if (frontPath == "-" || frontPath.empty()) continue;
 
-        // Drop 2>/dev/null so errors are visible during extraction
-        std::string cmd = exifCmd + "\"" + frontPath + "\""
+        // verbose=true: let ExifTool stderr reach the terminal.
+        // verbose=false: -q suppresses informational/tty output; 2>/dev/null
+        //   catches any remaining stderr.
+        std::string cmd = exifCmd
+                          + (verbose ? "" : " -q")
+                          + " \"" + frontPath + "\""
                           + (verbose ? "" : " 2>/dev/null");
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) {
@@ -116,8 +122,15 @@ bool extractGps(json& root,
                 ++lineIdx; continue;
             }
 
-            // Skip records with zero lat/lon — GPS not yet locked
-            if (lat == 0.0 && lon == 0.0) { ++lineIdx; continue; }
+            // Skip records with zero lat/lon — GPS position not yet locked
+            if (lat == 0.0 && lon == 0.0) { ++prePositionLockCount; ++lineIdx; continue; }
+
+            // Skip records with unsynchronized clock (year < 2000).
+            // ExifTool renders the all-zero GPS clock register as "1900:01:00";
+            // other cameras/versions may emit "1970:01:01" or similar.
+            // A broad threshold catches all known variants.
+            int year = (datePart.size() >= 4) ? std::stoi(datePart.substr(0, 4)) : 0;
+            if (year < 2000) { ++preTimeLockCount; ++lineIdx; continue; }
 
             json pt;
             pt["timestamp"] = datePart + " " + timePart;
@@ -147,12 +160,14 @@ bool extractGps(json& root,
         return false;
     }
 
-    jTrip["gpsTrack"]       = trackArray;
-    jTrip["gpsTrackStatus"] = "complete";
-    jTrip["startLat"]       = trackArray.front().value("lat", 0.0);
-    jTrip["startLon"]       = trackArray.front().value("lon", 0.0);
-    jTrip["endLat"]         = trackArray.back().value("lat",  0.0);
-    jTrip["endLon"]         = trackArray.back().value("lon",  0.0);
+    jTrip["gpsTrack"]                  = trackArray;
+    jTrip["gpsTrackStatus"]            = "complete";
+    jTrip["pre_position_lock_samples"] = prePositionLockCount;
+    jTrip["pre_time_lock_samples"]     = preTimeLockCount;
+    jTrip["startLat"]                  = trackArray.front().value("lat", 0.0);
+    jTrip["startLon"]                  = trackArray.front().value("lon", 0.0);
+    jTrip["endLat"]                    = trackArray.back().value("lat",  0.0);
+    jTrip["endLon"]                    = trackArray.back().value("lon",  0.0);
 
     // Rewrite manifest
     std::ofstream ofs(manifestFile);
@@ -440,4 +455,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 }
 
 } // namespace Pathmux
-// SN: 00080
+// SN: 00081

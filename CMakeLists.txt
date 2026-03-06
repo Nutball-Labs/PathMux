@@ -120,6 +120,14 @@ target_include_directories(pm_gpsexport PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(pm_gpsexport PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
+# pm_findgpslock — GPS lock diagnostic scanner
+# ---------------------------------------------------------------------------
+add_executable(pm_findgpslock tools/pm_findgpslock.cpp)
+target_compile_features(pm_findgpslock PRIVATE cxx_std_17)
+target_include_directories(pm_findgpslock PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(pm_findgpslock PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
 # pm_probe — camera compatibility profiler
 # ---------------------------------------------------------------------------
 add_executable(pm_probe tools/pm_probe.cpp)
@@ -139,7 +147,7 @@ target_link_libraries(pm_tripdebug PRIVATE pathmuxlib)
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_probe pm_tripdebug
+install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
