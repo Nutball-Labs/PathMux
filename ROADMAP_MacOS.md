@@ -177,3 +177,5 @@ Qt6 is fully supported on macOS and handles all platform differences natively.
 
 *Last updated: 2026-03-01*
 *Status: Planning — no macOS build attempted yet*
+
+<!-- SN: 00081 -->

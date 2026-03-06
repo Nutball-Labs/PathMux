@@ -77,8 +77,9 @@ Every source file and the Makefile carries a serial number comment at the
 bottom of the file:
 
 ```cpp
-// SN: 00071   ← C++ files and headers
-# SN: 00071    ← Makefile and cmake files
+// SN: 00071       ← C++ files and headers
+# SN: 00071        ← Makefile and cmake files
+<!-- SN: 00071 --> ← Markdown (.md) files (HTML comment — invisible when rendered)
 ```
 
 **Rules:**
@@ -236,10 +237,8 @@ bump SNs, bump version, commit, and push.
 
 ## Known Issues / Pending Work
 
-- Man page needs update for `-G` interactive flow, `--validate`, `-t` flags
-- GPX/KML output default should be manifest directory, not global `defaultExportDir` —
-  when in `-G` flow the manifest context should drive the default; if unwritable: warn +
-  offer (1) global default, (2) enter new path, (3) quit back to trip list
+- ~~Man page needs update for `-G` interactive flow, `--validate`, `-t` flags~~ — done v0.9.11
+- ~~GPX/KML output default should be manifest directory, not global `defaultExportDir`~~ — fixed v0.9.6a
 - `pm_gpsinfo` enhancements:
   - ~~Fix argument order to [options] \<file.ts\> (POSIX convention)~~ — done v0.9.3
   - ~~`--scan-all-trips`: scan first segment of every trip, report GPS lock time~~ — done v0.9.3
@@ -260,7 +259,7 @@ bump SNs, bump version, commit, and push.
 - All work on `main` branch
 - Commit after each stable version cut
 - Commit message format: `"Fix/Add/Update description — PathMux vX.Y.Z (SN NNNNN)"`
-- Remote: `git@github.com:BiloxiGeek/PathMux.git` (SSH key auth)
+- Remote: `git@github.com:Nutball-Labs/PathMux.git` (SSH key auth)
 - After committing: `git push origin main`
 
 ---
@@ -297,3 +296,5 @@ When a communication is prefaced with either label:
 - **Phase 2 (Qt6 GUI):** Planned, not started
 - All CLI work on `main` branch; GUI will branch when CLI is complete
 
+
+<!-- SN: 00081 -->

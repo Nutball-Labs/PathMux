@@ -171,3 +171,5 @@ Files changed in a build get their SN bumped to the new high-water mark.
 ## Current Version
 0.6.0p (SN 00012)
 Previous stable: 0.6.0k (tagged in GitHub)
+
+<!-- SN: 00081 -->

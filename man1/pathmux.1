@@ -79,8 +79,66 @@ at any prompt to return to the previous level or exit.
 .TP
 .B \-G ", " \-\-gps
 Launch the interactive GPS extraction and export menu.
-Presents a list of cached manifests; after selecting a trip, offers GPS
-extraction from footage and export as GPX, KML, or GeoJSON (RFC 7946).
+.PP
+.B Trip picker screen
+.RS
+Displays all trips for the selected manifest with GPS status (none /
+start\[sl]end / complete).  Available commands:
+.TP
+.I TripID
+Select a single trip by its two-character ID (case-insensitive).
+.TP
+.B A
+Select all trips (bulk GPS extraction or export).
+.TP
+.B E
+Toggle verbose ExifTool error output on\[sl]off.  Useful when GPS extraction
+returns no data and you need to see the raw ExifTool stderr.
+.TP
+.B M
+Return to the manifest selection screen.
+.TP
+.B Q
+Quit to the calling screen or exit.
+.RE
+.PP
+.B Action menu
+.RS
+After selecting a trip or [A]ll, the action menu offers:
+.TP
+.B G
+Extract GPS data from footage into the manifest (no file output).
+.TP
+.B X
+Export a GPX track file (extracts GPS first if not yet done).
+.TP
+.B K
+Export a KML track file (extracts GPS first if not yet done).
+.TP
+.B J
+Export a GeoJSON track file (RFC 7946 FeatureCollection).
+.TP
+.B Q
+Return to the trip picker.
+.RE
+.PP
+.B Output directory
+.RS
+For GPX, KML, and GeoJSON exports, PathMux defaults to the footage source
+directory if it is writable.  If the source directory is not writable, a
+three-choice prompt appears: use the global default export directory
+(configured via
+.BR \-P ),
+enter a path manually, or return to the trip picker.
+The prompt accepts a directory path or a full file path; if a full path
+ending in
+.IR .gpx ,
+.IR .kml ,
+or
+.I .geojson
+is entered, that filename is used directly.
+.RE
+.PP
 Requires ExifTool (see
 .BR "GPS EXTRACTION" ).
 .SS "Settings"
@@ -413,6 +471,37 @@ Success.
 Failure (bad arguments, missing path, or ffmpeg/ExifTool error).
 .B \-\-validate
 exits 1 if any manifest problems are found.
+.SH "BRAG BOARD"
+Community-submitted encode timings for a standardized reference trip
+(47 minutes, 4 cameras, Front/Rear/Left/Right all present).
+Rankings are by 4K collage build time, shortest wins.
+Submit your numbers via the PathMux GitHub issue tracker.
+.PP
+.B "1.  Nutball Labs"
+.br
+i7 / 16\ GB\ DDR5 / RTX\ 4060 / NVMe
+.br
+Concat:\ 58s\ \ \(em\ \ 4K\ collage\ (hevc_nvenc):\ 6m\ 22s\ \ \(em\ \ 1080p\ downscale:\ 52s
+.PP
+.B "2.  cpu_steve"
+.br
+Ryzen\ 5\ 5600 / 16\ GB\ DDR4 / GTX\ 1660\ Super / SSD
+.br
+Concat:\ 1m\ 04s\ \ \(em\ \ 4K\ collage\ (libx265\ medium):\ 31m\ 48s\ \ \(em\ \ 1080p\ downscale:\ 5m\ 17s
+.PP
+.B "3.  road_watcher"
+.br
+Core\ i5-11400 / 8\ GB\ DDR4 / no\ GPU / HDD
+.br
+Concat:\ 4m\ 12s\ \ \(em\ \ 4K\ collage\ (libx264\ medium):\ 24m\ 33s\ \ \(em\ \ 1080p\ downscale:\ 4m\ 58s
+.PP
+Want your name here?
+See the
+.B buildHistory
+JSON block in your trip manifest after a completed build.
+Copy and paste it into a
+.I "Brag Board submission"
+issue on GitHub \(em no reformatting needed.
 .SH "SEE ALSO"
 .BR ffmpeg (1),
 .BR ffprobe (1),

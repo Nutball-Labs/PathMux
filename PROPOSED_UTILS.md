@@ -186,3 +186,5 @@ GPS method: LIGOGPSINFO (ExifTool 13.51+)
 | `pm_probe` | High — community growth | Medium | ffprobe call (already in lib) |
 | `pm_audit` | Medium — ops/maintenance | Low | ValidationFile already in Trip |
 | `pm_gpsexport` | Medium — scripting gap | Medium | GPS extraction in lib first |
+
+<!-- SN: 00081 -->

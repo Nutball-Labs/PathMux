@@ -15,16 +15,18 @@ file(GLOB CLI_HPP   "${SRC}/cli/*.hpp")
 file(GLOB TOOLS_CPP "${SRC}/tools/*.cpp")
 file(GLOB TOOLS_HPP "${SRC}/tools/*.hpp")
 
+file(GLOB MD_FILES "${SRC}/*.md")
+
 set(ALL_SRC
     ${LIB_CPP} ${LIB_HPP}
     ${CLI_CPP} ${CLI_HPP}
     ${TOOLS_CPP} ${TOOLS_HPP}
+    ${MD_FILES}
 )
 
 # Non-code files that also carry SN comments
 foreach(EXTRA
     "${SRC}/CMakeLists.txt"
-    "${SRC}/pathmux_project_brief.md"
 )
     if(EXISTS "${EXTRA}")
         list(APPEND ALL_SRC "${EXTRA}")
@@ -38,7 +40,7 @@ foreach(F ${ALL_SRC})
     get_filename_component(FNAME "${F}" NAME)
     file(STRINGS "${F}" LINES)
     foreach(LINE ${LINES})
-        if(LINE MATCHES "^(//|#) SN: ([0-9]+)")
+        if(LINE MATCHES "^(//|#|<!--) SN: ([0-9]+)")
             # Pad filename to 35 chars
             string(LENGTH "${FNAME}" FLEN)
             set(SPACES "")

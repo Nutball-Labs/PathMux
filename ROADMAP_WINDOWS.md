@@ -129,3 +129,5 @@ Qt6 is fully supported on Windows; most GUI code requires no changes.
 
 *Last updated: 2026-03-01*
 *Status: Planning — no Windows build attempted yet*
+
+<!-- SN: 00081 -->

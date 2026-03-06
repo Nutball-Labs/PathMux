@@ -101,3 +101,5 @@ Active CLI development (Phase 1). Qt6 GUI planned for Phase 2.
 ## License
 
 Private repository — all rights reserved.
+
+<!-- SN: 00081 -->

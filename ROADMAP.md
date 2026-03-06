@@ -149,7 +149,7 @@ values on D90) — stored but ignored. Speed in km/h.
     - **Separator merge:** Transition sequence between trips
       - Last frame of Trip A holds as still (all cameras)
       - Fade to black (synchronized across cameras)
-      - QuadEye logo animation/spin (all cameras)
+      - PathMux logo animation/spin (all cameras)
       - Fade to first frame of Trip B
       - Resume playback
       - **Camera sync handling:** Cameras with fewer frames start fade early, show logo during buffer period to keep all outputs same length
@@ -206,6 +206,137 @@ If segments are naively concatenated without compensation, sync drift accumulate
 - Optional: Apply transitions (separator merge style) between segments
 - Background processing with progress indicator
 - Queue multiple export jobs
+
+### Batch Mode — Collage Layout Source Selection (Shower Thought 2026-03-05)
+
+When implementing batch/CLI mode, collage quadrant assignment should use named
+positional flags mapping stream sources to frame quadrants:
+
+```
+--UL=front     upper-left  → front camera stream
+--UR=rear      upper-right → rear camera stream
+--LL=rear      lower-left  → rear camera stream
+--URLR=map     right half (full height) → moving map
+```
+
+Quadrant flags:
+- `--UL`   — upper-left
+- `--UR`   — upper-right
+- `--LL`   — lower-left
+- `--LR`   — lower-right
+- `--ULLL` — left half (full height, UL + LL)
+- `--URLR` — right half (full height, UR + LR)
+- `--ULUR` — top half (full width, UL + UR)
+- `--LLLR` — bottom half (full width, LL + LR)
+
+Stream source names (TBD): `front`, `rear`, `left`, `right`, `map`, etc.
+
+**Panoramic / dashcam note:** If the input device is a dashcam with a panoramic
+(180°+) camera, both `--LL` and `--LR` (or the combined `--LLLR`) could be fed
+from a single wide stream — the compositor handles letterboxing or cropping rather
+than requiring two separate streams. Same logic applies to `--ULLL` / `--ULUR` for
+wide cameras covering a full half.
+
+This design generalizes to N-up layouts without requiring a different flag scheme
+per layout — the flags describe the destination slot, not a fixed layout template.
+
+---
+
+### Smart Collage — Points of Interest and Variable Speed (Shower Thought 2026-03-05)
+
+When cameras and moving map are integrated, the collage builder should support
+an **incident/POI timeline** that drives variable-speed playback:
+
+**Quadrant + map assignment:**
+- User assigns each stream (front, rear, left, right, map) to a collage quadrant
+  using the existing `--UL`/`--UR`/`--LL`/`--LR` flag scheme (or GUI equivalent)
+- Moving map occupies one or more quadrants alongside camera streams
+- Configuration saved per-collage or as a named layout preset
+
+**Point of Interest (POI) timestamps:**
+- User marks timestamps where something of interest occurs
+- Each POI can have: label/caption, attached photos, attached supplemental video clips
+- POIs stored in the manifest or a sidecar alongside the trip data
+
+**Variable speed playback:**
+- **Trip start:** begins at real-time (1x), then **ramps up** fairly quickly to
+  timelapse speed — gives the viewer context before the fast-forward kicks in
+- Between POIs: collage plays at **timelapse speed** (automatically calculated — see below)
+- Approaching a POI: **speed ramp down** to normal or slow-motion
+- During POI: **normal/slow-motion playback** with caption overlay
+- After POI: **speed ramp up** back to timelapse
+- At end of trip: slow down naturally (parking, garage, etc.)
+- Ramp timing (opening ramp, approach/exit ramp length) is user-configurable
+
+**Target-duration mode (Shower Thought 2026-03-05 addendum):**
+
+Rather than the user specifying a timelapse multiplier, they specify a **target
+output duration** (e.g., "I want a 4-minute video") and the system calculates
+the required timelapse speed automatically:
+
+```
+total_trip_source       = known from manifest
+poi_source_time         = sum of each POI's source footage window
+ramp_source_time        = sum of all ramp-in/ramp-out source windows
+timelapse_source_time   = total_trip_source - poi_source_time - ramp_source_time
+
+poi_output_time         = sum of POI playback durations (real-time or slo-mo)
+ramp_output_time        = sum of ramp durations (user config)
+timelapse_budget        = target_duration - poi_output_time - ramp_output_time
+
+required_speed          = timelapse_source_time / timelapse_budget
+```
+
+- If `required_speed < 1x`: the timelapse sections would have to be in slow-motion
+  to fill the target — warn the user and suggest a longer target or fewer POIs
+- If `required_speed` is very high (e.g., 60x+): warn that detail will be lost
+  in the timelapse sections; suggest a longer target or shorter POI durations
+- Display the calculated speed to the user before rendering so they can adjust
+
+This makes the workflow: *"I have a 90-minute trip, I want a 5-minute highlight reel,
+here are the 3 incidents I care about"* → PathMux does the math, renders the result.
+
+**Speed map preview (Shower Thought 2026-03-05 addendum):**
+
+Before rendering, present the user with a plain-text timeline of the computed
+speed plan so they can review and approve — or ask for adjustments:
+
+```
+Begin at 1x for 15 seconds -> 8x for 90 seconds -> 1x for 3 minutes during incident
+  -> 10x for 75 seconds -> 1x for 20 seconds while I park in the garage
+```
+
+- Each segment shows speed and duration in output time, with a label for POI sections
+- Total output duration shown as a footer: `Total: 4m 40s`
+- User accepts (proceeds to render) or requests modifications:
+  - Adjust target duration → recalculates timelapse speeds and re-presents
+  - Trim a POI window → updates that segment, re-presents
+  - Change ramp timing → updates transition segments, re-presents
+- Natural interaction surface for both CLI (text prompt) and GUI (editable timeline widget)
+- In CLI mode this could be a simple confirm/edit loop; in GUI it becomes a
+  drag-and-drop timeline with speed annotations
+
+**Caption overlay:**
+- Free-text caption per POI, positioned and styled in the GUI
+- Fade in/fade out timed to match the speed ramp
+
+**Supplemental media:**
+- Photos attached to a POI appear as a picture-in-picture or full overlay during
+  the slow-down window
+- Supplemental video clips can replace or overlay one of the collage quadrants
+  during the POI window, then return to dashcam streams after
+
+**ffmpeg implementation sketch:**
+- timelapse segments: `setpts=PTS/N` filter with configurable N
+- speed ramps: `setpts` with a keyframe-aligned ramp expression
+- caption: `drawtext` filter per POI with time-bounded `enable` expression
+- supplemental clips: spliced in via `concat` or `overlay` filter at POI timestamps
+
+**Priority:** Phase 2/3 — depends on GUI, GPS sync, and collage generation
+being in place first. Architecture should be kept in mind during collage pipeline
+design so POI timestamps can be attached to trips from the start.
+
+---
 
 ### GPS Features (Pending Coordinate Decode Resolution)
 - **Phase 1 GPS (during trip scan):**
@@ -338,7 +469,7 @@ lives in `libpathmux` and all three formats share the same data pipeline.
 
 ## Community & Contributions
 
-QuadEye is currently a solo project by a Linux sysadmin learning C++ through AI-assisted development. Contributions, bug reports, and feature requests are welcome once the project reaches public release.
+PathMux is currently a solo project by a Linux sysadmin learning C++ through AI-assisted development. Contributions, bug reports, and feature requests are welcome once the project reaches public release.
 
 **Current blockers before public release:**
 1. ffprobe integration for accurate trip duration
@@ -354,7 +485,7 @@ QuadEye is currently a solo project by a Linux sysadmin learning C++ through AI-
 
 ## License & Legal
 
-- QuadEye source code: To be determined (likely GPL or MIT)
+- PathMux source code: To be determined (likely GPL or MIT)
 - ExifTool: Perl Artistic License / GPL
 - Qt6: LGPL (open source usage)
 - ffmpeg: LGPL or GPL depending on build configuration
@@ -416,11 +547,11 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 
 ---
 
-### QuadEye Archive Format (.quadeye)
+### PathMux Archive Format (.pathmux)
 
 **Long-term goal:** Package entire trips into a single portable archive file for sharing or backup.
 
-**Contents of `.quadeye` archive:**
+**Contents of `.pathmux` archive:**
 - All `.ts` video segments (Front/Rear/Left/Right)
 - All `.jpg` thumbnail sidecar files
 - Trip manifest JSON (includes GPS track, sync data, metadata)
@@ -436,19 +567,19 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 - **Sneakernet:** Share entire trip on USB drive without cloud upload
 - **Backup:** Single file to archive to NAS or external storage
 - **Collaboration:** Send trip to friend/family/insurance for review
-- **Portability:** Open `.quadeye` file on any machine with QuadEye installed
+- **Portability:** Open `.pathmux` file on any machine with PathMux installed
 
 **Format considerations:**
 - **Compression:** Use standard container (ZIP, TAR.GZ, or custom)
   - Video already compressed (H.264), so focus on metadata/thumbnail compression
   - Optional: Offer multiple compression levels (fast/balanced/maximum)
 - **Integrity:** Include checksums (SHA256) for all files
-- **Metadata:** Embed manifest version, QuadEye version, creation timestamp
+- **Metadata:** Embed manifest version, PathMux version, creation timestamp
 - **Privacy:** Option to strip GPS data before creating archive
-- **Compatibility:** Design for forward compatibility — newer QuadEye versions can read older archives
+- **Compatibility:** Design for forward compatibility — newer PathMux versions can read older archives
 
 **Import workflow:**
-1. User drags `.quadeye` file into QuadEye GUI
+1. User drags `.pathmux` file into PathMux GUI
 2. App extracts to temporary directory
 3. Validates manifest and checksums
 4. Imports trip into local cache
@@ -457,13 +588,13 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 **Export workflow:**
 1. User selects trip(s) to export
 2. Choose compression level and privacy options
-3. QuadEye bundles all segments + manifest + thumbnails
-4. Writes `.quadeye` file to user-selected location
+3. PathMux bundles all segments + manifest + thumbnails
+4. Writes `.pathmux` file to user-selected location
 5. Optional: Generate QR code linking to file for easy sharing
 
 **File extension registration:**
-- `.quadeye` files associated with QuadEye application
-- Double-click to open in QuadEye GUI
+- `.pathmux` files associated with PathMux application
+- Double-click to open in PathMux GUI
 - Icon shows thumbnail preview (if OS supports)
 
 **Priority:** Medium — implement after core trip detection and collage generation are solid
@@ -560,7 +691,7 @@ CPack configured for RPM/DEB. Integrates with Qt6 for GUI phase.
   - Linux: Package manager (dnf, apt, pacman)
   - Windows: Manual download or Chocolatey/Scoop package managers
   - macOS: Homebrew (`brew install ffmpeg exiftool`)
-- QuadEye should:
+- PathMux should:
   - Check for tools at startup, warn if missing
   - Provide clear error messages with install instructions per platform
   - Allow user to specify custom paths in config file
@@ -754,8 +885,8 @@ The clean separation is: **profile handles "how do I find and parse your files"*
 
 **Auto-detection workflow:**
 1. User specifies root directory (e.g., `/media/dashcam/`)
-2. QuadEye scans subdirectories and filenames
-3. Matches against known profiles in `~/.config/quadeye/profiles/` directory
+2. PathMux scans subdirectories and filenames
+3. Matches against known profiles in `~/.config/pathmux/profiles/` directory
 4. If match found, loads that profile and proceeds with scan
 5. If no match, prompts user to:
    - Select from list of bundled profiles
@@ -763,7 +894,7 @@ The clean separation is: **profile handles "how do I find and parse your files"*
    - Submit directory structure to GitHub for new profile development
 
 **Custom profile support:**
-- User can create/edit profiles manually in `~/.config/quadeye/profiles/custom/`
+- User can create/edit profiles manually in `~/.config/pathmux/profiles/custom/`
 - JSON format is human-readable and well-documented
 - Community can share profiles via GitHub wiki or discussions
 
@@ -780,7 +911,7 @@ The clean separation is: **profile handles "how do I find and parse your files"*
 - Fall back to manual profile selection if no match
 
 **Phase 3: Community expansion**
-- Bundle 3-5 common dashcam profiles with QuadEye
+- Bundle 3-5 common dashcam profiles with PathMux
 - Create GitHub wiki page for user-submitted profiles
 - Add "Submit new profile" workflow to GUI (collects directory structure, sample filenames, submits to GitHub issue)
 
@@ -854,15 +985,15 @@ When a user reports an unsupported camera:
 **Value proposition to users:**
 - "Your dashcam not supported? Send us 2 sample trips and we'll add it within a week"
 - Low barrier to entry for community support
-- Leverages existing QuadEye architecture — most profiles are just JSON config, minimal code changes
+- Leverages existing PathMux architecture — most profiles are just JSON config, minimal code changes
 
 ### Long-term Vision
 
 **Become the VLC of dashcam software:**
-- Just like VLC plays every video format, QuadEye handles every dashcam
+- Just like VLC plays every video format, PathMux handles every dashcam
 - Community-driven profile library
 - "It just works" reputation across brands
-- Manufacturers start testing against QuadEye during product development
+- Manufacturers start testing against PathMux during product development
 
 ### Under Consideration
 - 💡 PathMux Viewer (mobile companion app) — video playback, incident/segment
@@ -871,3 +1002,5 @@ When a user reports an unsupported camera:
   by desktop on next render; no rendering or ffmpeg dependency
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
+
+<!-- SN: 00081 -->
