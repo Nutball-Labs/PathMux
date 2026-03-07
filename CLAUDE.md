@@ -11,9 +11,9 @@ for working on the PathMux project. Read this before touching any code.
 **PathMux** is a C++17 CLI tool for Alma Linux 9.x that scans Pruveeo D90
 360° dashcam footage, groups video segments into trips, caches results as
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
-https://github.com/BiloxiGeek/PathMux — all work on `main` branch.
+https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.10e (SN 00081)
+**Current version:** 0.9.10g (SN 00082)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -297,4 +297,4 @@ When a communication is prefaced with either label:
 - All CLI work on `main` branch; GUI will branch when CLI is complete
 
 
-<!-- SN: 00081 -->
+<!-- SN: 00082 -->

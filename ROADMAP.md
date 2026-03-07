@@ -114,7 +114,7 @@ values on D90) — stored but ignored. Speed in km/h.
 - [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump` as a
   serialization modifier on `--dump` / `--fulldump`
 - [ ] `--dump`/`--fulldump` field filtering (`--fields id,date,duration`)
-- [ ] `recordingProfile` config field
+- [ ] `recordingProfile` config field — part of CameraProfile implementation; see "Multi-Brand Dashcam Support" section
 - [ ] `extra_hw_frames` CPU encoder guard
 
 **Known deferred (low priority, no blocker):**
@@ -831,6 +831,27 @@ The clean separation is: **profile handles "how do I find and parse your files"*
 ### Camera Profile System Architecture
 
 **Profile Definition (JSON format):**
+
+Per-camera `video` and `audio` blocks are filled in by probing the first segment
+of each camera directory. They serve two purposes: providing the collage layer
+with stream parameters for extraction/mixing, and contributing to auto-detection
+fingerprinting. Cameras without an audio track omit the `audio` key.
+
+`segment_duration_seconds` records observed segment lengths as a detection hint
+only — the scan engine derives segment duration from timestamp arithmetic and
+a single ffprobe call, not from this field.
+
+`filename_pattern` is derived by sampling filenames from **all** camera dirs,
+stripping the detected timestamp portion, and characterizing what remains
+(nothing, a constant suffix, a variable per-camera suffix). No particular suffix
+convention (e.g. single letter) is assumed — the analysis is driven by what is
+actually on the card. Directory structure alone identifies camera role.
+
+`thumbnails.pattern` is auto-filled from file analysis: if sidecar `.jpg` files
+are found and their basenames match the video files across ≥3 samples, the
+pattern is derived by substituting the extension. If jpgs exist but cannot be
+matched, the user is warned to set the pattern manually or file a GitHub issue.
+
 ```json
 {
   "profile_name": "Pruveeo D90",
@@ -841,10 +862,26 @@ The clean separation is: **profile handles "how do I find and parse your files"*
     "filename_pattern": "^(\\d{8})_(\\d{6})[A-Z]\\.ts$"
   },
   "cameras": {
-    "front": { "dir": "Front", "priority": 1 },
-    "rear":  { "dir": "Rear",  "priority": 2 },
-    "left":  { "dir": "Left",  "priority": 3 },
-    "right": { "dir": "Right", "priority": 4 }
+    "front": {
+      "dir": "Front", "priority": 1,
+      "video": { "width": 2560, "height": 1440, "frame_rate": "30000/1001", "pix_fmt": "yuv420p", "color_space": "bt709" },
+      "audio": { "codec": "aac", "channels": 2, "sample_rate_hz": 48000 }
+    },
+    "rear": {
+      "dir": "Rear", "priority": 2,
+      "video": { "width": 1920, "height": 1080, "frame_rate": "30000/1001", "pix_fmt": "yuv420p", "color_space": "bt709" },
+      "audio": { "codec": "aac", "channels": 2, "sample_rate_hz": 48000 }
+    },
+    "left": {
+      "dir": "Left", "priority": 3,
+      "video": { "width": 1920, "height": 1080, "frame_rate": "30000/1001", "pix_fmt": "yuv420p", "color_space": "bt709" },
+      "audio": { "codec": "aac", "channels": 2, "sample_rate_hz": 48000 }
+    },
+    "right": {
+      "dir": "Right", "priority": 4,
+      "video": { "width": 1920, "height": 1080, "frame_rate": "30000/1001", "pix_fmt": "yuv420p", "color_space": "bt709" },
+      "audio": { "codec": "aac", "channels": 2, "sample_rate_hz": 48000 }
+    }
   },
   "timestamp": {
     "format": "YYYYMMDD_HHMMSS",
@@ -862,7 +899,7 @@ The clean separation is: **profile handles "how do I find and parse your files"*
 }
 ```
 
-**Profile for TeslaCam:**
+**Profile for TeslaCam (hypothetical — unverified, from documentation):**
 ```json
 {
   "profile_name": "TeslaCam",
@@ -870,13 +907,17 @@ The clean separation is: **profile handles "how do I find and parse your files"*
   "detection": {
     "directory_names": ["front", "back", "left_repeater", "right_repeater"],
     "file_extension": ".mp4",
-    "filename_pattern": "^(\\d{4})-(\\d{2})-(\\d{2})_(\\d{2})-(\\d{2})-(\\d{2})-front\\.mp4$"
+    "filename_pattern": "^(\\d{4})-(\\d{2})-(\\d{2})_(\\d{2})-(\\d{2})-(\\d{2})-.+\\.mp4$"
   },
   "cameras": {
-    "front": { "dir": "front", "priority": 1 },
-    "rear":  { "dir": "back",  "priority": 2 },
-    "left":  { "dir": "left_repeater",  "priority": 3 },
-    "right": { "dir": "right_repeater", "priority": 4 }
+    "front": {
+      "dir": "front", "priority": 1,
+      "video": { "width": 1280, "height": 960, "frame_rate": "36/1", "pix_fmt": "yuv420p", "color_space": "bt709" },
+      "audio": { "codec": "aac", "channels": 2, "sample_rate_hz": 44100 }
+    },
+    "rear":  { "dir": "back",           "priority": 2, "video": { "..." : "..." } },
+    "left":  { "dir": "left_repeater",  "priority": 3, "video": { "..." : "..." } },
+    "right": { "dir": "right_repeater", "priority": 4, "video": { "..." : "..." } }
   },
   "timestamp": {
     "format": "YYYY-MM-DD_HH-MM-SS",
@@ -893,6 +934,12 @@ The clean separation is: **profile handles "how do I find and parse your files"*
   "segment_duration_seconds": [60]
 }
 ```
+
+**Known edge case — identical basenames across camera dirs:**
+Some cameras may store files with identical basenames in each camera directory
+(e.g. `Front/20260225_044424.ts` and `Rear/20260225_044424.ts`). The directory
+is the only differentiator. No current code impact — absolute paths are used
+throughout. No code changes needed until this is confirmed on real hardware.
 
 **Auto-detection workflow:**
 1. User specifies root directory (e.g., `/media/dashcam/`)
@@ -915,6 +962,43 @@ The clean separation is: **profile handles "how do I find and parse your files"*
 - Extract all Pruveeo D90 assumptions into `profiles/pruveeo_d90.json`
 - Create `CameraProfile` class to load and apply profile settings
 - Modify `trip_detection.cpp` to use profile settings instead of hardcoded values
+
+**Phase 1.5: `pm_probe --wizard` — interactive profile builder** *(in progress)*
+
+`pm_probe --card` already collects the raw fingerprint (directory layout, file
+extensions, sample filenames, segment durations, video profile, GPS method).
+The wizard layer adds interactive Q&A on top of that scan to produce a
+saveable `CameraProfile` JSON.
+
+**Data collection (silent, before any prompts):**
+- Probe first segment of **each** camera directory (not just primary) for video
+  profile and audio stream info — feeds per-camera `video`/`audio` blocks
+- Sample durations from up to 5 primary-camera segments
+- Detect sidecar `.jpg` files and verify basename match against video files
+  (≥3 matching samples required to auto-fill `thumbnails.pattern`)
+- Sample filenames from all camera dirs to drive timestamp and suffix analysis
+
+**Interactive steps:**
+1. Camera role assignment — guess from dir name (`Front`→front, `back`→rear,
+   etc.); user confirms or remaps each
+2. Filename timestamp format — strip timestamp from sample basenames, present
+   guess, user confirms or enters manually; suffix characterization (nothing /
+   constant / variable) is derived from all dirs, no assumed convention
+3. Thumbnail handling — auto-filled if basename match confirmed; if jpgs exist
+   but can't be matched, warn user to set `thumbnails.pattern` manually or
+   run `pm_probe --card <path>` and file a GitHub issue
+4. Timezone — ask explicitly (local vs UTC); cannot auto-detect
+5. GPS lock offset — approximate cold-start seconds; default 0
+6. Profile name — free text, sanitized to filename
+
+**Output:**
+- Write finished profile JSON to `~/.config/pathmux/profiles/<sanitized_name>.json`
+- Trial scan against card path deferred — requires CameraProfile C++ layer
+
+**Why this matters before going public:** We only have verified ground truth
+for the Pruveeo D90. All other profiles (TeslaCam etc.) are educated guesses
+from documentation. The wizard gives real users a path to self-serve a profile
+for their own hardware and submit it back to the community.
 
 **Phase 2: Add profile auto-detection**
 - Scan target directory, extract structural fingerprint
@@ -1014,4 +1098,4 @@ When a user reports an unsupported camera:
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
 
-<!-- SN: 00081 -->
+<!-- SN: 00082 -->
