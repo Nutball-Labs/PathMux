@@ -964,18 +964,26 @@ throughout. No code changes needed until this is confirmed on real hardware.
 
 ### Implementation Plan
 
-**Design principle: hardware-agnostic defaults with explicit first-run warning**
+**Design principle: ship with a factory default profile, warn loudly if it's still active**
 
-PathMux ships with no bundled camera profile selected. On first run (no active
-profile in config), both the CLI and future GUI display a visible warning:
+*(Shower Thought 2026-03-07)*
 
-> No camera profile configured. Trip detection is using factory defaults
-> (tuned for Pruveeo D90). Results may be inaccurate for other cameras.
-> Run `pm_probe --wizard <card-path>` to build a profile for your hardware.
+PathMux ships with a bundled `factory_default` profile containing sane best-guess
+settings — a reasonable approximation of common dashcam conventions, not tuned to
+any specific model. The factory default is the active profile out of the box so the
+app functions immediately without a wizard run.
 
-The documentation reinforces this: default detection is a best-effort starting
-point, not a guarantee. Users are expected to run the wizard before relying on
-trip detection for any camera other than the verified D90 profile.
+On every startup — CLI and GUI — if the active profile is still `factory_default`,
+display a visible warning:
+
+> Camera profile is set to factory defaults. Trip detection results may be
+> inaccurate for your hardware. Run `pm_probe --wizard <card-path>` to build
+> a profile for your camera, then select it in `--prefs`.
+
+This is better than shipping with no profile (which would require blocking the user
+before any scan) while still making it obvious that defaults are a placeholder, not
+a guarantee. Users who have run the wizard and selected their own profile never see
+the warning.
 
 `--prefs` will include a "Default camera profile" item once the CameraProfile
 C++ layer exists to consume it. Adding the pref before the consumption side is
