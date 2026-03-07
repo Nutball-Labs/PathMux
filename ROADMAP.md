@@ -93,11 +93,15 @@ values on D90) — stored but ignored. Speed in km/h.
 - [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
 - [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
 
-**Camera profile abstraction:**
+**Camera profile abstraction — next critical step:**
 - [ ] Extract camera format detection from `trip_detection.cpp` into a
   `CameraProfile`/`StorageFormat` layer; `TripDetection` consumes it; rest of
   pipeline sees normalized output. Enables per-camera bug fixes without touching
   trip detection. See "Multi-Brand Dashcam Support" section for full spec.
+- [ ] Strip Pruveeo D90-specific hardcoding from `trip_detection.cpp`; replace
+  with sane hardware-agnostic defaults; load active profile from
+  `~/.config/pathmux/profiles/` at scan time
+- [ ] Wire CameraProfile into `--prefs` (select default profile from profiles dir)
 
 **Man page:**
 - [x] Updated `pathmux.1` to v0.9.9 — `-s` scan prompt, GeoJSON in `-G` flow,
@@ -109,6 +113,8 @@ values on D90) — stored but ignored. Speed in km/h.
 - [x] `pm_ls` — quick manifest listing; `pm_audit` — integrity check across all manifests
 - [x] `pm_probe` — camera fingerprinting tool; single-file mode + `--card` SD card report
 - [x] Rename `trip_debug` → `pm_tripdebug` (binary, CMakeLists target, source, man page)
+- [x] `pm_probe --wizard` — interactive camera profile builder (v0.9.10g); needs live
+  test against non-D90 hardware before declaring complete
 
 **CLI polish:**
 - [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump` as a
@@ -982,7 +988,7 @@ wired in would silently do nothing — held until Phase 1 refactor is complete.
 - Add "Default camera profile" item to `--prefs` (select from profiles dir)
 - Add first-run / no-profile warning to CLI startup and GUI launch
 
-**Phase 1.5: `pm_probe --wizard` — interactive profile builder** *(in progress)*
+**Phase 1.5: `pm_probe --wizard` — interactive profile builder** *(implemented v0.9.10g; live test pending)*
 
 `pm_probe --card` already collects the raw fingerprint (directory layout, file
 extensions, sample filenames, segment durations, video profile, GPS method).

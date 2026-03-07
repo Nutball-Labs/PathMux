@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## [0.9.10g / SN: 00082] - 2026-03-07
+### Added
+- **`pm_probe --wizard`**: interactive camera profile builder (full implementation).
+  Probes every camera directory (not just primary) for per-camera video and audio
+  stream info; D90 rear camera confirmed to have no audio track.
+  - Settings review table with numbered items; CONFIRM to accept, [1-7] to edit
+  - `<path>` legend row in table header — shows the root passed on the command line;
+    all camera mappings displayed as `<path>/DirName/` so stored values are
+    root-relative, not locked to an absolute path
+  - Camera remapping UX: user types the subdirectory name after a `<path>/` prompt;
+    wizard validates existence and video content; sets `[!] needs attention` flag on
+    failure; clears flag on success
+  - Profile saved to `~/.config/pathmux/profiles/<sanitized_name>.json`
+
+### Fixed
+- **Pipe alignment on Profile name placeholder**: em dash (`—`) in `(not set — required)`
+  caused right border to shift 2 columns left due to UTF-8 byte/display-width mismatch
+  in `wizRow()`. Replaced with `--`.
+
+### Documented (ROADMAP)
+- Hardware-agnostic design principle: app ships with no active profile; first-run
+  warning (CLI and GUI) when no profile is configured. `--prefs` profile selection
+  held until CameraProfile C++ layer is implemented.
+- CameraProfile extraction from `trip_detection.cpp` flagged as next critical step.
+
+---
+
 ## [housekeeping] - 2026-03-05
 ### Documentation & Infrastructure
 - **`man1/pathmux.1`**: Expanded `-G` section with full interactive flow reference
@@ -925,4 +952,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00081 -->
+<!-- SN: 00082 -->

@@ -5,6 +5,54 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-07
+
+### Session 1
+**Focus:** `pm_probe --wizard` UX polish; `<path>` display design; ROADMAP hardware-agnostic principle; v0.9.10g
+
+**Code Changes (v0.9.10g — `tools/pm_probe.cpp`):**
+- **`<path>` legend row** — `drawTable` now opens with `| <path> = <root> |` so the
+  user knows what the placeholder resolves to for this run. All camera mapping lines
+  display as `<path>/DirName/` rather than absolute or dirname-only values. Keeps
+  profile data root-relative — portable if the mount point changes.
+- **Camera remap UX redesign** — replaced numbered dir list with a typed subdirectory
+  prompt. After picking F/B/L/R, user sees `<path>/ ` and types just the subdir name.
+  Wizard validates: directory must exist under root and contain video files. On failure:
+  stores the entry and sets a `[!] needs attention` attention flag visible in both the
+  sub-menu and the main table. On success: clears any previous assignment for that
+  dirname, clears the flag.
+- **Pipe alignment fix** — `(not set — required)` em dash (3 UTF-8 bytes, 1-2 display
+  columns) caused `wizRow()` byte-count padding to shift the right border 2 columns
+  left. Replaced with `--`.
+- **Attention flags** — `bool frontAttn/rearAttn/leftAttn/rightAttn` added to wizard
+  state; `validateCamDir()` lambda checks existence + video content under root.
+
+**Discovery:**
+- D90 rear camera has no audio stream — confirmed in wizard output. Makes sense for
+  an exterior-mounted camera. Per-camera audio blocks in the profile will correctly
+  capture this absence for the collage layer.
+
+**Design Decisions (ROADMAP):**
+- **Hardware-agnostic defaults**: app ships with no active profile. On first run (no
+  profile configured), both CLI and GUI display a visible warning directing the user
+  to `pm_probe --wizard`. Default detection is a best-effort starting point, not a
+  guarantee. Documented in ROADMAP.
+- **`--prefs` profile item deferred**: adding a half-wired pref that silently does
+  nothing would be a footgun. Held until CameraProfile C++ consumption layer exists.
+- **Next critical step identified**: strip Pruveeo D90 hardcoding from
+  `trip_detection.cpp`, replace with sane agnostic defaults, load active profile at
+  scan time. This is the gate item that makes the wizard output actually useful.
+
+**Files Changed:** `tools/pm_probe.cpp`, `ROADMAP.md`, `CHANGELOG.md`, `Session_Log.md`
+
+**Pending (carry forward):**
+- CameraProfile/StorageFormat extraction from `trip_detection.cpp` — next priority
+- `pm_probe --wizard` live test on non-D90 hardware (Cobra CCDC4500 expected ~2026-03-08)
+- GPS lock corpus scan results — analyze when complete
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+
+---
+
 ## 2026-03-06
 
 ### Session 1
@@ -526,4 +574,4 @@ v1.0 planning; utility suite scoping
 
 ---
 
-<!-- SN: 00081 -->
+<!-- SN: 00082 -->
