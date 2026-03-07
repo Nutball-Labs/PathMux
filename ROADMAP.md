@@ -958,10 +958,29 @@ throughout. No code changes needed until this is confirmed on real hardware.
 
 ### Implementation Plan
 
+**Design principle: hardware-agnostic defaults with explicit first-run warning**
+
+PathMux ships with no bundled camera profile selected. On first run (no active
+profile in config), both the CLI and future GUI display a visible warning:
+
+> No camera profile configured. Trip detection is using factory defaults
+> (tuned for Pruveeo D90). Results may be inaccurate for other cameras.
+> Run `pm_probe --wizard <card-path>` to build a profile for your hardware.
+
+The documentation reinforces this: default detection is a best-effort starting
+point, not a guarantee. Users are expected to run the wizard before relying on
+trip detection for any camera other than the verified D90 profile.
+
+`--prefs` will include a "Default camera profile" item once the CameraProfile
+C++ layer exists to consume it. Adding the pref before the consumption side is
+wired in would silently do nothing — held until Phase 1 refactor is complete.
+
 **Phase 1: Refactor existing code**
 - Extract all Pruveeo D90 assumptions into `profiles/pruveeo_d90.json`
 - Create `CameraProfile` class to load and apply profile settings
 - Modify `trip_detection.cpp` to use profile settings instead of hardcoded values
+- Add "Default camera profile" item to `--prefs` (select from profiles dir)
+- Add first-run / no-profile warning to CLI startup and GUI launch
 
 **Phase 1.5: `pm_probe --wizard` — interactive profile builder** *(in progress)*
 

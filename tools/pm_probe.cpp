@@ -880,6 +880,23 @@ static bool sidecarTimestampMatch(const std::string& dir,
 }
 
 // ---------------------------------------------------------------------------
+// Wizard box drawing helpers
+// ---------------------------------------------------------------------------
+static constexpr int WIZ_BOX = 68;
+static constexpr int WIZ_INN = WIZ_BOX - 4;  // "| " + content + " |"
+
+static std::string wizSep(char fill = '=')
+{
+    return "+" + std::string(WIZ_BOX - 2, fill) + "+";
+}
+static std::string wizRow(const std::string& s = "")
+{
+    std::string c = s;
+    if ((int)c.size() > WIZ_INN) c = c.substr(0, WIZ_INN);
+    return "| " + c + std::string(WIZ_INN - (int)c.size(), ' ') + " |";
+}
+
+// ---------------------------------------------------------------------------
 // wizardCard — interactive profile builder
 // ---------------------------------------------------------------------------
 static void wizardCard(const std::string& root,
@@ -970,13 +987,6 @@ static void wizardCard(const std::string& root,
     // Suffix analysis (driven by all dirs)
     SuffixAnalysis suffix = analyzeSuffix(cameraDirs, tsFmt);
 
-    // Thumbnail state
-    bool anySidecar = std::any_of(cams.begin(), cams.end(),
-                                   [](const CamData& c){ return c.hasSidecar; });
-    bool allSidecarOk = anySidecar &&
-        std::all_of(cams.begin(), cams.end(),
-                    [](const CamData& c){ return !c.hasSidecar || c.sidecarOk; });
-
     // ---- Summary of what was found ----
     std::cout << "\nFound " << cams.size() << " camera director"
               << (cams.size() == 1 ? "y" : "ies") << ":\n";
@@ -1012,9 +1022,12 @@ static void wizardCard(const std::string& root,
         std::cout << "\n";
     }
 
-    // ---- Step 1: Confirm camera mappings ----
-    // role slots — empty string means unassigned
+    // ---- Initialize state from detected data ----
+
+    // Camera role slots (empty = unassigned)
     std::string roleFront, roleRear, roleLeft, roleRight;
+    // Attention flags — set when a user-entered dir fails validation
+    bool frontAttn = false, rearAttn = false, leftAttn = false, rightAttn = false;
     for (const auto& c : cams) {
         std::string r = guessCameraRole(c.dirName);
         if      (r == "front") roleFront = c.dirName;
@@ -1023,196 +1036,304 @@ static void wizardCard(const std::string& root,
         else if (r == "right") roleRight = c.dirName;
     }
 
-    auto drawMappings = [&]() {
-        std::cout << "\n--- Step 1: Confirm Camera Mappings ---\n\n";
-        auto showRole = [](const std::string& label, const std::string& dir) {
-            std::cout << "  " << std::left << std::setw(6) << label << " -> "
-                      << (dir.empty() ? "(unassigned)" : dir + "/") << "\n";
-        };
-        showRole("front", roleFront);
-        showRole("rear",  roleRear);
-        showRole("left",  roleLeft);
-        showRole("right", roleRight);
+    // Derived filename pattern
+    std::string fnPattern = "^" + timestampRegex(tsFmt)
+                          + suffix.pattern + "\\" + primaryExt + "$";
 
-        // Show any dirs not assigned to any role
-        std::vector<std::string> unassigned;
+    // Thumbnail state
+    bool anySidecar = std::any_of(cams.begin(), cams.end(),
+                                   [](const CamData& c){ return c.hasSidecar; });
+    bool allSidecarOk = anySidecar &&
+        std::all_of(cams.begin(), cams.end(),
+                    [](const CamData& c){ return !c.hasSidecar || c.sidecarOk; });
+    std::string thumbSource;
+    std::string thumbPattern;
+    bool thumbUnconfirmed = false;
+    if (anySidecar) {
+        thumbSource = "sidecar_jpg";
+        if (allSidecarOk) {
+            SuffixAnalysis thumbSfx = analyzeThumbSuffix(cameraDirs, tsFmt);
+            thumbPattern = "^" + timestampRegex(tsFmt) + thumbSfx.pattern + "\\.jpg$";
+        } else {
+            thumbUnconfirmed = true;
+        }
+    } else {
+        thumbSource = "generate_ffmpeg";
+    }
+
+    // GPS, timezone, lock offset, profile name
+    std::string gpsMethod = primaryCam ? primaryCam->probe.gps.method : "none";
+    if (gpsMethod == "LIGOGPSINFO") gpsMethod = "exiftool_ligogps";
+    int         gpsOffset  = 0;
+    std::string tzLower    = "local";
+    std::string profileName;
+
+    // Sample filenames for display — shown as examples instead of regex
+    std::string sampleVideoFile = fs::path(primaryFiles[0]).filename().string();
+    std::string sampleThumbFile;
+    for (const auto& c : cams) {
+        if (!c.hasSidecar || !sampleThumbFile.empty()) continue;
+        for (const auto& entry : fs::directory_iterator(c.dirPath)) {
+            if (!entry.is_regular_file()) continue;
+            std::string ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                           [](unsigned char ch){ return std::tolower(ch); });
+            if (ext == ".jpg" || ext == ".jpeg")
+                { sampleThumbFile = entry.path().filename().string(); break; }
+        }
+    }
+
+    // Rebuild derived patterns when tsFmt changes
+    auto rebuildPatterns = [&]() {
+        suffix    = analyzeSuffix(cameraDirs, tsFmt);
+        fnPattern = "^" + timestampRegex(tsFmt) + suffix.pattern + "\\" + primaryExt + "$";
+        if (allSidecarOk) {
+            SuffixAnalysis thumbSfx = analyzeThumbSuffix(cameraDirs, tsFmt);
+            thumbPattern = "^" + timestampRegex(tsFmt) + thumbSfx.pattern + "\\.jpg$";
+        }
+    };
+
+    // Validate a camera subdirectory — must exist under root and contain video files
+    auto validateCamDir = [&](const std::string& dirname) -> bool {
+        if (dirname.empty()) return false;
+        fs::path p = fs::path(root) / dirname;
+        if (!fs::is_directory(p)) return false;
+        return !listVideoFiles(p.string()).empty();
+    };
+
+    // Trim whitespace from a raw input line
+    auto trimLine = [](const std::string& raw) -> std::string {
+        auto lt = raw.find_first_not_of(" \t");
+        if (lt == std::string::npos) return "";
+        return raw.substr(lt, raw.find_last_not_of(" \t") - lt + 1);
+    };
+
+    // Draw the main settings table
+    auto drawTable = [&]() {
+        std::cout << "\n" << wizSep('=') << "\n";
+        std::cout << wizRow("  <path> = " + root) << "\n";
+
+        // [1] Camera mappings — one per line, displayed as <path>/DirName/
+        std::cout << wizRow("  [1]  Camera mappings") << "\n";
+        auto showCam = [](const std::string& label, const std::string& dir, bool attn) {
+            std::string s = "         " + label;
+            while ((int)s.size() < 16) s += ' ';
+            if (dir.empty()) s += "->  (unassigned)";
+            else             s += "->  <path>/" + dir + "/";
+            if (attn)        s += "  [!] needs attention";
+            return s;
+        };
+        std::cout << wizRow(showCam("front",  roleFront, frontAttn)) << "\n";
+        std::cout << wizRow(showCam("rear",   roleRear,  rearAttn))  << "\n";
+        std::cout << wizRow(showCam("left",   roleLeft,  leftAttn))  << "\n";
+        std::cout << wizRow(showCam("right",  roleRight, rightAttn)) << "\n";
+        // Any dirs not yet assigned to a role
         for (const auto& c : cams)
             if (c.dirName != roleFront && c.dirName != roleRear &&
                 c.dirName != roleLeft  && c.dirName != roleRight)
-                unassigned.push_back(c.dirName);
-        if (!unassigned.empty()) {
-            std::cout << "\n  Unassigned:";
-            for (const auto& d : unassigned) std::cout << "  " << d << "/";
-            std::cout << "\n";
+                std::cout << wizRow("         (unassigned)   ->  <path>/" + c.dirName + "/") << "\n";
+
+        std::cout << wizSep('-') << "\n";
+
+        // [2] Timezone
+        std::cout << wizRow("  [2]  Timezone            " + tzLower) << "\n";
+
+        // [3] Timestamp format — show detected example filename, not regex
+        std::cout << wizRow("  [3]  Timestamp format    " + tsFmt) << "\n";
+        if (!sampleVideoFile.empty())
+            std::cout << wizRow("         example:  " + sampleVideoFile) << "\n";
+
+        // [4] Thumbnails — show detected example jpg, not regex
+        {
+            std::string disp = thumbSource;
+            if (thumbUnconfirmed) disp += "  (unconfirmed)";
+            std::cout << wizRow("  [4]  Thumbnails          " + disp) << "\n";
+        }
+        if (!sampleThumbFile.empty() && thumbSource == "sidecar_jpg")
+            std::cout << wizRow("         example:  " + sampleThumbFile) << "\n";
+        else if (thumbUnconfirmed)
+            std::cout << wizRow("         run --card and file issue to confirm") << "\n";
+
+        std::cout << wizSep('-') << "\n";
+
+        // [5] GPS method
+        std::cout << wizRow("  [5]  GPS method          " + gpsMethod) << "\n";
+
+        // [6] GPS lock offset
+        std::cout << wizRow("  [6]  GPS lock offset     "
+                            + std::to_string(gpsOffset) + "s") << "\n";
+
+        std::cout << wizSep('-') << "\n";
+
+        // [7] Profile name (required before CONFIRM)
+        std::string nd = profileName.empty() ? "(not set -- required)" : profileName;
+        std::cout << wizRow("  [7]  Profile name        " + nd) << "\n";
+
+        // Observed segment durations — informational, no item number
+        if (!durations.empty()) {
+            std::string sl = "       Observed segments:  ";
+            bool allSame = std::all_of(durations.begin(), durations.end(),
+                                        [&](int d){ return d == durations[0]; });
+            if (allSame) sl += std::to_string(durations[0]) + "s";
+            else for (int d : durations) sl += std::to_string(d) + "s ";
+            sl += "  (" + std::to_string(durations.size()) + " samples)";
+            std::cout << wizRow(sl) << "\n";
         }
 
-        std::cout << "\nCONFIRM to accept"
-                  << "  |  [F]ront  [B]ack/rear  [L]eft  [R]ight  to remap"
-                  << "\n> ";
+        std::cout << wizSep('-') << "\n"
+                  << "  [1-7] to edit  |  CONFIRM to accept\n> ";
         std::cout.flush();
     };
 
+    // ---- Main settings loop ----
     while (true) {
-        drawMappings();
+        drawTable();
 
         std::string cmd;
         if (!std::getline(std::cin, cmd)) break;
-        auto lt = cmd.find_first_not_of(" \t");
-        if (lt != std::string::npos) {
-            auto rt = cmd.find_last_not_of(" \t");
-            cmd = cmd.substr(lt, rt - lt + 1);
-        } else {
-            cmd = "";
+        cmd = trimLine(cmd);
+
+        if (cmd == "CONFIRM") {
+            if (profileName.empty()) {
+                std::cout << "  Profile name is required — select [7] to set it.\n";
+                continue;
+            }
+            break;
         }
 
-        if (cmd == "CONFIRM") break;
+        int sel = -1;
+        try { sel = std::stoi(cmd); } catch (...) {}
 
-        // Map F/B/L/R to the role slot and a display label
-        std::string upper = cmd;
-        std::transform(upper.begin(), upper.end(), upper.begin(),
-                       [](unsigned char c){ return std::toupper(c); });
-
-        std::string* slot    = nullptr;
-        std::string  slotLabel;
-        if      (upper == "F") { slot = &roleFront; slotLabel = "Front";     }
-        else if (upper == "B") { slot = &roleRear;  slotLabel = "Back/Rear"; }
-        else if (upper == "L") { slot = &roleLeft;  slotLabel = "Left";      }
-        else if (upper == "R") { slot = &roleRight; slotLabel = "Right";     }
+        // [1] Camera mappings — F/B/L/R sub-menu (redraws until CONFIRM)
+        if (sel == 1) {
+            auto drawCams = [&]() {
+                std::cout << "\n" << wizSep('-') << "\n";
+                std::cout << "  <path> = " << root << "\n\n";
+                auto showRole = [](const std::string& label, const std::string& dir, bool attn) {
+                    std::string row = "  " + label;
+                    while ((int)row.size() < 8) row += ' ';
+                    row += " ->  ";
+                    if (dir.empty()) row += "(unassigned)";
+                    else             row += "<path>/" + dir + "/";
+                    if (attn)        row += "  [!] needs attention";
+                    std::cout << row << "\n";
+                };
+                showRole("front", roleFront, frontAttn);
+                showRole("rear",  roleRear,  rearAttn);
+                showRole("left",  roleLeft,  leftAttn);
+                showRole("right", roleRight, rightAttn);
+                std::vector<std::string> ua;
+                for (const auto& c : cams)
+                    if (c.dirName != roleFront && c.dirName != roleRear &&
+                        c.dirName != roleLeft  && c.dirName != roleRight)
+                        ua.push_back(c.dirName);
+                if (!ua.empty()) {
+                    std::cout << "\n  Unassigned:";
+                    for (const auto& d : ua) std::cout << "  <path>/" << d << "/";
+                    std::cout << "\n";
+                }
+                std::cout << "\n  CONFIRM to accept"
+                          << "  |  [F]ront  [B]ack/rear  [L]eft  [R]ight  to remap\n> ";
+                std::cout.flush();
+            };
+            while (true) {
+                drawCams();
+                std::string c2;
+                if (!std::getline(std::cin, c2)) break;
+                c2 = trimLine(c2);
+                if (c2 == "CONFIRM") break;
+                std::string u = c2;
+                std::transform(u.begin(), u.end(), u.begin(),
+                               [](unsigned char ch){ return std::toupper(ch); });
+                std::string* slot     = nullptr;
+                bool*        attnFlag = nullptr;
+                std::string  slotLabel;
+                if      (u == "F") { slot = &roleFront; attnFlag = &frontAttn; slotLabel = "Front";     }
+                else if (u == "B") { slot = &roleRear;  attnFlag = &rearAttn;  slotLabel = "Back/Rear"; }
+                else if (u == "L") { slot = &roleLeft;  attnFlag = &leftAttn;  slotLabel = "Left";      }
+                else if (u == "R") { slot = &roleRight; attnFlag = &rightAttn; slotLabel = "Right";     }
+                if (!slot) continue;
+                std::cout << "\nRemap " << slotLabel << " camera.\n"
+                          << "Type subdirectory name (blank to unassign):\n"
+                          << "  <path>/ ";
+                std::cout.flush();
+                std::string sub;
+                if (!std::getline(std::cin, sub)) continue;
+                sub = trimLine(sub);
+                // Strip any trailing slash the user may have typed
+                while (!sub.empty() && sub.back() == '/') sub.pop_back();
+                if (sub.empty()) {
+                    *slot     = "";
+                    *attnFlag = false;
+                } else if (validateCamDir(sub)) {
+                    // Release any other slot that already held this dirname
+                    if (roleFront == sub) { roleFront = ""; frontAttn = false; }
+                    if (roleRear  == sub) { roleRear  = ""; rearAttn  = false; }
+                    if (roleLeft  == sub) { roleLeft  = ""; leftAttn  = false; }
+                    if (roleRight == sub) { roleRight = ""; rightAttn = false; }
+                    *slot     = sub;
+                    *attnFlag = false;
+                    std::cout << "  OK -- <path>/" << sub << "/ validated.\n";
+                } else {
+                    *slot     = sub;
+                    *attnFlag = true;
+                    std::cout << "  Warning: <path>/" << sub
+                              << "/ not found or has no video files.\n";
+                }
+            }
+        }
+        // [2] Timezone
+        else if (sel == 2) {
+            tzLower = promptWizard("  Timezone (local/utc)", tzLower);
+            std::transform(tzLower.begin(), tzLower.end(), tzLower.begin(),
+                           [](unsigned char c){ return std::tolower(c); });
+            if (tzLower != "utc") tzLower = "local";
+        }
+        // [3] Timestamp format
+        else if (sel == 3) {
+            std::cout << "  Sample: " << sampleVideoFile << "\n";
+            tsFmt = promptWizard("  Timestamp format", tsFmt);
+            rebuildPatterns();
+        }
+        // [4] Thumbnails
+        else if (sel == 4) {
+            std::cout << "  Options: sidecar_jpg  generate_ffmpeg  none\n";
+            thumbSource = promptWizard("  Thumbnail source", thumbSource);
+            if (thumbSource == "sidecar_jpg")
+                thumbPattern = promptWizard("  Thumbnail pattern", thumbPattern);
+            else
+                thumbPattern = "";
+        }
+        // [5] GPS method
+        else if (sel == 5) {
+            std::cout << "  [1] exiftool_ligogps   (LIGO private data stream)\n"
+                      << "  [2] standard           (standard GPS metadata tracks)\n"
+                      << "  [3] none               (no GPS in video)\n";
+            std::string g = promptWizard("  Select [1-3] or type method", gpsMethod);
+            if      (g == "1") gpsMethod = "exiftool_ligogps";
+            else if (g == "2") gpsMethod = "standard";
+            else if (g == "3") gpsMethod = "none";
+            else               gpsMethod = g;
+        }
+        // [6] GPS lock offset
+        else if (sel == 6) {
+            std::string s = promptWizard("  GPS lock offset (seconds)",
+                                          std::to_string(gpsOffset));
+            try { gpsOffset = std::stoi(s); } catch (...) {}
+        }
+        // [7] Profile name
+        else if (sel == 7) {
+            profileName = promptWizard("  Profile name", profileName);
+        }
         // Unknown input → redraw
-        if (!slot) continue;
-
-        // Show numbered dir list for this role
-        std::cout << "\nAssign " << slotLabel << " camera:\n";
-        for (size_t i = 0; i < cams.size(); ++i)
-            std::cout << "  [" << (i + 1) << "] " << cams[i].dirName << "/\n";
-        std::cout << "  [0] (unassign)\n"
-                  << "Select [0-" << cams.size() << "]: ";
-        std::cout.flush();
-
-        std::string sel;
-        if (!std::getline(std::cin, sel)) continue;
-        int idx = -1;
-        try { idx = std::stoi(sel); } catch (...) { continue; }
-
-        if (idx == 0) {
-            *slot = "";
-        } else if (idx >= 1 && idx <= (int)cams.size()) {
-            // Unassign this dir from any other slot first
-            std::string chosen = cams[idx - 1].dirName;
-            if (roleFront == chosen) roleFront = "";
-            if (roleRear  == chosen) roleRear  = "";
-            if (roleLeft  == chosen) roleLeft  = "";
-            if (roleRight == chosen) roleRight = "";
-            *slot = chosen;
-        }
-        // loop → redraw
     }
 
     // Build dirRoles from confirmed slots
-    std::vector<std::pair<std::string,std::string>> dirRoles; // (dirName, role)
+    std::vector<std::pair<std::string,std::string>> dirRoles;
     if (!roleFront.empty()) dirRoles.push_back({roleFront, "front"});
     if (!roleRear.empty())  dirRoles.push_back({roleRear,  "rear"});
     if (!roleLeft.empty())  dirRoles.push_back({roleLeft,  "left"});
     if (!roleRight.empty()) dirRoles.push_back({roleRight, "right"});
-
-    // ---- Step 2: Filename timestamp format ----
-    std::cout << "\n--- Step 2: Filename Timestamp Format ---\n";
-    std::cout << "Sample filename: " << fs::path(primaryFiles[0]).filename().string() << "\n";
-    if (!tsFmt.empty()) std::cout << "Detected format:  " << tsFmt << "\n";
-    tsFmt = promptWizard("Timestamp format",
-                          tsFmt.empty() ? "YYYYMMDD_HHMMSS" : tsFmt);
-
-    std::string fnPattern = "^" + timestampRegex(tsFmt)
-                          + suffix.pattern + "\\" + primaryExt + "$";
-    std::cout << "  → Pattern: " << fnPattern << "\n";
-    if (!suffix.determined)
-        std::cout << "  Note: suffix pattern undetermined — review manually.\n";
-
-    // ---- Step 3: Thumbnails ----
-    std::cout << "\n--- Step 3: Thumbnails ---\n";
-    std::string thumbSource;
-    std::string thumbPattern;
-    if (anySidecar) {
-        std::cout << "Sidecar .jpg files detected.\n";
-        if (allSidecarOk) {
-            SuffixAnalysis thumbSfx = analyzeThumbSuffix(cameraDirs, tsFmt);
-            thumbPattern = "^" + timestampRegex(tsFmt)
-                         + thumbSfx.pattern + "\\.jpg$";
-            std::cout << "  Timestamp match confirmed — pattern: " << thumbPattern << "\n";
-            thumbSource = "sidecar_jpg";
-        } else {
-            std::cout << "  Warning: .jpg files found but basenames don't consistently\n"
-                      << "  match video files. Set thumbnails.pattern manually in the\n"
-                      << "  saved profile, or run:\n"
-                      << "    pm_probe --card " << root << "\n"
-                      << "  and file an issue at:\n"
-                      << "    https://github.com/Nutball-Labs/PathMux/issues\n";
-            thumbSource = "sidecar_jpg";
-        }
-    } else {
-        std::cout << "No sidecar .jpg files detected.\n";
-        thumbSource = "generate_ffmpeg";
-    }
-    thumbSource = promptWizard(
-        "Thumbnail source (sidecar_jpg/generate_ffmpeg/none)", thumbSource);
-
-    // ---- Step 4: Timezone ----
-    std::cout << "\n--- Step 4: Timestamp Timezone ---\n"
-              << "Are file timestamps in local time or UTC?\n";
-    std::string tz = promptWizard("Timezone", "local");
-    std::string tzLower = tz;
-    std::transform(tzLower.begin(), tzLower.end(), tzLower.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
-    if (tzLower != "utc") tzLower = "local";
-
-    // ---- Step 5: GPS lock offset ----
-    std::cout << "\n--- Step 5: GPS Cold-Start Offset ---\n"
-              << "Approximate seconds before GPS acquires first lock (0 if unknown):\n";
-    std::string gpsOffStr = promptWizard("GPS lock offset (seconds)", "0");
-    int gpsOffset = 0;
-    try { gpsOffset = std::stoi(gpsOffStr); } catch (...) {}
-
-    // ---- Step 6: Profile name ----
-    std::cout << "\n--- Step 6: Profile Name ---\n";
-    std::string profileName =
-        promptWizard("Profile name (e.g. 'Pruveeo D90', 'Cobra 4500')");
-    if (profileName.empty()) {
-        std::cout << "Profile name is required. Wizard aborted.\n";
-        return;
-    }
-
-    // ---- Summary ----
-    std::cout << "\n--- Profile Summary ---\n"
-              << "Name:      " << profileName << "\n"
-              << "Cameras:\n";
-    for (const auto& [dir, role] : dirRoles)
-        std::cout << "  " << role << " → " << dir << "/\n";
-    std::cout << "Timestamp: " << tsFmt << " (" << tzLower << ")\n"
-              << "Pattern:   " << fnPattern << "\n";
-    if (primaryCam) {
-        std::string gpsMethod = primaryCam->probe.gps.method;
-        if (gpsMethod == "LIGOGPSINFO") gpsMethod = "exiftool_ligogps";
-        std::cout << "GPS:       " << gpsMethod
-                  << " (lock offset " << gpsOffset << "s)\n";
-    }
-    std::cout << "Thumbs:    " << thumbSource;
-    if (!thumbPattern.empty()) std::cout << "  pattern: " << thumbPattern;
-    std::cout << "\n";
-    if (!durations.empty()) {
-        std::cout << "Segments: ";
-        for (int d : durations) std::cout << " " << d << "s";
-        std::cout << "\n";
-    }
-
-    // ---- Confirm save ----
-    std::string confirm = promptWizard("\nSave profile?", "y");
-    std::string confirmLower = confirm;
-    std::transform(confirmLower.begin(), confirmLower.end(), confirmLower.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
-    if (confirmLower != "y" && confirmLower != "yes") {
-        std::cout << "Wizard cancelled. No profile saved.\n";
-        return;
-    }
 
     // ---- Build JSON ----
     json j;
@@ -1283,11 +1404,7 @@ static void wizardCard(const std::string& root,
     j["timestamp"] = {{"format", tsFmt}, {"timezone", tzLower}};
 
     // gps block
-    {
-        std::string gpsMethod = primaryCam ? primaryCam->probe.gps.method : "none";
-        if (gpsMethod == "LIGOGPSINFO") gpsMethod = "exiftool_ligogps";
-        j["gps"] = {{"method", gpsMethod}, {"start_offset_seconds", gpsOffset}};
-    }
+    j["gps"] = {{"method", gpsMethod}, {"start_offset_seconds", gpsOffset}};
 
     // thumbnails block
     {
