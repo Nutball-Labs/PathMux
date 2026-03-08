@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <sstream>
 #include <ctime>
+#include "compat.hpp"
 
 namespace Pathmux {
 
@@ -133,4 +134,4 @@ private:
 #define LOG_CMD(cmd, exit, out) Pathmux::Logger::instance().logCommand(cmd, exit, out)
 
 #endif
-// SN: 00071
+// SN: 00082

@@ -20,6 +20,7 @@
 #include "pathmux.hpp"
 #include "gps_export.hpp"
 #include "json.hpp"
+#include "compat.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -145,8 +146,7 @@ static std::string buildStem(const json& jTrip)
     std::string front = jTrip["segments"][0].value("front", "");
     if (front.empty()) return "pm_trip";
 
-    auto slash = front.rfind('/');
-    std::string fname = (slash != std::string::npos) ? front.substr(slash + 1) : front;
+    std::string fname = pathBasename(front);
     auto dot = fname.rfind('.');
     if (dot != std::string::npos) fname = fname.substr(0, dot);
     // Strip trailing channel letter (F, R, L, N)
@@ -382,4 +382,4 @@ int main(int argc, char* argv[])
 
     return exitCode;
 }
-// SN: 00081
+// SN: 00082

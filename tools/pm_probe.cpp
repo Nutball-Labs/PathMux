@@ -12,6 +12,7 @@
 // suitable for filing a GitHub issue to request support for a new camera.
 
 #include "pathmux.hpp"
+#include "compat.hpp"
 #include "json.hpp"
 
 #include <iostream>
@@ -343,9 +344,7 @@ static FileProbe probeFile(const std::string& filePath,
 static void printFileProbe(const FileProbe& p)
 {
     // Basename for display
-    auto slash = p.filePath.rfind('/');
-    std::string fname = (slash != std::string::npos)
-                        ? p.filePath.substr(slash + 1) : p.filePath;
+    std::string fname = pathBasename(p.filePath);
 
     std::cout << "File:         " << p.filePath << "\n"
               << "Container:    " << containerLabel(p.container, p.containerExt) << "\n"
@@ -669,8 +668,7 @@ static std::string guessCameraRole(const std::string& dirName)
 // Guess the timestamp format string from a sample filename (path or basename).
 static std::string guessTimestampFormat(const std::string& filename)
 {
-    auto slash = filename.rfind('/');
-    std::string base = (slash != std::string::npos) ? filename.substr(slash + 1) : filename;
+    std::string base = pathBasename(filename);
 
     // YYYYMMDD_HHMMSS — e.g. 20260225_044424F.ts
     if (base.size() >= 15

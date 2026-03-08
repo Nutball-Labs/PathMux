@@ -9,6 +9,7 @@
 #include <sstream>
 #include <algorithm>
 #include <filesystem>
+#include "compat.hpp"
 #include <vector>
 
 using namespace Pathmux;
@@ -491,10 +492,7 @@ void FindTrips::showFullDump(ConfigManager& config) {
 
             for (const auto& seg : t.segments) {
                 // Front filename only (not full path)
-                std::string frontName = seg.front;
-                auto slash = frontName.rfind('/');
-                if (slash != std::string::npos)
-                    frontName = frontName.substr(slash + 1);
+                std::string frontName = pathBasename(seg.front);
                 if (frontName == "-" || frontName.empty())
                     frontName = "(no front)";
 
@@ -628,4 +626,4 @@ void FindTrips::jsonDump(ConfigManager& config) {
     std::cout << root.dump(2) << "\n";
 }
 
-// SN: 00076
+// SN: 00082

@@ -1,6 +1,9 @@
 #include "video_build.hpp"
 #include "logger.hpp"
-#include <sys/wait.h>
+#include "compat.hpp"
+#ifndef _WIN32
+#  include <sys/wait.h>
+#endif
 #include "ui_helpers.hpp"
 #include "version.hpp"
 #include "json.hpp"
@@ -56,10 +59,7 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
     if (time.size() > 6) time = time.substr(0, 6);
 
     // Basename helper
-    auto bn = [](const std::string& p) -> std::string {
-        auto pos = p.rfind('/');
-        return (pos != std::string::npos) ? p.substr(pos + 1) : p;
-    };
+    auto bn = [](const std::string& p) { return pathBasename(p); };
 
     // Build entry — keys in logical reading order:
     //   1. Build identity    2. Output location + duration
@@ -1410,12 +1410,9 @@ void VideoBuilder::validateTrip(const Trip& trip, const std::string& sourcePath)
         const std::string& front = trip.segments[0].front;
         if (front != "-" && !front.empty()) {
             // Strip last two path components (camera/filename)
-            auto pos = front.rfind('/');
-            if (pos != std::string::npos) {
-                auto pos2 = front.rfind('/', pos - 1);
-                if (pos2 != std::string::npos)
-                    root = front.substr(0, pos2);
-            }
+            auto fsRoot = fs::path(front).parent_path().parent_path();
+            if (!fsRoot.empty())
+                root = fsRoot.string();
         }
     }
 
@@ -1711,4 +1708,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00076
+// SN: 00082

@@ -12,6 +12,7 @@
 // Exit 0 = all OK; exit 1 = one or more problems found.
 
 #include "pathmux.hpp"
+#include "compat.hpp"
 #include "json.hpp"
 
 #include <iostream>
@@ -162,9 +163,7 @@ static void deepAuditTrip(TripResult& r,
         if (!gotOutput || dur <= 0.0) {
             r.status = TripStatus::DeepFail;
             // Extract basename for display
-            auto slash = seg.front.rfind('/');
-            r.detail = (slash != std::string::npos)
-                       ? seg.front.substr(slash + 1) : seg.front;
+            r.detail = pathBasename(seg.front);
             return;
         }
     }
@@ -350,4 +349,4 @@ int main(int argc, char* argv[])
 
     return problemTrips > 0 ? 1 : 0;
 }
-// SN: 00080
+// SN: 00082

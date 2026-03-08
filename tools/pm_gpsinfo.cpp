@@ -27,6 +27,7 @@
 #include <ctime>
 #include <iomanip>
 
+#include "compat.hpp"
 #include "config_manager.hpp"
 #include "platform.hpp"
 using namespace Pathmux;
@@ -430,9 +431,7 @@ static std::vector<LockScanResult> scanAllTrips(
             if (front == "-" || front.empty()) continue;
 
             // front is an absolute path in the manifest; extract basename for display.
-            std::string baseName = front;
-            auto slash = front.rfind('/');
-            if (slash != std::string::npos) baseName = front.substr(slash + 1);
+            std::string baseName = pathBasename(front);
 
             LockScanResult r;
             r.manifestId   = entry.id;
@@ -684,4 +683,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-// SN: 00080
+// SN: 00082
