@@ -1,4 +1,5 @@
 #include "config_manager.hpp"
+#include "compat.hpp"
 #include "platform.hpp"
 #include "json.hpp"
 #include <fstream>
@@ -1258,4 +1259,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00079
+// SN: 00082

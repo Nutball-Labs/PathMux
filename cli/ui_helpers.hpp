@@ -8,7 +8,13 @@
 #include <fstream>
 #include <climits>
 #include <filesystem>
-#include <unistd.h>
+#ifdef _WIN32
+#  include <io.h>      // _access
+#  define access _access
+#  define X_OK  0      // Windows has no exec bit; 0 = existence check only
+#else
+#  include <unistd.h>
+#endif
 
 // Pure math/format helpers (no platform dependencies)
 #include "format_helpers.hpp"
@@ -160,9 +166,13 @@ inline void warnMissingTools(const std::string& ffmpegPath,
     auto check = [](const std::string& configured,
                     const std::string& bare) -> bool {
         const std::string& path = configured.empty() ? bare : configured;
-        if (path.find('/') != std::string::npos)
+        if (path.find('/') != std::string::npos || path.find('\\') != std::string::npos)
             return access(path.c_str(), X_OK) == 0;
+#ifdef _WIN32
+        std::string cmd = "where " + path + " >NUL 2>&1";
+#else
         std::string cmd = "command -v " + path + " >/dev/null 2>&1";
+#endif
         return system(cmd.c_str()) == 0;
     };
 
@@ -315,7 +325,8 @@ inline void confirmExists(const std::string& path) {
 // ---------------------------------------------------------------------------
 inline void confirmExecutable(const std::string& path) {
     if (path.empty()) return;
-    if (path.find('/') == std::string::npos) return; // bare name, trust PATH
+    if (path.find('/') == std::string::npos && path.find('\\') == std::string::npos)
+        return; // bare name, trust PATH
     if (access(path.c_str(), X_OK) != 0)
         std::cout << "  Warning: not found or not executable: " << path << "\n";
 }
@@ -339,4 +350,4 @@ inline std::string confirmOutputPath(const std::string& path) {
 } // namespace UI
 
 #endif
-// SN: 00071
+// SN: 00082

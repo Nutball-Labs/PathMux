@@ -44,7 +44,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---------------------------------------------------------------------------
 # Compiler flags
 # ---------------------------------------------------------------------------
-add_compile_options(-Wall -Wextra -O2)
+if(MSVC)
+    add_compile_options(/W3 /O2)
+else()
+    add_compile_options(-Wall -Wextra -O2)
+endif()
 
 # ---------------------------------------------------------------------------
 # Static library — core logic shared by CLI and future Qt6 GUI
@@ -223,4 +227,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00081
+# SN: 00082

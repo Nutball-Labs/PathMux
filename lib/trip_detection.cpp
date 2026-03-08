@@ -1,4 +1,5 @@
 #include "trip_detection.hpp"
+#include "compat.hpp"
 #include <filesystem>
 #include <algorithm>
 #include <regex>
@@ -365,4 +366,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
 } // namespace Pathmux
 
-// SN: 00079
+// SN: 00082

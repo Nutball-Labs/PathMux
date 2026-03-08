@@ -15,6 +15,7 @@
 // Exit 1: argument/file error.
 
 #include "pathmux.hpp"
+#include "compat.hpp"
 #include "json.hpp"
 
 #include <iostream>
@@ -167,4 +168,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00081
+// SN: 00082

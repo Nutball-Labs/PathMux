@@ -574,4 +574,76 @@ v1.0 planning; utility suite scoping
 
 ---
 
+## 2026-03-08
+
+### Session 1 (Morning)
+**Focus:** Windows/macOS portability pass; multi-platform build dir setup
+
+**Work Done:**
+- **Platform build dir rename (both projects):**
+  - PathMux `build/` → `build-linux/`; `build-win/` and `build-macos/` created
+  - SRoute same treatment (SRoute `build/` → `build-linux/`)
+  - `.gitignore` updated in both repos to cover all three dirs
+  - CLAUDE.md and README.md in both projects updated to reference `build-linux`
+
+- **`lib/compat.hpp` (new, SN 00082):** Cross-platform shim header.
+  - Defines `popen`/`pclose` → `_popen`/`_pclose` for MSVC
+  - Defines `WEXITSTATUS(s)` as pass-through on Windows (pclose/system return
+    exit code directly; no POSIX status word encoding)
+  - No-op on Linux and macOS — safe to include everywhere
+  - Added to all `.cpp` files that call `popen()`: `trip_detection.cpp`,
+    `gps_export.cpp`, `config_manager.cpp`, `video_build.cpp`, `pm_audit.cpp`,
+    `pm_probe.cpp`, `pm_gpsinfo.cpp`, `pm_findgpslock.cpp`
+
+- **`lib/platform.cpp` (SN 00082):** Full three-way OS implementation:
+  - Windows: `USERPROFILE` for home; `%APPDATA%\pathmux\` for config dir;
+    `GetConsoleScreenBufferInfo` for terminal width
+  - macOS: `HOME`; `~/Library/Application Support/pathmux/` for config dir;
+    `TIOCGWINSZ` for terminal width (same as Linux)
+  - Linux: unchanged behavior
+
+- **`cli/ui_helpers.hpp` (SN 00082):** Three Windows fixes:
+  - `#include <unistd.h>` replaced with `#ifdef _WIN32 / <io.h> + _access /
+    #else / unistd.h` block; `X_OK` defined as `0` on Windows (existence check)
+  - Path separator checks for `access()` and bare-name detection updated to
+    handle both `/` and `\`
+  - Tool existence check uses `where <name> >NUL 2>&1` on Windows vs
+    `command -v <name> >/dev/null 2>&1` on Linux/macOS
+
+- **`cli/video_build.cpp` (SN 00082):** `sys/wait.h` guarded with
+  `#ifndef _WIN32`; `compat.hpp` added
+
+- **`CMakeLists.txt` (SN 00082):** Compiler flags guarded:
+  MSVC gets `/W3 /O2`; GCC/Clang get `-Wall -Wextra -O2`
+
+**Linux build verified clean** after all changes. All binaries rebuilt successfully.
+
+**macOS note:** No source changes required for macOS — fully POSIX-compatible.
+The only behavioral difference is `getConfigDir()` now correctly returns
+`~/Library/Application Support/pathmux/` on macOS instead of `~/.config/pathmux/`.
+
+**Build workflow (Windows):** Windows machine runs VSCode and accesses the repo
+over an NFS share — no clone needed, same source tree. CMake is configured and
+run from Windows so `build-win/` gets a Windows-native CMakeCache.txt (Windows
+paths to the NFS share). `build-linux/` retains its Linux cache. The two build
+dirs coexist in the same source tree without interfering — each has its own
+CMakeCache.txt with OS-appropriate paths. Same pattern used successfully for
+the SRoute app mockup build on the Windows machine.
+
+**Next step:** Afternoon session — open VSCode on Windows, cmake configure into
+`build-win/`, build, smoke test a few CLI functions.
+
+**Files Changed:** `lib/compat.hpp` (new), `lib/platform.cpp`, `cli/ui_helpers.hpp`,
+`cli/video_build.cpp`, `CMakeLists.txt`, `lib/trip_detection.cpp`, `lib/gps_export.cpp`,
+`lib/config_manager.cpp`, `tools/pm_audit.cpp`, `tools/pm_probe.cpp`,
+`tools/pm_gpsinfo.cpp`, `tools/pm_findgpslock.cpp`, `.gitignore`
+
+**Pending (carry forward):**
+- Windows build and smoke test (afternoon session)
+- CameraProfile/StorageFormat extraction from `trip_detection.cpp`
+- GPS lock corpus scan results — analyze when complete
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+
+---
+
 <!-- SN: 00082 -->

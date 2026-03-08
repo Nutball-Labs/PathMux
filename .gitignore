@@ -1,5 +1,7 @@
 # Build output
-build/
+build-linux/
+build-win/
+build-macos/
 *.o
 *.a
 

@@ -1,4 +1,5 @@
 #include "gps_export.hpp"
+#include "compat.hpp"
 #include "config_manager.hpp"
 #include "json.hpp"
 
@@ -455,4 +456,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 }
 
 } // namespace Pathmux
-// SN: 00081
+// SN: 00082
