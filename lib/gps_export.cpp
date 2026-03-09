@@ -94,7 +94,7 @@ bool extractGps(json& root,
         std::string cmd = exifCmd
                           + (verbose ? "" : " -q")
                           + " \"" + frontPath + "\""
-                          + (verbose ? "" : " 2>/dev/null");
+                          + (verbose ? "" : " " NULL_REDIRECT);
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) {
             std::cerr << "\n  Error: popen failed — is exiftool installed?\n";

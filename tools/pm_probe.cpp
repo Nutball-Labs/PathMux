@@ -12,6 +12,7 @@
 // suitable for filing a GitHub issue to request support for a new camera.
 
 #include "pathmux.hpp"
+#include "platform.hpp"
 #include "compat.hpp"
 #include "json.hpp"
 
@@ -155,7 +156,7 @@ static std::vector<StreamInfo> probeStreams(const std::string& filePath,
     std::string cmd = ffprobePath
         + " -v quiet -print_format json"
         + " -show_entries stream=index,codec_type,codec_name,codec_tag_string,sample_rate,channels"
-        + " \"" + filePath + "\" 2>/dev/null";
+        + " \"" + filePath + "\" " NULL_REDIRECT;
 
     std::string raw = runCmd(cmd);
     if (raw.empty()) return result;
@@ -188,7 +189,7 @@ static void probeContainerAndDuration(const std::string& filePath,
     std::string cmd = ffprobePath
         + " -v quiet -print_format json"
         + " -show_entries format=format_name,duration"
-        + " \"" + filePath + "\" 2>/dev/null";
+        + " \"" + filePath + "\" " NULL_REDIRECT;
 
     std::string raw = runCmd(cmd);
     if (raw.empty()) return;
@@ -225,7 +226,7 @@ static GpsInfo detectGps(const std::vector<StreamInfo>& streams,
 
     // Try exiftool extraction to confirm and grab a sample fix
     std::string cmd = exiftoolPath + " " + exiftoolOptions
-        + " \"" + filePath + "\" 2>/dev/null";
+        + " \"" + filePath + "\" " NULL_REDIRECT;
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return g;
 
@@ -295,7 +296,7 @@ static FileProbe probeFile(const std::string& filePath,
             " -v error -select_streams v:0"
             " -show_entries stream=width,height,pix_fmt,color_range,color_space,r_frame_rate"
             " -of csv=p=0"
-            " \"" + filePath + "\" 2>/dev/null";
+            " \"" + filePath + "\" " NULL_REDIRECT;
         std::string raw = runCmd(cmd);
         // Extract first non-empty line to avoid multi-row bleed
         std::string firstLine;
@@ -449,7 +450,7 @@ static int segDurationFfprobe(const std::string& filePath,
 {
     std::string cmd = ffprobePath
         + " -v error -show_entries format=duration -of csv=p=0"
-        + " \"" + filePath + "\" 2>/dev/null";
+        + " \"" + filePath + "\" " NULL_REDIRECT;
     std::string raw = runCmd(cmd);
     if (raw.empty()) return 0;
     try { return (int)std::round(std::stod(raw)); } catch (...) { return 0; }
@@ -1418,12 +1419,7 @@ static void wizardCard(const std::string& root,
     std::string sanitized = sanitizeProfileName(profileName);
     if (sanitized.empty()) sanitized = "custom_profile";
 
-    const char* homeEnv = std::getenv("HOME");
-    if (!homeEnv) {
-        std::cerr << "Error: HOME not set, cannot determine config directory.\n";
-        return;
-    }
-    std::string profilesDir = std::string(homeEnv) + "/.config/pathmux/profiles";
+    std::string profilesDir = Pathmux::Platform::getConfigDir() + "profiles";
     std::error_code ec;
     fs::create_directories(profilesDir, ec);
     if (ec) {

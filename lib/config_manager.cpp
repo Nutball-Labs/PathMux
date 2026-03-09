@@ -413,8 +413,35 @@ std::string ConfigManager::getManifestFilePath(const std::string& sourcePath) {
 // ---------------------------------------------------------------------------
 
 std::string ConfigManager::fileMd5(const std::string& filePath) {
-    // Use system md5sum command — available on all Linux distros
-    std::string cmd = "md5sum " + std::string("'") + filePath + "' 2>/dev/null";
+#ifdef _WIN32
+    // certutil -hashfile output (3 non-empty lines):
+    //   line 0: "MD5 hash of <file>:"
+    //   line 1: the hash (uppercase, possibly space-separated bytes)
+    //   line 2: "CertUtil: -hashfile command completed successfully."
+    std::string cmd = "certutil -hashfile \"" + filePath + "\" MD5 2>NUL";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "";
+    std::vector<std::string> lines;
+    char buf[256] = {};
+    while (fgets(buf, sizeof(buf), pipe)) {
+        std::string line(buf);
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' '))
+            line.pop_back();
+        if (!line.empty()) lines.push_back(line);
+    }
+    pclose(pipe);
+    if (lines.size() >= 2) {
+        std::string hash = lines[1];
+        // remove any spaces certutil inserts between byte pairs
+        hash.erase(std::remove(hash.begin(), hash.end(), ' '), hash.end());
+        // normalize to lowercase to match md5sum output format
+        for (char& c : hash) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return hash;
+    }
+    return "";
+#else
+    // Use system md5sum command — available on all Linux/macOS distros
+    std::string cmd = "md5sum '" + filePath + "' 2>/dev/null";
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return "";
     char buf[64] = {};
@@ -428,6 +455,7 @@ std::string ConfigManager::fileMd5(const std::string& filePath) {
         pclose(pipe);
     }
     return "";
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -1259,4 +1287,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00082
+// SN: 00083

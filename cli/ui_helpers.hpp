@@ -187,9 +187,9 @@ inline void warnMissingTools(const std::string& ffmpegPath,
         printCenteredLine("*** CONFIGURATION WARNING ***");
         printLine();
         if (!ffmpegOk)
-            printCenteredLine("\u26a0  ffmpeg not found -- video build will NOT work");
+            printCenteredLine("[!]  ffmpeg not found -- video build will NOT work");
         if (!exiftoolOk)
-            printCenteredLine("\u26a0  exiftool not found -- GPS extraction unavailable");
+            printCenteredLine("[!]  exiftool not found -- GPS extraction unavailable");
         printLine();
         printCenteredLine("Use [F]/[E] in Preferences to set correct paths");
         std::cout << CORNER << bar << CORNER << "\n";
@@ -350,4 +350,4 @@ inline std::string confirmOutputPath(const std::string& path) {
 } // namespace UI
 
 #endif
-// SN: 00082
+// SN: 00083

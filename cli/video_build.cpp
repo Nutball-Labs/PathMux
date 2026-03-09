@@ -13,6 +13,8 @@
 #include <iomanip>
 #include <filesystem>
 #include <algorithm>
+#include <cctype>
+#include <vector>
 #include <cstdlib>
 #include <ctime>
 #include <array>
@@ -245,7 +247,7 @@ int VideoBuilder::getFrameCount(const std::string& file,
     std::string cmd = ffprobePath +
         " -v error -select_streams v:0 -count_packets"
         " -show_entries stream=nb_read_packets"
-        " -of csv=p=0 \"" + file + "\" 2>/dev/null";
+        " -of csv=p=0 \"" + file + "\" " NULL_REDIRECT;
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return -1;
     int count = -1;
@@ -325,26 +327,29 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
                              makeOutputName(trip, "Collage_4K", "mp4")).string();
     std::string outFile   = UI::confirmOutputPath(proposed);
     if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
-    std::string ffprobe   = opts.ffmpegPath;
-    // Derive ffprobe path from ffmpeg path
-    {
-        size_t pos = ffprobe.rfind("ffmpeg");
-        if (pos != std::string::npos) ffprobe.replace(pos, 6, "ffprobe");
-        else ffprobe = "ffprobe";
+
+    // -----------------------------------------------------------------------
+    // Build concat lists directly from source segments.
+    // Single encode pass: source → filter_complex → collage output.
+    // No intermediate re-encode; full original quality fed to the encoder.
+    // Missing camera segments ("-") are skipped per-camera.  A camera absent
+    // from all segments gets a lavfi black+silent input so the grid stays
+    // filled; -shortest stops the encode when the real streams end.
+    // -----------------------------------------------------------------------
+    std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
+    for (const auto& seg : trip.segments) {
+        if (!seg.front.empty() && seg.front != "-") srcFront.push_back(seg.front);
+        if (!seg.rear.empty()  && seg.rear  != "-") srcRear.push_back(seg.rear);
+        if (!seg.left.empty()  && seg.left  != "-") srcLeft.push_back(seg.left);
+        if (!seg.right.empty() && seg.right != "-") srcRight.push_back(seg.right);
     }
 
-    // -----------------------------------------------------------------------
-    // For each segment, build a normalized clip for each camera.
-    // Normalization: find max frame count across all 4 cameras for that
-    // segment, pad shorter cameras with fade-to-black to match.
-    // Normalized clips written to <outDir>/pm_tmp_norm_<cam>_<seg>.ts
-    // -----------------------------------------------------------------------
-    std::vector<std::string> normFront, normRear, normLeft, normRight;
-    const std::string cameras[4] = {"front", "rear", "left", "right"};
+    if (srcFront.empty()) {
+        std::cerr << "Error: No front-camera segments found for collage.\n";
+        return false;
+    }
 
-    std::cout << "\nNormalizing segments for sync...\n";
-
-    // Ensure tmp directory exists
+    // Ensure tmp directory exists for concat list files
     {
         std::error_code ec;
         fs::create_directories(tmpDir, ec);
@@ -355,119 +360,21 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         }
     }
 
-    for (size_t si = 0; si < trip.segments.size(); ++si) {
-        const auto& seg = trip.segments[si];
-        std::string files[4] = { seg.front, seg.rear, seg.left, seg.right };
+    // Write concat lists for cameras that have segments
+    auto makeList = [&](const std::vector<std::string>& segs,
+                        const std::string& name) -> std::string {
+        if (segs.empty()) return "";
+        return writeConcatList(segs,
+            (fs::path(tmpDir) / ("pm_tmp_col_" + name + ".txt")).string());
+    };
 
-        // Get frame counts — skip missing cameras gracefully
-        int frames[4] = {0, 0, 0, 0};
-        int maxFrames = 0;
-        for (int c = 0; c < 4; ++c) {
-            if (files[c] != "-" && !files[c].empty()) {
-                frames[c] = getFrameCount(files[c], ffprobe);
-                if (frames[c] > maxFrames) maxFrames = frames[c];
-            }
-        }
+    std::string listF = makeList(srcFront, "front");
+    std::string listR = makeList(srcRear,  "rear");
+    std::string listL = makeList(srcLeft,  "left");
+    std::string listG = makeList(srcRight, "right");
 
-        if (maxFrames <= 0) {
-            std::cerr << "  Warning: Segment " << si
-                      << " has no readable frames — skipping.\n";
-            continue;
-        }
-
-        // Pad each camera to maxFrames
-        for (int c = 0; c < 4; ++c) {
-            std::string normPath = (fs::path(tmpDir) / ("pm_tmp_norm_" + cameras[c]
-                                 + "_" + std::to_string(si) + ".ts")).string();
-
-            if (files[c] == "-" || files[c].empty()) {
-                // Generate black placeholder
-                double dur = maxFrames / 25.0;
-                std::ostringstream cmd;
-                cmd << opts.ffmpegPath << " -y";
-                if (!opts.encode.hwDevice.empty())
-                    cmd << " -init_hw_device " << opts.encode.hwDeviceType
-                        << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
-                cmd << " -f lavfi -i color=c=black:s=1920x1080:r=25"
-                    << " -f lavfi -i anullsrc=r=48000:cl=stereo"
-                    << " -t " << std::fixed << std::setprecision(3) << dur
-                    << " -vf 'format=" << opts.encode.pixFmt << ",hwupload=extra_hw_frames=64'"
-                    << " -c:v " << opts.encode.normEncoder
-                    << " -q " << opts.encode.normQuality;
-                if (!opts.encode.extraNormArgs.empty())
-                    cmd << " " << opts.encode.extraNormArgs;
-                cmd << " -c:a aac \"" << normPath << "\"";
-                runFfmpeg(cmd.str());
-
-            } else if (frames[c] >= maxFrames) {
-                // Already longest — transcode forcing pixFmt
-                std::ostringstream cmd;
-                cmd << opts.ffmpegPath << " -y";
-                if (!opts.encode.hwDevice.empty())
-                    cmd << " -init_hw_device " << opts.encode.hwDeviceType
-                        << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
-                cmd << " -i \"" << files[c] << "\""
-                    << " -map 0:v:0 -map 0:a:0"
-                    << " -vf 'format=" << opts.encode.pixFmt << ",hwupload=extra_hw_frames=64'"
-                    << " -c:v " << opts.encode.normEncoder
-                    << " -q " << opts.encode.normQuality;
-                if (!opts.encode.extraNormArgs.empty())
-                    cmd << " " << opts.encode.extraNormArgs;
-                cmd << " -c:a aac \"" << normPath << "\"";
-                runFfmpeg(cmd.str());
-
-            } else {
-                // Pad with fade-to-black on tail
-                double srcDur = frames[c]  / 25.0;
-                double maxDur = maxFrames  / 25.0;
-                double padDur = maxDur - srcDur;
-                std::ostringstream cmd;
-                cmd << opts.ffmpegPath << " -y";
-                if (!opts.encode.hwDevice.empty())
-                    cmd << " -init_hw_device " << opts.encode.hwDeviceType
-                        << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
-                cmd << " -i \"" << files[c] << "\""
-                    << " -vf \"tpad=stop_mode=clone:stop_duration="
-                    << std::fixed << std::setprecision(3) << padDur
-                    << ",fade=t=out:st="
-                    << std::fixed << std::setprecision(3) << (srcDur - 0.5)
-                    << ":d=0.5,format=" << opts.encode.pixFmt << ",hwupload=extra_hw_frames=64\""
-                    << " -af \"apad=whole_dur=" << std::fixed << std::setprecision(3) << maxDur << "\""
-                    << " -c:v " << opts.encode.normEncoder
-                    << " -q " << opts.encode.normQuality;
-                if (!opts.encode.extraNormArgs.empty())
-                    cmd << " " << opts.encode.extraNormArgs;
-                cmd << " -c:a aac"
-                    << " -t " << std::fixed << std::setprecision(3) << maxDur
-                    << " \"" << normPath << "\"";
-                runFfmpeg(cmd.str());
-            }
-
-            // Push to appropriate vector
-            switch(c) {
-                case 0: normFront.push_back(normPath); break;
-                case 1: normRear.push_back(normPath);  break;
-                case 2: normLeft.push_back(normPath);  break;
-                case 3: normRight.push_back(normPath); break;
-            }
-        }
-    }
-
-    if (normFront.empty()) {
-        std::cerr << "Error: No normalized segments produced.\n";
-        return false;
-    }
-
-    // -----------------------------------------------------------------------
-    // Write concat lists for each normalized camera stream
-    // -----------------------------------------------------------------------
-    std::string listF = writeConcatList(normFront, (fs::path(tmpDir) / "pm_tmp_col_front.txt").string());
-    std::string listR = writeConcatList(normRear,  (fs::path(tmpDir) / "pm_tmp_col_rear.txt").string());
-    std::string listL = writeConcatList(normLeft,  (fs::path(tmpDir) / "pm_tmp_col_left.txt").string());
-    std::string listG = writeConcatList(normRight, (fs::path(tmpDir) / "pm_tmp_col_right.txt").string());
-
-    if (listF.empty() || listR.empty() || listL.empty() || listG.empty()) {
-        std::cerr << "Error: Failed to write concat lists.\n";
+    if (listF.empty()) {
+        std::cerr << "Error: Failed to write front concat list.\n";
         return false;
     }
 
@@ -494,11 +401,22 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     if (!opts.encode.hwDevice.empty())
         cmd << " -init_hw_device " << opts.encode.hwDeviceType
             << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
-    cmd << " -f concat -safe 0 -i \"" << listF << "\""
-        << " -f concat -safe 0 -i \"" << listR << "\""
-        << " -f concat -safe 0 -i \"" << listL << "\""
-        << " -f concat -safe 0 -i \"" << listG << "\""
-        << " -filter_complex \""
+
+    // Input 0: front (always present)
+    cmd << " -f concat -safe 0 -i \"" << listF << "\"";
+    // Inputs 1-3: use source concat list if available, lavfi black otherwise
+    auto addInput = [&](const std::string& list) {
+        if (!list.empty())
+            cmd << " -f concat -safe 0 -i \"" << list << "\"";
+        else
+            cmd << " -f lavfi -i \"color=c=black:s=1920x1080:r=25,format="
+                << opts.encode.pixFmt << "\"";
+    };
+    addInput(listR);
+    addInput(listL);
+    addInput(listG);
+
+    cmd << " -filter_complex \""
         <<   "[0:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v0];"
         <<   "[1:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v1];"
         <<   "[2:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v2];"
@@ -506,6 +424,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[vout]\""
         << " -map \"[vout]\""
         << " -map " << audioIdx << ":a:0"
+        << " -shortest"
         << " -c:v " << opts.encode.collageEncoder
         << " -q " << opts.encode.collageQuality;
     if (!opts.encode.extraCollageArgs.empty())
@@ -518,16 +437,11 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     bool ok = runFfmpeg(cmd.str());
 
     if (ok) {
-        // Clean up concat lists and normalized segments
-        fs::remove(listF); fs::remove(listR);
-        fs::remove(listL); fs::remove(listG);
-        for (size_t si = 0; si < trip.segments.size(); ++si) {
-            for (const auto& cam : cameras) {
-                std::string p = (fs::path(tmpDir) / ("pm_tmp_norm_" + std::string(cam)
-                              + "_" + std::to_string(si) + ".ts")).string();
-                if (fs::exists(p)) fs::remove(p);
-            }
-        }
+        // Clean up concat lists
+        if (!listF.empty()) fs::remove(listF);
+        if (!listR.empty()) fs::remove(listR);
+        if (!listL.empty()) fs::remove(listL);
+        if (!listG.empty()) fs::remove(listG);
         // Remove tmp dir if auto-created and now empty
         if (opts.tmpDir.empty()) {
             std::error_code ec;
@@ -554,9 +468,12 @@ bool VideoBuilder::buildCollage1080(const std::string& source4K,
     if (!opts.encode.hwDevice.empty())
         cmd << " -init_hw_device " << opts.encode.hwDeviceType
             << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
+    std::string downVf = opts.encode.hwDevice.empty()
+        ? "scale=1920:1080"
+        : "format=" + opts.encode.pixFmt + ",hwupload=extra_hw_frames=64,scale_"
+          + opts.encode.hwDeviceType + "=1920:1080";
     cmd << " -i \"" << source4K << "\""
-        << " -vf 'format=" << opts.encode.pixFmt << ",hwupload=extra_hw_frames=64,scale_" 
-        << opts.encode.hwDeviceType << "=1920:1080'"
+        << " -vf \"" << downVf << "\""
         << " -c:v " << opts.encode.downEncoder
         << " -q " << opts.encode.downQuality
         << " -c:a copy"
@@ -635,7 +552,7 @@ double VideoBuilder::getFileDuration(const std::string& file,
                                       const std::string& ffprobePath) {
     std::string cmd = ffprobePath +
         " -v error -show_entries format=duration"
-        " -of csv=p=0 \"" + file + "\" 2>/dev/null";
+        " -of csv=p=0 \"" + file + "\" " NULL_REDIRECT;
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return 0.0;
     double dur = 0.0;
@@ -1429,16 +1346,37 @@ void VideoBuilder::validateTrip(const Trip& trip, const std::string& sourcePath)
             continue;
         }
         // Recompute md5
+#ifdef _WIN32
+        std::string cmd = "certutil -hashfile \"" + fullPath + "\" MD5 2>NUL";
+#else
         std::string cmd = "md5sum '" + fullPath + "' 2>/dev/null";
+#endif
         FILE* pipe = popen(cmd.c_str(), "r");
         std::string currentMd5;
         if (pipe) {
+#ifdef _WIN32
+            // certutil output: line 0 = header, line 1 = hash, line 2 = success msg
+            std::vector<std::string> lines;
+            char buf[256] = {};
+            while (fgets(buf, sizeof(buf), pipe)) {
+                std::string line(buf);
+                while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' '))
+                    line.pop_back();
+                if (!line.empty()) lines.push_back(line);
+            }
+            if (lines.size() >= 2) {
+                currentMd5 = lines[1];
+                currentMd5.erase(std::remove(currentMd5.begin(), currentMd5.end(), ' '), currentMd5.end());
+                for (char& c : currentMd5) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+#else
             char buf[64] = {};
             if (fgets(buf, sizeof(buf), pipe)) {
                 std::string s(buf);
                 auto pos = s.find(' ');
                 if (pos != std::string::npos) currentMd5 = s.substr(0, pos);
             }
+#endif
             pclose(pipe);
         }
         if (currentMd5 == vf.md5) {

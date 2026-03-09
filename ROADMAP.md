@@ -4,6 +4,38 @@ This document outlines planned features and future development direction for Pat
 
 ---
 
+## !! BLOCKING — Must Resolve Before All Other Work !!
+
+### Collage Encode Quality: NVENC vs QSV/VAAPI
+
+**Status:** OPEN — blocks all collage-related development
+
+**Problem:**
+4K collage output on Windows (NVENC) is visibly inferior to Linux (QSV/VAAPI).
+Each 1080p quadrant shows obvious pixelation / softness even at low CQ values.
+The Linux QSV result looks "hands down better" — quadrants are crystal clear.
+
+**Root Cause Analysis:**
+- NVENC CQ quality scale is not equivalent to QSV ICQ or VAAPI quality values
+  at the same numeric setting. CQ 20 on NVENC ≠ q=20 on QSV.
+- The single-pass approach (source .ts files directly into filter_complex) is
+  now implemented — eliminates the two-pass quality loss from the normalization
+  intermediates. Still not matching Linux quality at equivalent nominal settings.
+- `h264_nvenc -preset lossless` exists and should produce bit-for-bit accurate
+  input streams before the final hevc_nvenc collage encode.
+
+**Required Work:**
+1. Add a `lossless` encode mode to `EncodeSettings` (or per-step quality override)
+2. Test `h264_nvenc -preset lossless` as the per-camera concat encode step
+3. A/B compare: lossless intermediates → hevc_nvenc CQ 20 collage vs current
+4. Determine if the problem is in the final hevc_nvenc encode or earlier
+5. Update NVENC preset defaults once correct quality values are confirmed
+6. Document the quality scale mapping between encoder families
+
+**Workaround:** Use Linux QSV/VAAPI for collage production until resolved.
+
+---
+
 ## Phase 1: CLI Foundation (Current Focus)
 
 ### Trip Detection & Caching

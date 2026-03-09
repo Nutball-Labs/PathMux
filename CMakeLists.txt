@@ -46,6 +46,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---------------------------------------------------------------------------
 if(MSVC)
     add_compile_options(/W3 /O2)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
     add_compile_options(-Wall -Wextra -O2)
 endif()
@@ -227,4 +228,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00082
+# SN: 00083

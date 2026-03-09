@@ -2,6 +2,7 @@
 #include "config_manager.hpp"
 #include "gps_export.hpp"
 #include "ui_helpers.hpp"
+#include "platform.hpp"
 #include "json.hpp"
 
 #include <iostream>
@@ -35,23 +36,19 @@ std::string GpxExport::resolveManifestFile(const std::string& pathOrStem)
     }
 
     // Already an absolute path to an existing .json file?
-    if (pathOrStem[0] == '/' && fs::exists(pathOrStem))
+    if (fs::path(pathOrStem).is_absolute() && fs::exists(pathOrStem))
         return pathOrStem;
 
     // Absolute filesystem source path → derive cache filename
-    if (pathOrStem[0] == '/') {
+    if (fs::path(pathOrStem).is_absolute()) {
         if (!config.isCached(pathOrStem)) return "";
-        const char* home = getenv("HOME");
-        if (!home) return "";
         std::string san = pathOrStem.substr(1);
-        for (char& c : san) if (c == '/') c = '_';
-        return std::string(home) + "/.config/pathmux/" + san + ".json";
+        for (char& c : san) if (c == '/' || c == '\\' || c == ':') c = '_';
+        return (fs::path(Pathmux::Platform::getConfigDir()) / (san + ".json")).string();
     }
 
     // No slashes → treat as cache stem
-    const char* home = getenv("HOME");
-    if (!home) return "";
-    std::string candidate = std::string(home) + "/.config/pathmux/" + pathOrStem + ".json";
+    std::string candidate = (fs::path(Pathmux::Platform::getConfigDir()) / (pathOrStem + ".json")).string();
     if (fs::exists(candidate)) return candidate;
     return "";
 }
@@ -435,7 +432,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
     if (doAll)
         std::cout << exported << " file" << (exported != 1 ? "s" : "") << " written.\n";
 }
-// SN: 00080
+// SN: 00083
 
 // ===========================================================================
 // runInteractive — interactive GPS menu entry point

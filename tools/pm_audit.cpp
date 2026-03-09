@@ -150,7 +150,7 @@ static void deepAuditTrip(TripResult& r,
         std::string cmd = ffprobePath
             + " -v error -select_streams v:0"
             + " -show_entries stream=duration"
-            + " -of csv=p=0 \"" + seg.front + "\" 2>/dev/null";
+            + " -of csv=p=0 \"" + seg.front + "\" " NULL_REDIRECT;
 
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) continue;

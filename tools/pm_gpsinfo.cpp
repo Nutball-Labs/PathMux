@@ -142,7 +142,7 @@ static std::vector<GpsRecord> runExiftool(const std::string& filePath,
     std::vector<GpsRecord> records;
 
     std::string cmd = exiftoolPath + " " + exiftoolOpts +
-        " \"" + filePath + "\" 2>/dev/null";
+        " \"" + filePath + "\" " NULL_REDIRECT;
 
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) {

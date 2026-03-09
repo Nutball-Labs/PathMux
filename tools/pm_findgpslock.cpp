@@ -110,7 +110,7 @@ int main(int argc, char* argv[])
         std::string cmd = exifCmd
                           + (verbose ? "" : " -q")
                           + " \"" + path + "\""
-                          + (verbose ? "" : " 2>/dev/null");
+                          + (verbose ? "" : " " NULL_REDIRECT);
 
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) {

@@ -202,8 +202,8 @@ public:
             e.hwDevice = "cuda"; e.hwDeviceType = "cuda";
             e.normEncoder = "h264_nvenc"; e.collageEncoder = "hevc_nvenc";
             e.downEncoder = "h264_nvenc"; e.pixFmt = "yuv420p";
-            e.normQuality = "24"; e.collageQuality = "20"; e.downQuality = "22";
-            e.extraNormArgs = "-cq 24"; e.extraCollageArgs = "-cq 20";
+            e.normQuality = "10"; e.collageQuality = "20"; e.downQuality = "22";
+            e.extraNormArgs = "-cq 10"; e.extraCollageArgs = "-cq 20";
         } else if (preset == "vaapi") {
             e.hwDevice = "vaapi=/dev/dri/renderD128"; e.hwDeviceType = "vaapi";
             e.normEncoder = "h264_vaapi"; e.collageEncoder = "hevc_vaapi";

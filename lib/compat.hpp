@@ -35,6 +35,14 @@ inline struct tm* localtime_r(const time_t* timep, struct tm* result) {
 }
 #endif
 
+// NULL_REDIRECT — suppress stderr in popen() shell commands.
+// cmd.exe does not have /dev/null; use the NUL device instead.
+#ifdef _WIN32
+#  define NULL_REDIRECT "2>NUL"
+#else
+#  define NULL_REDIRECT "2>/dev/null"
+#endif
+
 // ---------------------------------------------------------------------------
 // pathBasename — return the filename portion of a path, handling both
 // forward-slash (Linux/macOS) and backslash (Windows) separators.

@@ -45,7 +45,7 @@ namespace {
             " -select_streams v:0"
             " -show_entries stream=width,height,pix_fmt,color_range,color_space,r_frame_rate"
             " -of csv=p=0"
-            " \"" + filePath + "\" 2>/dev/null";
+            " \"" + filePath + "\" " NULL_REDIRECT;
 
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) return vp;
@@ -86,7 +86,7 @@ namespace {
             " -v error"
             " -show_entries format=duration"
             " -of csv=p=0"
-            " \"" + filePath + "\" 2>/dev/null";
+            " \"" + filePath + "\" " NULL_REDIRECT;
 
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) return 0;
@@ -118,7 +118,7 @@ void extractStartEndGps(Trip& trip,
 
     // --- First segment: find first valid fix ---
     {
-        std::string cmd = exifCmd + "\"" + firstSeg + "\" 2>/dev/null";
+        std::string cmd = exifCmd + "\"" + firstSeg + "\" " NULL_REDIRECT;
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) return;
 
@@ -162,7 +162,7 @@ void extractStartEndGps(Trip& trip,
     {
         const std::string& seg = lastSeg.empty() || lastSeg == "-"
                                  ? firstSeg : lastSeg;
-        std::string cmd = exifCmd + "\"" + seg + "\" 2>/dev/null";
+        std::string cmd = exifCmd + "\"" + seg + "\" " NULL_REDIRECT;
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) return;
 

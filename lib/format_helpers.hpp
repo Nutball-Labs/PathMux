@@ -81,7 +81,7 @@ inline std::string formatAltitude(double metres, bool imperial) {
 // haversineKm — great-circle distance between two lat/lon points in kilometres
 inline double haversineKm(double lat1, double lon1, double lat2, double lon2) {
     const double R    = 6371.0;
-    const double toRad = M_PI / 180.0;
+    const double toRad = 3.14159265358979323846 / 180.0;
     double dLat = (lat2 - lat1) * toRad;
     double dLon = (lon2 - lon1) * toRad;
     double a = std::sin(dLat/2) * std::sin(dLat/2)
@@ -93,4 +93,4 @@ inline double haversineKm(double lat1, double lon1, double lat2, double lon2) {
 } // namespace Pathmux
 
 #endif
-// SN: 00071
+// SN: 00083
