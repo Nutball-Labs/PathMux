@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
 
-**Current version:** 0.9.10g (SN 00082)
+**Current version:** 0.9.10i (SN 00084)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 

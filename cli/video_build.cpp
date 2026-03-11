@@ -416,17 +416,24 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     addInput(listL);
     addInput(listG);
 
+    // CUDA/NVENC needs an explicit hwupload at the end of the SW filter graph
+    // before handing the frame to the HW encoder.  QSV handles this internally.
+    std::string hwUp = (opts.encode.hwDeviceType == "cuda") ? ",hwupload" : "";
+
     cmd << " -filter_complex \""
         <<   "[0:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v0];"
         <<   "[1:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v1];"
         <<   "[2:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v2];"
         <<   "[3:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v3];"
-        <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[vout]\""
+        <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0" << hwUp << "[vout]\""
         << " -map \"[vout]\""
         << " -map " << audioIdx << ":a:0"
         << " -shortest"
-        << " -c:v " << opts.encode.collageEncoder
-        << " -q " << opts.encode.collageQuality;
+        << " -c:v " << opts.encode.collageEncoder;
+    // QSV/VAAPI/CPU: -q sets global_quality (ICQ) or constant QP.
+    // NVENC: quality is controlled via -cq in extraCollageArgs; -q is redundant and wrong.
+    if (opts.encode.collageEncoder.find("nvenc") == std::string::npos)
+        cmd << " -q " << opts.encode.collageQuality;
     if (!opts.encode.extraCollageArgs.empty())
         cmd << " " << opts.encode.extraCollageArgs;
     cmd << " -c:a aac -b:a 96k"
@@ -1646,4 +1653,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00083
+// SN: 00084

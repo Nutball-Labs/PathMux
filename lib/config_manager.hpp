@@ -202,8 +202,12 @@ public:
             e.hwDevice = "cuda"; e.hwDeviceType = "cuda";
             e.normEncoder = "h264_nvenc"; e.collageEncoder = "hevc_nvenc";
             e.downEncoder = "h264_nvenc"; e.pixFmt = "yuv420p";
-            e.normQuality = "10"; e.collageQuality = "20"; e.downQuality = "22";
-            e.extraNormArgs = "-cq 10"; e.extraCollageArgs = "-cq 20";
+            e.normQuality = "10"; e.collageQuality = "15"; e.downQuality = "22";
+            // -preset p7: slowest/highest-quality NVENC preset (p1=fast .. p7=slow).
+            // -tune hq:   driver-level quality tuning.
+            // -cq 15:     constrained-quality VBR; NVENC CQ 15 ≈ QSV ICQ 20 perceptually.
+            e.extraNormArgs = "-preset p4 -cq 10";
+            e.extraCollageArgs = "-preset p7 -tune hq -cq 15";
         } else if (preset == "vaapi") {
             e.hwDevice = "vaapi=/dev/dri/renderD128"; e.hwDeviceType = "vaapi";
             e.normEncoder = "h264_vaapi"; e.collageEncoder = "hevc_vaapi";
@@ -315,4 +319,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00079
+// SN: 00084
