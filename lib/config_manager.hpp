@@ -63,6 +63,7 @@ struct EncodeSettings {
     std::string downQuality     = "22";         // -q value for downscale
     std::string extraNormArgs   = "";           // injected after -c:v in norm
     std::string extraCollageArgs = "";          // injected after -c:v in collage
+    std::string extraDownArgs    = "";          // injected after -c:v in 1080p downscale
 };
 
 // Known presets — populated by applyEncodePreset()
@@ -208,6 +209,7 @@ public:
             // -cq 15:     constrained-quality VBR; NVENC CQ 15 ≈ QSV ICQ 20 perceptually.
             e.extraNormArgs = "-preset p4 -cq 10";
             e.extraCollageArgs = "-preset p7 -tune hq -cq 15";
+            e.extraDownArgs = "-preset p4 -cq 18";
         } else if (preset == "vaapi") {
             e.hwDevice = "vaapi=/dev/dri/renderD128"; e.hwDeviceType = "vaapi";
             e.normEncoder = "h264_vaapi"; e.collageEncoder = "hevc_vaapi";

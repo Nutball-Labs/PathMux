@@ -481,9 +481,13 @@ bool VideoBuilder::buildCollage1080(const std::string& source4K,
           + opts.encode.hwDeviceType + "=1920:1080";
     cmd << " -i \"" << source4K << "\""
         << " -vf \"" << downVf << "\""
-        << " -c:v " << opts.encode.downEncoder
-        << " -q " << opts.encode.downQuality
-        << " -c:a copy"
+        << " -c:v " << opts.encode.downEncoder;
+    // NVENC: quality via -cq in extraDownArgs; -q is wrong flag for nvenc.
+    if (opts.encode.downEncoder.find("nvenc") == std::string::npos)
+        cmd << " -q " << opts.encode.downQuality;
+    if (!opts.encode.extraDownArgs.empty())
+        cmd << " " << opts.encode.extraDownArgs;
+    cmd << " -c:a copy"
         << " -movflags +faststart"
         << " \"" << outputPath << "\"";
 

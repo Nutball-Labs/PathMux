@@ -94,6 +94,7 @@ void ConfigManager::loadSettings() {
         settings.encode.downQuality     = e.value("downQuality",     settings.encode.downQuality);
         settings.encode.extraNormArgs   = e.value("extraNormArgs",   settings.encode.extraNormArgs);
         settings.encode.extraCollageArgs= e.value("extraCollageArgs",settings.encode.extraCollageArgs);
+        settings.encode.extraDownArgs   = e.value("extraDownArgs",   settings.encode.extraDownArgs);
     }
 
     if (j.contains("kml") && j["kml"].is_object()) {
@@ -151,6 +152,7 @@ void ConfigManager::saveSettings() {
     e["downQuality"]      = settings.encode.downQuality;
     e["extraNormArgs"]    = settings.encode.extraNormArgs;
     e["extraCollageArgs"] = settings.encode.extraCollageArgs;
+    e["extraDownArgs"]    = settings.encode.extraDownArgs;
     j["encode"]           = e;
 
     json k;
@@ -1287,4 +1289,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00083
+// SN: 00084
