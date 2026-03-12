@@ -214,7 +214,7 @@ static GpsInfo detectGps(const std::vector<StreamInfo>& streams,
     GpsInfo g;
     g.method = "none";
 
-    // Check for LIGOGPSINFO private stream (codec_tag "LIGO")
+    // Pass 1: check stream codec_tag for explicit LIGO marker
     for (const auto& s : streams) {
         if (s.codecType == "data" && s.codecTag.find("LIGO") != std::string::npos) {
             g.method      = "LIGOGPSINFO";
@@ -224,7 +224,28 @@ static GpsInfo detectGps(const std::vector<StreamInfo>& streams,
         }
     }
 
-    // Try exiftool extraction to confirm and grab a sample fix
+    // Pass 2: if not found by tag, ask exiftool to list group names (-G1 -s -ee3)
+    // and look for a [LIGO] group — more reliable than stream tag alone.
+    if (g.method == "none") {
+        std::string tagCmd = exiftoolPath + " -ee3 -G1 -s \""
+                           + filePath + "\" 2>/dev/null";
+        FILE* tp = popen(tagCmd.c_str(), "r");
+        if (tp) {
+            char tbuf[512];
+            while (fgets(tbuf, sizeof(tbuf), tp)) {
+                std::string tline(tbuf);
+                if (tline.find("[LIGO]") != std::string::npos) {
+                    g.method       = "LIGOGPSINFO";
+                    g.exiftoolNote = "GPS in private LIGO stream — requires exiftool with LIGOGPSINFO support";
+                    break;
+                }
+            }
+            pclose(tp);
+        }
+    }
+
+    // Pass 3: run format-string extraction to grab a sample fix and confirm.
+    // Also catches cameras with standard GPS metadata (no data stream, no LIGO).
     std::string cmd = exiftoolPath + " " + exiftoolOptions
         + " \"" + filePath + "\" " NULL_REDIRECT;
     FILE* pipe = popen(cmd.c_str(), "r");
@@ -251,8 +272,7 @@ static GpsInfo detectGps(const std::vector<StreamInfo>& streams,
         g.firstLat        = lat;
         g.firstLon        = lon;
 
-        // If we got data but didn't detect LIGOGPSINFO by stream tag,
-        // mark it as standard GPS metadata
+        // If still unidentified after both stream checks, call it standard GPS
         if (g.method == "none")
             g.method = "standard";
         break;
@@ -413,20 +433,67 @@ static std::vector<std::string> listVideoFiles(const std::string& dir)
     return files;
 }
 
-// Find candidate camera directories under root
-static std::vector<std::string> findCameraDirs(const std::string& root)
+// Find candidate camera directories under root.
+// Depth-1 first; if none found, searches depth-2 and updates root to the
+// best-matching subdirectory (prefers "video/", then first alphabetically).
+static std::vector<std::string> findCameraDirs(std::string& root)
 {
     std::vector<std::string> dirs;
     if (!fs::is_directory(root)) return dirs;
+
+    // Depth-1: direct subdirs of root that contain video files
     for (const auto& entry : fs::directory_iterator(root)) {
         if (!entry.is_directory()) continue;
         std::string name = entry.path().filename().string();
         if (name.empty() || name[0] == '.') continue;
-        // Only include dirs that contain video files
         auto vids = listVideoFiles(entry.path().string());
         if (!vids.empty())
             dirs.push_back(entry.path().string());
     }
+    if (!dirs.empty()) {
+        std::sort(dirs.begin(), dirs.end());
+        return dirs;
+    }
+
+    // Depth-2: group camera-like subdirs by their immediate parent
+    std::map<std::string, std::vector<std::string>> byParent;
+    for (const auto& entry1 : fs::directory_iterator(root)) {
+        if (!entry1.is_directory()) continue;
+        std::string name1 = entry1.path().filename().string();
+        if (name1.empty() || name1[0] == '.') continue;
+        try {
+            for (const auto& entry2 : fs::directory_iterator(entry1.path())) {
+                if (!entry2.is_directory()) continue;
+                std::string name2 = entry2.path().filename().string();
+                if (name2.empty() || name2[0] == '.') continue;
+                auto vids = listVideoFiles(entry2.path().string());
+                if (!vids.empty())
+                    byParent[entry1.path().string()].push_back(entry2.path().string());
+            }
+        } catch (...) {}
+    }
+    if (byParent.empty()) return dirs;
+
+    // Prefer "video" parent; otherwise first alphabetically
+    std::string chosen;
+    for (const auto& [parent, _] : byParent) {
+        std::string pname = fs::path(parent).filename().string();
+        std::string plower = pname;
+        std::transform(plower.begin(), plower.end(), plower.begin(),
+                       [](unsigned char c){ return std::tolower(c); });
+        if (plower == "video") { chosen = parent; break; }
+    }
+    if (chosen.empty()) chosen = byParent.begin()->first;
+
+    if (byParent.size() > 1) {
+        std::cerr << "Note: camera directories found under multiple subdirectories:\n";
+        for (const auto& [parent, _] : byParent)
+            std::cerr << "  " << fs::path(parent).filename().string() << "/\n";
+        std::cerr << "Using: " << fs::path(chosen).filename().string() << "/\n";
+    }
+
+    root = chosen;
+    dirs = byParent[chosen];
     std::sort(dirs.begin(), dirs.end());
     return dirs;
 }
@@ -469,11 +536,14 @@ static void probeCard(const std::string& root, bool jsonMode,
         return;
     }
 
-    auto cameraDirs = findCameraDirs(root);
+    std::string scanRoot = root;
+    auto cameraDirs = findCameraDirs(scanRoot);
     if (cameraDirs.empty()) {
         std::cerr << "No camera directories with video files found under: " << root << "\n";
         return;
     }
+    if (scanRoot != root)
+        std::cerr << "Note: using subdirectory: " << scanRoot << "\n";
 
     // Primary camera: prefer Front/, otherwise first dir found
     std::string primaryDir;
@@ -506,23 +576,23 @@ static void probeCard(const std::string& root, bool jsonMode,
     FileProbe probe = probeFile(primaryFiles[0], ffprobePath,
                                 exiftoolPath, exiftoolOptions);
 
-    // Sample filenames (up to 3) with relative paths from root
+    // Sample filenames (up to 3) with relative paths from scanRoot
     std::vector<std::string> sampleFiles;
     for (int i = 0; i < std::min((int)primaryFiles.size(), 3); ++i) {
-        std::string rel = fs::relative(primaryFiles[i], root).string();
+        std::string rel = fs::relative(primaryFiles[i], scanRoot).string();
         sampleFiles.push_back(rel);
         // Also show matching thumbnail if present
         std::string thumbPath = primaryFiles[i];
         auto dot = thumbPath.rfind('.');
         if (dot != std::string::npos) thumbPath = thumbPath.substr(0, dot) + ".jpg";
         if (fs::exists(thumbPath))
-            sampleFiles.push_back(fs::relative(thumbPath, root).string());
+            sampleFiles.push_back(fs::relative(thumbPath, scanRoot).string());
     }
 
     // ---- JSON output ----
     if (jsonMode) {
         json j;
-        j["root"] = root;
+        j["root"] = scanRoot;
 
         json jDirs = json::array();
         for (const auto& d : cameraDirs)
@@ -562,7 +632,7 @@ static void probeCard(const std::string& root, bool jsonMode,
 
     // ---- Text output ----
     std::cout << "--- pm_probe SD Card Fingerprint ---\n"
-              << "Root:         " << root << "\n";
+              << "Root:         " << scanRoot << "\n";
 
     std::cout << "Camera dirs: ";
     for (const auto& d : cameraDirs)
@@ -913,11 +983,14 @@ static void wizardCard(const std::string& root,
     std::cout.flush();
 
     // ---- Silent data collection ----
-    auto cameraDirs = findCameraDirs(root);
+    std::string scanRoot = root;
+    auto cameraDirs = findCameraDirs(scanRoot);
     if (cameraDirs.empty()) {
         std::cerr << "No camera directories with video files found under: " << root << "\n";
         return;
     }
+    if (scanRoot != root)
+        std::cout << "Camera directories found under: " << scanRoot << "\n";
 
     // Identify primary camera dir (prefer Front/)
     std::string primaryDir;
@@ -1092,10 +1165,10 @@ static void wizardCard(const std::string& root,
         }
     };
 
-    // Validate a camera subdirectory — must exist under root and contain video files
+    // Validate a camera subdirectory — must exist under scanRoot and contain video files
     auto validateCamDir = [&](const std::string& dirname) -> bool {
         if (dirname.empty()) return false;
-        fs::path p = fs::path(root) / dirname;
+        fs::path p = fs::path(scanRoot) / dirname;
         if (!fs::is_directory(p)) return false;
         return !listVideoFiles(p.string()).empty();
     };
@@ -1110,7 +1183,7 @@ static void wizardCard(const std::string& root,
     // Draw the main settings table
     auto drawTable = [&]() {
         std::cout << "\n" << wizSep('=') << "\n";
-        std::cout << wizRow("  <path> = " + root) << "\n";
+        std::cout << wizRow("  <path> = " + scanRoot) << "\n";
 
         // [1] Camera mappings — one per line, displayed as <path>/DirName/
         std::cout << wizRow("  [1]  Camera mappings") << "\n";
@@ -1180,7 +1253,9 @@ static void wizardCard(const std::string& root,
         }
 
         std::cout << wizSep('-') << "\n"
-                  << "  [1-7] to edit  |  CONFIRM to accept\n> ";
+                  << wizRow("  [1-7] to edit  |  CONFIRM to accept  |  Q to quit") << "\n"
+                  << wizSep('=') << "\n"
+                  << "> ";
         std::cout.flush();
     };
 
@@ -1192,7 +1267,16 @@ static void wizardCard(const std::string& root,
         if (!std::getline(std::cin, cmd)) break;
         cmd = trimLine(cmd);
 
-        if (cmd == "CONFIRM") {
+        std::string cmdUp = cmd;
+        std::transform(cmdUp.begin(), cmdUp.end(), cmdUp.begin(),
+                       [](unsigned char c){ return std::toupper(c); });
+
+        if (cmdUp == "Q") {
+            std::cout << "  Wizard cancelled. No profile saved.\n";
+            return;
+        }
+
+        if (cmdUp == "CONFIRM") {
             if (profileName.empty()) {
                 std::cout << "  Profile name is required — select [7] to set it.\n";
                 continue;
@@ -1207,7 +1291,7 @@ static void wizardCard(const std::string& root,
         if (sel == 1) {
             auto drawCams = [&]() {
                 std::cout << "\n" << wizSep('-') << "\n";
-                std::cout << "  <path> = " << root << "\n\n";
+                std::cout << "  <path> = " << scanRoot << "\n\n";
                 auto showRole = [](const std::string& label, const std::string& dir, bool attn) {
                     std::string row = "  " + label;
                     while ((int)row.size() < 8) row += ' ';
@@ -1324,7 +1408,9 @@ static void wizardCard(const std::string& root,
         else if (sel == 7) {
             profileName = promptWizard("  Profile name", profileName);
         }
-        // Unknown input → redraw
+        else {
+            std::cout << "  Unknown input: \"" << cmd << "\"  -- enter 1-7, CONFIRM, or Q\n";
+        }
     }
 
     // Build dirRoles from confirmed slots
