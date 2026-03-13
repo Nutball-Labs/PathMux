@@ -77,7 +77,8 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
 
     // --- Output ---
     entry["output_path"]          = opts.outputDir.empty() ? "." : opts.outputDir;
-    entry["output_filename_stem"] = date + "_" + time;
+    entry["output_filename_stem"] = opts.basenameOverride.empty()
+                                    ? (date + "_" + time) : opts.basenameOverride;
     entry["output_duration"]      = outputDuration;
 
     // --- Trip note ---
@@ -208,17 +209,48 @@ std::string VideoBuilder::resolveOutputDir(const VideoOptions& opts) {
     return ".";
 }
 
+// ---------------------------------------------------------------------------
+// sanitizeBasename — whitelist-filter a user-supplied basename override.
+// Keeps alphanumeric, dash, underscore, dot, space.
+// Trims leading/trailing spaces; rejects leading dot; caps at 64 chars.
+// Returns "" if the result is empty or otherwise unusable.
+// ---------------------------------------------------------------------------
+static std::string sanitizeBasename(const std::string& input) {
+    std::string out;
+    out.reserve(input.size());
+    for (unsigned char c : input) {
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == ' ')
+            out += c;
+    }
+    // Trim leading/trailing spaces
+    size_t s = out.find_first_not_of(' ');
+    if (s == std::string::npos) return "";
+    size_t e = out.find_last_not_of(' ');
+    out = out.substr(s, e - s + 1);
+    // Reject leading dot — hidden-file / relative-path escape
+    if (!out.empty() && out[0] == '.') return "";
+    // Cap length
+    if (out.size() > 64) out = out.substr(0, 64);
+    return out;
+}
+
 std::string VideoBuilder::makeOutputName(const Trip& trip,
                                           const std::string& label,
-                                          const std::string& ext) {
-    // Sanitize date and time: "2026-02-16" → "20260216", "09:54:22" → "095422"
-    std::string date = trip.date;
-    std::string time = trip.startTime;
-    date.erase(std::remove(date.begin(), date.end(), '-'), date.end());
-    time.erase(std::remove(time.begin(), time.end(), ':'), time.end());
-    // Trim time to HHMMSS (6 chars) in case it has extra
-    if (time.size() > 6) time = time.substr(0, 6);
-    return date + "_" + time + "_" + label + "." + ext;
+                                          const std::string& ext,
+                                          const std::string& basenameOverride) {
+    std::string base;
+    if (!basenameOverride.empty()) {
+        base = basenameOverride;
+    } else {
+        // Sanitize date and time: "2026-02-16" → "20260216", "09:54:22" → "095422"
+        std::string date = trip.date;
+        std::string time = trip.startTime;
+        date.erase(std::remove(date.begin(), date.end(), '-'), date.end());
+        time.erase(std::remove(time.begin(), time.end(), ':'), time.end());
+        if (time.size() > 6) time = time.substr(0, 6);
+        base = date + "_" + time;
+    }
+    return base + "_" + label + "." + ext;
 }
 
 std::string VideoBuilder::writeConcatList(const std::vector<std::string>& files,
@@ -272,7 +304,8 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
 
     std::string outDir  = opts.outputDir.empty() ? "." : opts.outputDir;
     std::string proposed = (fs::path(outDir) /
-                            makeOutputName(trip, camera, opts.containerFormat)).string();
+                            makeOutputName(trip, camera, opts.containerFormat,
+                                           opts.basenameOverride)).string();
     std::string outFile  = UI::confirmOutputPath(proposed);
     if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
     std::string listFile = (fs::path(outDir) / ("pm_tmp_concat_" + camera + ".txt")).string();
@@ -324,7 +357,8 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     std::string outDir    = opts.outputDir.empty() ? "." : opts.outputDir;
     std::string tmpDir    = opts.tmpDir.empty() ? (outDir + "/pm_tmp") : opts.tmpDir;
     std::string proposed  = (fs::path(outDir) /
-                             makeOutputName(trip, "Collage_4K", "mp4")).string();
+                             makeOutputName(trip, "Collage_4K", "mp4",
+                                            opts.basenameOverride)).string();
     std::string outFile   = UI::confirmOutputPath(proposed);
     if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
 
@@ -495,6 +529,130 @@ bool VideoBuilder::buildCollage1080(const std::string& source4K,
 }
 
 // ---------------------------------------------------------------------------
+// buildCollage1080Direct — build 1080p collage directly from source segments.
+// Used when 4K master is not requested. Each camera cell is 960x540;
+// output is 1920x1080. Same encoder settings as the 4K collage path.
+// ---------------------------------------------------------------------------
+bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
+                                           const VideoOptions& opts) {
+    if (trip.segments.empty()) {
+        std::cerr << "Error: Trip has no segments.\n";
+        return false;
+    }
+
+    std::string outDir   = opts.outputDir.empty() ? "." : opts.outputDir;
+    std::string tmpDir   = opts.tmpDir.empty() ? (outDir + "/pm_tmp") : opts.tmpDir;
+    std::string proposed = (fs::path(outDir) /
+                            makeOutputName(trip, "Collage_1080p", "mp4",
+                                           opts.basenameOverride)).string();
+    std::string outFile  = UI::confirmOutputPath(proposed);
+    if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
+
+    std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
+    for (const auto& seg : trip.segments) {
+        if (!seg.front.empty() && seg.front != "-") srcFront.push_back(seg.front);
+        if (!seg.rear.empty()  && seg.rear  != "-") srcRear.push_back(seg.rear);
+        if (!seg.left.empty()  && seg.left  != "-") srcLeft.push_back(seg.left);
+        if (!seg.right.empty() && seg.right != "-") srcRight.push_back(seg.right);
+    }
+
+    if (srcFront.empty()) {
+        std::cerr << "Error: No front-camera segments found for collage.\n";
+        return false;
+    }
+
+    {
+        std::error_code ec;
+        fs::create_directories(tmpDir, ec);
+        if (ec) {
+            std::cerr << "Error: Could not create tmp directory: "
+                      << tmpDir << "\n  " << ec.message() << "\n";
+            return false;
+        }
+    }
+
+    auto makeList = [&](const std::vector<std::string>& segs,
+                        const std::string& name) -> std::string {
+        if (segs.empty()) return "";
+        return writeConcatList(segs,
+            (fs::path(tmpDir) / ("pm_tmp_col1080_" + name + ".txt")).string());
+    };
+
+    std::string listF = makeList(srcFront, "front");
+    std::string listR = makeList(srcRear,  "rear");
+    std::string listL = makeList(srcLeft,  "left");
+    std::string listG = makeList(srcRight, "right");
+
+    if (listF.empty()) {
+        std::cerr << "Error: Failed to write front concat list.\n";
+        return false;
+    }
+
+    std::string audioSrc = opts.audioSource;
+    int audioIdx = 2;
+    if      (audioSrc == "right") audioIdx = 3;
+    else if (audioSrc == "front") audioIdx = 0;
+    else if (audioSrc == "rear")  audioIdx = 1;
+
+    std::ostringstream cmd;
+    cmd << opts.ffmpegPath << " -y";
+    if (!opts.encode.hwDevice.empty())
+        cmd << " -init_hw_device " << opts.encode.hwDeviceType
+            << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
+
+    cmd << " -f concat -safe 0 -i \"" << listF << "\"";
+    auto addInput = [&](const std::string& list) {
+        if (!list.empty())
+            cmd << " -f concat -safe 0 -i \"" << list << "\"";
+        else
+            cmd << " -f lavfi -i \"color=c=black:s=960x540:r=25,format="
+                << opts.encode.pixFmt << "\"";
+    };
+    addInput(listR);
+    addInput(listL);
+    addInput(listG);
+
+    // Each cell 960x540; 2x2 grid = 1920x1080
+    cmd << " -filter_complex \""
+        <<   "[0:v]scale=960:540,format=" << opts.encode.pixFmt << "[v0];"
+        <<   "[1:v]scale=960:540,format=" << opts.encode.pixFmt << "[v1];"
+        <<   "[2:v]scale=960:540,format=" << opts.encode.pixFmt << "[v2];"
+        <<   "[3:v]scale=960:540,format=" << opts.encode.pixFmt << "[v3];"
+        <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[vout]\""
+        << " -map \"[vout]\""
+        << " -map " << audioIdx << ":a:0"
+        << " -shortest"
+        << " -c:v " << opts.encode.collageEncoder;
+    if (opts.encode.collageEncoder.find("nvenc") == std::string::npos)
+        cmd << " -q " << opts.encode.collageQuality;
+    if (!opts.encode.extraCollageArgs.empty())
+        cmd << " " << opts.encode.extraCollageArgs;
+    cmd << " -c:a aac -b:a 96k"
+        << " -movflags +faststart"
+        << " \"" << outFile << "\"";
+
+    std::cout << "\nBuilding 1080p collage (direct): " << outFile << "\n";
+    bool ok = runFfmpeg(cmd.str());
+
+    if (ok) {
+        if (!listF.empty()) fs::remove(listF);
+        if (!listR.empty()) fs::remove(listR);
+        if (!listL.empty()) fs::remove(listL);
+        if (!listG.empty()) fs::remove(listG);
+        if (opts.tmpDir.empty()) {
+            std::error_code ec;
+            fs::remove(tmpDir, ec);
+        }
+        std::cout << "  Done: " << outFile << "\n";
+    } else {
+        std::cerr << "  ffmpeg failed building 1080p collage (direct).\n";
+        std::cerr << "  Temp files preserved in: " << tmpDir << "\n";
+        std::cerr << "  Remove manually once issue is resolved.\n";
+    }
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
 // buildAudioFile — extract audio track from a camera's segments.
 // Concatenates all segments, strips video, outputs m4a/mp3/aac.
 // ---------------------------------------------------------------------------
@@ -532,7 +690,8 @@ bool VideoBuilder::buildAudioFile(const Trip& trip,
     if (!camLabel.empty()) camLabel[0] = std::toupper((unsigned char)camLabel[0]);
 
     std::string proposed = (fs::path(opts.outputDir.empty() ? "." : opts.outputDir)
-                           / makeOutputName(trip, "Audio_" + camLabel, ext)).string();
+                           / makeOutputName(trip, "Audio_" + camLabel, ext,
+                                            opts.basenameOverride)).string();
     std::string outFile  = UI::confirmOutputPath(proposed);
     if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
 
@@ -1141,9 +1300,21 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
         UI::printLine("  [K]  Audio camera       " + opts.audioExtractCamera);
         UI::printLine("  [U]  Audio format       " + opts.audioExtractFormat);
         UI::printLine();
-        UI::printLine("  [N]  Set Note");
-        UI::printLine("  [O]  Output directory  "
-                      + (opts.outputDir.empty() ? "(current directory)" : opts.outputDir));
+        // Compute auto basename for display
+        {
+            std::string d = trip.date, t = trip.startTime;
+            d.erase(std::remove(d.begin(), d.end(), '-'), d.end());
+            t.erase(std::remove(t.begin(), t.end(), ':'), t.end());
+            if (t.size() > 6) t = t.substr(0, 6);
+            std::string autoBase = d + "_" + t;
+            UI::printLine("  [N]  Set Note");
+            UI::printLine("  [O]  Output directory  "
+                          + (opts.outputDir.empty() ? "(current directory)" : opts.outputDir));
+            UI::printLine("  [P]  Basename         "
+                          + (opts.basenameOverride.empty()
+                             ? "<auto: " + autoBase + ">"
+                             : opts.basenameOverride));
+        }
         UI::printLine("  [T]  Compute duration  (ffprobes all Front segments - may be slow)");
         UI::printLine("  [OFF] Deselect All");
         UI::printLine();
@@ -1310,6 +1481,40 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
                 std::cout << "  Warning: directory does not exist yet.\n";
             continue;
         }
+        if (ch == 'P') {
+            std::string d = trip.date, t = trip.startTime;
+            d.erase(std::remove(d.begin(), d.end(), '-'), d.end());
+            t.erase(std::remove(t.begin(), t.end(), ':'), t.end());
+            if (t.size() > 6) t = t.substr(0, 6);
+            std::string autoBase = d + "_" + t;
+            if (opts.basenameOverride.empty()) {
+                std::cout << "  Auto basename: " << autoBase << "\n"
+                          << "  Enter override (Enter to keep auto):\n  > ";
+            } else {
+                std::cout << "  Current override: " << opts.basenameOverride << "\n"
+                          << "  Auto basename: " << autoBase << "\n"
+                          << "  Enter override (Enter to keep, space+Enter to clear):\n  > ";
+            }
+            std::string input;
+            std::getline(std::cin, input);
+            if (input.empty()) {
+                // keep existing — no message
+            } else if (input.find_first_not_of(' ') == std::string::npos) {
+                opts.basenameOverride.clear();
+                std::cout << "  Basename cleared — using auto.\n";
+            } else {
+                std::string cleaned = sanitizeBasename(input);
+                if (cleaned.empty()) {
+                    std::cout << "  Invalid basename — use alphanumeric, dash, underscore, dot, space only.\n";
+                } else {
+                    if (cleaned != input)
+                        std::cout << "  Sanitized to: " << cleaned << "\n";
+                    opts.basenameOverride = cleaned;
+                    std::cout << "  Basename override set: " << cleaned << "\n";
+                }
+            }
+            continue;
+        }
         std::cout << "  Invalid option.\n";
     }
 }
@@ -1437,17 +1642,20 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     std::string collage4KPath;
     if (opts.buildCollage4K) {
         collage4KPath = (fs::path(outDir) /
-                         makeOutputName(trip, "Collage_4K", "mp4")).string();
+                         makeOutputName(trip, "Collage_4K", "mp4",
+                                        opts.basenameOverride)).string();
         buildCollage4K(trip, opts);
     }
-    if (opts.buildCollage1080 && !collage4KPath.empty()) {
-        std::string proposed1080 = (fs::path(outDir) /
-                                    makeOutputName(trip, "Collage_1080p", "mp4")).string();
-        std::string out1080 = UI::confirmOutputPath(proposed1080);
-        buildCollage1080(collage4KPath, out1080, opts);
-    } else if (opts.buildCollage1080 && collage4KPath.empty()) {
-        std::cerr << "Warning: 1080p collage requested but 4K master was not built.\n"
-                  << "  Enable '4K master' or build 4K first.\n";
+    if (opts.buildCollage1080) {
+        if (!collage4KPath.empty()) {
+            std::string proposed1080 = (fs::path(outDir) /
+                                        makeOutputName(trip, "Collage_1080p", "mp4",
+                                                       opts.basenameOverride)).string();
+            std::string out1080 = UI::confirmOutputPath(proposed1080);
+            buildCollage1080(collage4KPath, out1080, opts);
+        } else {
+            buildCollage1080Direct(trip, opts);
+        }
     }
     if (opts.buildAudio) {
         std::vector<std::string> audioSegs;
@@ -1599,19 +1807,24 @@ void VideoBuilder::run(ConfigManager& config) {
         std::string collage4KPath;
         if (opts.buildCollage4K) {
             collage4KPath = (fs::path(outDir) /
-                             makeOutputName(trip, "Collage_4K", "mp4")).string();
+                             makeOutputName(trip, "Collage_4K", "mp4",
+                                            opts.basenameOverride)).string();
             buildCollage4K(trip, opts);
         }
 
-        if (opts.buildCollage1080 && !collage4KPath.empty()) {
-            std::string proposed1080 = (fs::path(outDir) /
-                                        makeOutputName(trip, "Collage_1080p", "mp4")).string();
-            std::string out1080 = UI::confirmOutputPath(proposed1080);
-            if (out1080 != proposed1080) renamedFiles.push_back({proposed1080, out1080});
-            buildCollage1080(collage4KPath, out1080, opts);
-        } else if (opts.buildCollage1080 && collage4KPath.empty()) {
-            std::cerr << "Warning: 1080p collage requested but 4K master was not built.\n"
-                      << "  Enable '4K master' or build 4K first.\n";
+        if (opts.buildCollage1080) {
+            if (!collage4KPath.empty()) {
+                // Fast path: downscale from 4K master already built this session
+                std::string proposed1080 = (fs::path(outDir) /
+                                            makeOutputName(trip, "Collage_1080p", "mp4",
+                                                           opts.basenameOverride)).string();
+                std::string out1080 = UI::confirmOutputPath(proposed1080);
+                if (out1080 != proposed1080) renamedFiles.push_back({proposed1080, out1080});
+                buildCollage1080(collage4KPath, out1080, opts);
+            } else {
+                // Direct path: encode 1080p from source segments (no 4K master needed)
+                buildCollage1080Direct(trip, opts);
+            }
         }
 
         // -----------------------------------------------------------------------
@@ -1653,4 +1866,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00084
+// SN: 00085

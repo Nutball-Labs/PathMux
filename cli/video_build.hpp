@@ -82,6 +82,12 @@ struct VideoOptions {
     // Used to write pm_buildlog.json in the footage source path.
     std::string sourcePath;   // footage source path (e.g. /z/srcdash/ex1)
     std::string manifestId;   // two-char base36 manifest ID (e.g. "CQ")
+
+    // Basename override — if non-empty, replaces the auto-generated
+    // date_time prefix in ALL output filenames for this build session.
+    // e.g. "MyTrip" → MyTrip_Front.mp4, MyTrip_Collage_4K.mp4, etc.
+    // Empty = use auto-generated date_time prefix.
+    std::string basenameOverride;
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +123,10 @@ private:
     bool buildCollage1080(const std::string& source4K,
                           const std::string& outputPath,
                           const VideoOptions& opts);
+
+    // Direct 1080p collage from source segments (no 4K master required).
+    // Each cell is 960x540; output is 1920x1080.
+    bool buildCollage1080Direct(const Trip& trip, const VideoOptions& opts);
 
     // Extract audio track from a camera's segments to m4a/mp3/aac.
     bool buildAudioFile(const Trip& trip,
@@ -162,9 +172,11 @@ private:
     std::string resolveOutputDir(const VideoOptions& opts);
 
     // Build output filename: <date>_<startTime>_<camera>.<ext>
+    // If basenameOverride is non-empty it replaces the date_time prefix.
     std::string makeOutputName(const Trip& trip,
                                const std::string& label,
-                               const std::string& ext);
+                               const std::string& ext,
+                               const std::string& basenameOverride = "");
 
     // Run an ffmpeg command, stream output to terminal.
     // Returns true if ffmpeg exits 0.
@@ -182,4 +194,4 @@ private:
 };
 
 #endif
-// SN: 00074
+// SN: 00085
