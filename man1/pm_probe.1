@@ -14,6 +14,10 @@ pm_probe \- camera compatibility profiler for the PathMux suite
 .B \-\-card
 .I PATH
 .RB [ \-\-json ]
+.PP
+.B pm_probe
+.B \-\-wizard
+.I PATH
 .SH DESCRIPTION
 .B pm_probe
 inspects dashcam footage files and reports video characteristics,
@@ -60,6 +64,17 @@ primary camera directory.
 Emit JSON output instead of the default text report.  Suitable for
 automated processing.
 .TP
+.B \-\-wizard \fIPATH
+Interactive camera profile builder.  Walks the dashcam storage root at
+.I PATH
+and guides the user through identifying camera directories, filename
+patterns, GPS method, and other characteristics needed to create a
+camera profile.  Profiles are saved to
+.IR ~/.config/pathmux/profiles/ .
+.TP
+.B \-v ", " \-\-version
+Print the PathMux version string and exit.
+.TP
 .B \-h ", " \-\-help
 Print a usage summary and exit.
 .SH OUTPUT
@@ -94,7 +109,7 @@ Video profile (Front, first segment):
 GPS method:   Standard GPS metadata
 GPS first fix: 2026:02:09 10:39:14  lat=30.419000  lon=-89.025191
 
---- Submit this report to: https://github.com/BiloxiGeek/PathMux/issues ---
+--- Submit this report to: https://github.com/Nutball-Labs/PathMux/issues ---
 .fi
 .SH "GPS METHOD VALUES"
 .TP
@@ -140,7 +155,7 @@ its footage, run:
 .RE
 .PP
 Open a GitHub issue at
-.B https://github.com/BiloxiGeek/PathMux/issues
+.B https://github.com/Nutball-Labs/PathMux/issues
 and attach
 .IR camera_report.json .
 Include the camera make and model in the issue title.

@@ -80,29 +80,41 @@ Override the ExifTool options string.  Defaults to the value stored in
 .I ~/.config/pathmux/pathmux.json
 .RB ( exiftoolOptions ).
 .TP
+.B \-v ", " \-\-version
+Print the PathMux version string and exit.
+.TP
 .B \-h ", " \-\-help
 Print a usage summary and exit.
 .SH "GPS LOCK"
 GPS receivers require time to acquire a satellite fix after power-on
-(cold start).  The first segment of a trip may contain records with
-zero latitude and longitude while the receiver is searching.
-.B pm_gpsinfo
-scans forward through the GPS stream and reports the first record with a
-non-zero fix.
+(cold start).  The Pruveeo D90 firmware does not write GPS records to the
+LIGO stream until a satellite fix is acquired, so there are no pre-lock
+zero-position records in the stream.
+.PP
+Lock time is computed by comparing the UTC timestamp of the first valid GPS
+record against the clip-start time encoded in the filename (local time),
+using epoch arithmetic
+.RB ( mktime (3)
+for local,
+.BR timegm (3)
+for UTC) to handle timezone differences correctly.
+The result is stored as
+.B gpsLockSeconds
+in the trip manifest.
 .PP
 A
-.B first_lock_record
+.B gpsLockSeconds
 of
 .B 0
-means the receiver had a warm start and the fix was already valid at the
-beginning of the segment (typical on short stop-and-go trips).  A value
-greater than 0 is the record index of the first valid fix; dividing by the
-GPS sample rate (one per second) gives seconds to lock.
+means the receiver already had a fix at the start of the clip (warm start).
+Typical cold-start values on the D90 are 20\(en120 seconds.
 .PP
 A result of
 .B none
-means no valid fix was found in the segment at all.  This is normal for
-very short stub segments recorded at startup before the GPS receiver acquired
+(or
+.BR \-1 )
+means no valid GPS fix was found in the segment at all.  This is normal for
+very short stub segments recorded at startup before the receiver acquired
 a lock.
 .SH "OUTPUT FORMATS"
 .SS JSON (default)
@@ -112,7 +124,7 @@ a lock.
   "total_records": 147,
   "first_lock_record": 0,
   "first_lock": {
-    "timestamp": "2026:02:09 10:39:14",
+    "timestamp_utc": "2026:02:09 10:39:14",
     "record_index": 0,
     "lat": 30.419000,
     "lon": -89.025191
