@@ -1557,7 +1557,7 @@ int main(int argc, char* argv[])
         } else if (arg[0] != '-') {
             targetArg = arg;
         } else {
-            std::cerr << "Unknown argument: " << arg << "\n"; return 1;
+            std::cerr << "Unknown argument: " << arg << "\n"; printUsage(argv[0]); return 1;
         }
     }
 

@@ -110,6 +110,7 @@ int main(int argc, char* argv[]) {
         if (arg == "-T" || arg == "--tree")  { treeMode = true; continue; }
         if (arg == "-f" || arg == "--full")  { fullMode = true; continue; }
         if (arg[0] != '-')                   { path = arg; }
+        else { std::cerr << "Unknown argument: " << arg << "\n"; printUsage(); return 1; }
     }
 
     if (path.empty() || !fs::exists(path)) {
