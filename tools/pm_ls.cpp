@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
         }
         else if (arg == "--json")           { jsonMode = true; }
         else if (arg[0] != '-')             { filter = arg; }
-        else { std::cerr << "Unknown argument: " << arg << "\n"; printUsage(argv[0]); return 1; }
+        else { std::cerr << "Unknown option: " << arg << "\n"; printUsage(argv[0]); return 1; }
     }
 
     // Determine if filter is MID or MID:TID

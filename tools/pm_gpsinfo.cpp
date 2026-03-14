@@ -136,11 +136,8 @@ static std::string xmlEscape(const std::string& s) {
 // ---------------------------------------------------------------------------
 static void printUsage(const char* argv0) {
     std::cerr
-        << "pm_gpsinfo — GPS inspection tool (PathMux suite)\n\n"
-        << "Usage:\n"
-        << "  " << argv0 << " [options] <file.ts>\n"
-        << "  " << argv0 << " [options] MID:TID\n"
-        << "  " << argv0 << " --scan-all-trips [options]\n\n"
+        << "Usage: pm_gpsinfo [options] <file.ts | MID:TID>\n"
+        << "       pm_gpsinfo --scan-all-trips [options]\n\n"
         << "Single-file options:\n"
         << "  --first-lock       Report first valid GPS fix (default)\n"
         << "  --all              Report all GPS records\n"

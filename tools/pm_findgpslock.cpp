@@ -110,7 +110,7 @@ int main(int argc, char* argv[])
         else if (arg == "--verbose")           { verbose = true; }
         else if (arg[0] != '-')                { files.push_back(arg); }
         else {
-            std::cerr << "Unknown argument: " << arg << "\n";
+            std::cerr << "Unknown option: " << arg << "\n";
             printUsage(argv[0]);
             return 1;
         }

@@ -11,17 +11,16 @@ namespace fs = std::filesystem;
 using namespace Pathmux;
 
 void printUsage() {
-    std::cout << "pm_tripdebug v" << APP_VERSION << "\n"
-              << "Usage: pm_tripdebug [options] <path_to_dashcam_folder>\n\n"
+    std::cerr << "Usage: pm_tripdebug [options] <path_to_dashcam_folder>\n\n"
               << "Options:\n"
               << "  -v, --version   Show version and exit\n"
               << "  -h, --help      Show this help message\n"
               << "  -T, --tree      Show full segment tree for all trips and exit\n"
               << "  -f, --full      Interactive mode: summary + drill-down by trip ID\n\n"
               << "Examples:\n"
-              << "  ./pm_tripdebug /mnt/dashcam         (summary list)\n"
-              << "  ./pm_tripdebug -T /mnt/dashcam      (full tree, all trips)\n"
-              << "  ./pm_tripdebug -f /mnt/dashcam      (interactive drill-down)\n";
+              << "  pm_tripdebug /mnt/dashcam         (summary list)\n"
+              << "  pm_tripdebug -T /mnt/dashcam      (full tree, all trips)\n"
+              << "  pm_tripdebug -f /mnt/dashcam      (interactive drill-down)\n";
 }
 
 void showSummaryList(const std::string& path, const std::vector<Trip>& trips) {
@@ -110,7 +109,7 @@ int main(int argc, char* argv[]) {
         if (arg == "-T" || arg == "--tree")  { treeMode = true; continue; }
         if (arg == "-f" || arg == "--full")  { fullMode = true; continue; }
         if (arg[0] != '-')                   { path = arg; }
-        else { std::cerr << "Unknown argument: " << arg << "\n"; printUsage(); return 1; }
+        else { std::cerr << "Unknown option: " << arg << "\n"; printUsage(); return 1; }
     }
 
     if (path.empty() || !fs::exists(path)) {

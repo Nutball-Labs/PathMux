@@ -290,7 +290,7 @@ int main(int argc, char* argv[])
         } else if (arg.find(':') != std::string::npos && arg[0] != '-') {
             midTid = arg;
         } else {
-            std::cerr << "Unknown argument: " << arg << "\n";
+            std::cerr << "Unknown option: " << arg << "\n";
             printUsage(argv[0]);
             return 1;
         }
