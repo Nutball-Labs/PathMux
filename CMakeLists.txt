@@ -164,6 +164,7 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/man1/pm_audit.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_probe.1"
     "${CMAKE_SOURCE_DIR}/man1/pm_tripdebug.1"
+    "${CMAKE_SOURCE_DIR}/man1/pm_findgpslock.1"
     DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
     OPTIONAL
 )
@@ -228,4 +229,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00083
+# SN: 00086

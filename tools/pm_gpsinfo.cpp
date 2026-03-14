@@ -26,11 +26,41 @@
 #include <cstdio>
 #include <ctime>
 #include <iomanip>
+#include <filesystem>
 
 #include "compat.hpp"
 #include "config_manager.hpp"
 #include "platform.hpp"
+#include "version.hpp"
+namespace fs = std::filesystem;
 using namespace Pathmux;
+
+// ---------------------------------------------------------------------------
+// Epoch helpers — mirrors pm_findgpslock logic
+// ---------------------------------------------------------------------------
+
+// "20260226_084009F.ts" → time_t (local time, via mktime)
+static time_t filenameToEpoch(const std::string& fname)
+{
+    if (fname.size() < 15 || fname[8] != '_') return 0;
+    struct tm t = {};
+    std::istringstream ss(fname.substr(0, 15));
+    ss >> std::get_time(&t, "%Y%m%d_%H%M%S");
+    if (ss.fail()) return 0;
+    t.tm_isdst = -1;
+    return std::mktime(&t);
+}
+
+// "YYYY:MM:DD HH:MM:SS" (GPS UTC, as stored in GpsRecord::timestamp) → time_t
+static time_t gpsTimestampToEpoch(const std::string& ts)
+{
+    if (ts.size() < 19) return 0;
+    struct tm t = {};
+    std::istringstream ss(ts);
+    ss >> std::get_time(&t, "%Y:%m:%d %H:%M:%S");
+    if (ss.fail()) return 0;
+    return timegm(&t);
+}
 
 // ---------------------------------------------------------------------------
 // Minimal JSON output helpers (hand-rolled to avoid json.hpp in output paths)
@@ -123,7 +153,8 @@ static void printUsage(const char* argv0) {
         << "                     manifests; report seconds to first GPS lock\n\n"
         << "Common options:\n"
         << "  --exiftool PATH    Path to exiftool binary\n"
-        << "  --exiftool-opts O  Extraction options (default: -ee3 ...)\n\n"
+        << "  --exiftool-opts O  Extraction options (default: -ee3 ...)\n"
+        << "  -v, --version      Show version and exit\n\n"
         << "Notes:\n"
         << "  MID:TID addresses a trip by manifest ID and trip ID (e.g. F0:4P).\n"
         << "  GPS extraction requires exiftool to be installed and configured.\n"
@@ -455,7 +486,14 @@ static std::vector<LockScanResult> scanAllTrips(
             auto records = runExiftool(front, exiftoolPath, exiftoolOpts);
             for (const auto& rec : records) {
                 if (rec.lat != 0.0 && rec.lon != 0.0) {
-                    r.lockSec = rec.index;
+                    // Compute true lock offset via epoch arithmetic:
+                    // GPS timestamp is UTC; filename is local time.
+                    time_t fileEpoch = filenameToEpoch(
+                                           fs::path(front).filename().string());
+                    time_t gpsEpoch  = gpsTimestampToEpoch(rec.timestamp);
+                    r.lockSec = (fileEpoch > 0 && gpsEpoch > 0)
+                                ? static_cast<int>(gpsEpoch - fileEpoch)
+                                : rec.index;
                     break;
                 }
             }
@@ -608,6 +646,9 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") { printUsage(argv[0]); return 0; }
+        else if (arg == "-v" || arg == "--version") {
+            std::cout << APP_NAME << " pm_gpsinfo v" << APP_VERSION << "\n"; return 0;
+        }
         else if (arg == "--first-lock")     { firstLockOnly = true; }
         else if (arg == "--all")            { firstLockOnly = false; }
         else if (arg == "--json")           { format = "json"; }
@@ -683,4 +724,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-// SN: 00083
+// SN: 00086

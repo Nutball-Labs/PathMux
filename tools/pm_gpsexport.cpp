@@ -21,6 +21,7 @@
 #include "gps_export.hpp"
 #include "json.hpp"
 #include "compat.hpp"
+#include "version.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -51,7 +52,8 @@ static void printUsage(const char* argv0)
         << "  PATH may be a directory (auto-named) or a full file path.\n"
         << "  Omit PATH to write to the current directory with an auto-generated name.\n\n"
         << "  Multiple format flags may be combined in a single invocation.\n"
-        << "  GPS extraction runs at most once per trip regardless of output count.\n";
+        << "  GPS extraction runs at most once per trip regardless of output count.\n\n"
+        << "  -v, --version  Show version and exit\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +272,9 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help")     { printUsage(argv[0]); return 0; }
+        else if (arg == "-v" || arg == "--version") {
+            std::cout << APP_NAME << " pm_gpsexport v" << APP_VERSION << "\n"; return 0;
+        }
         else if (arg == "--force")              { force   = true; }
         else if (arg == "--verbose")            { verbose = true; }
         else if (arg == "--dump")               { doDump  = true; }

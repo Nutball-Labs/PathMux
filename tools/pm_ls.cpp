@@ -14,6 +14,7 @@
 #include "pathmux.hpp"
 #include "format_helpers.hpp"
 #include "json.hpp"
+#include "version.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -34,7 +35,8 @@ static void printUsage(const char* argv0)
         << "  (no args)    List all manifests and trips\n"
         << "  MID          List trips for one manifest\n"
         << "  MID:TID      Show details for one trip\n"
-        << "  --json        JSON output\n\n"
+        << "  --json        JSON output\n"
+        << "  -v, --version Show version and exit\n\n"
         << "  One line per trip (default):\n"
         << "    MID  TID  date        start     duration   segs  distance  GPS\n";
 }
@@ -139,6 +141,9 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help") { printUsage(argv[0]); return 0; }
+        else if (arg == "-v" || arg == "--version") {
+            std::cout << APP_NAME << " pm_ls v" << APP_VERSION << "\n"; return 0;
+        }
         else if (arg == "--json")           { jsonMode = true; }
         else if (arg[0] != '-')             { filter = arg; }
         else { std::cerr << "Unknown argument: " << arg << "\n"; return 1; }

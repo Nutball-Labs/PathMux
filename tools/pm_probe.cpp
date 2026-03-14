@@ -15,6 +15,7 @@
 #include "platform.hpp"
 #include "compat.hpp"
 #include "json.hpp"
+#include "version.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -81,7 +82,8 @@ static void printUsage(const char* argv0)
         << "  --json         Machine-readable JSON output\n"
         << "  --wizard PATH  Interactive camera profile builder\n\n"
         << "  --card output is suitable for a GitHub issue to request\n"
-        << "  support for a new camera model.\n";
+        << "  support for a new camera model.\n\n"
+        << "  -v, --version  Show version and exit\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -1542,6 +1544,9 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help") { printUsage(argv[0]); return 0; }
+        else if (arg == "-v" || arg == "--version") {
+            std::cout << APP_NAME << " pm_probe v" << APP_VERSION << "\n"; return 0;
+        }
         else if (arg == "--json")   { jsonMode = true; }
         else if (arg == "--card") {
             cardMode = true;

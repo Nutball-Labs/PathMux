@@ -1,12 +1,12 @@
 // pm_findgpslock — scan raw dashcam .ts files and report GPS lock acquisition
 //
 // For each .ts file prints a "# filename  parsed-timestamp" header line,
-// then one packet line per GPS sample until the first fully-locked sample
-// (valid lat/lon AND synchronized clock), then moves on to the next file.
+// then the first GPS-locked sample with lock offset from file start (+Ns).
 //
-// Normal output is two lines per file — the header and sample 0 already
-// locked. Files where GPS was still acquiring show extra pre-lock lines
-// labelled NO_POS, NO_TIME, or NO_POS+NO_TIME before the LOCKED line.
+// The D90 firmware does not write GPS records to the LIGO stream until
+// lock is acquired, so there are no pre-lock packets to scan.  The offset
+// is computed by comparing the GPS lock epoch (UTC, via timegm) against
+// the file-start epoch derived from the filename (local, via mktime).
 //
 // Usage:
 //   pm_findgpslock [--verbose] <file.ts> [file2.ts ...]
@@ -17,12 +17,14 @@
 #include "pathmux.hpp"
 #include "compat.hpp"
 #include "json.hpp"
+#include "version.hpp"
 
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <filesystem>
 #include <cstdio>
+#include <ctime>
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -35,10 +37,10 @@ static void printUsage(const char* argv0)
 {
     std::cerr
         << "Usage: " << argv0 << " [--verbose] <file.ts> [file2.ts ...]\n\n"
-        << "  --verbose  Show exiftool stderr during scan\n\n"
-        << "  Prints a header line per file, then GPS samples until the\n"
-        << "  first locked reading. Normal output: header + sample 0.\n"
-        << "  Outlier files grow downward with pre-lock labels.\n";
+        << "  -v, --version  Show version and exit\n"
+        << "  --verbose      Show exiftool stderr during scan\n\n"
+        << "  Prints a header line per file, then the first locked GPS\n"
+        << "  record with lock offset (+Ns) from file start.\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -47,7 +49,6 @@ static void printUsage(const char* argv0)
 // ---------------------------------------------------------------------------
 static std::string tsFromFilename(const std::string& fname)
 {
-    // Expect at least YYYYMMDD_HHMMSS (15 chars) at the start
     if (fname.size() < 15 || fname[8] != '_') return "";
     for (int i = 0; i < 8; ++i)
         if (!std::isdigit(static_cast<unsigned char>(fname[i]))) return "";
@@ -56,6 +57,37 @@ static std::string tsFromFilename(const std::string& fname)
 
     return fname.substr(0, 4) + "-" + fname.substr(4, 2) + "-" + fname.substr(6, 2)
          + " " + fname.substr(9, 2) + ":" + fname.substr(11, 2) + ":" + fname.substr(13, 2);
+}
+
+// ---------------------------------------------------------------------------
+// filenameToEpoch — "20260226_084009F.ts" → time_t (local time, via mktime)
+// Mirrors the library's stringToTimestamp().  Returns 0 on parse failure.
+// ---------------------------------------------------------------------------
+static time_t filenameToEpoch(const std::string& fname)
+{
+    if (fname.size() < 15 || fname[8] != '_') return 0;
+    struct tm t = {};
+    std::istringstream ss(fname.substr(0, 15));
+    ss >> std::get_time(&t, "%Y%m%d_%H%M%S");
+    if (ss.fail()) return 0;
+    t.tm_isdst = -1;
+    return std::mktime(&t);
+}
+
+// ---------------------------------------------------------------------------
+// gpsToEpoch — exiftool GPS date/time (UTC) → time_t via timegm
+// datePart: "YYYY:MM:DD"   timePart: "HH:MM:SS"
+// Returns 0 on parse failure.
+// ---------------------------------------------------------------------------
+static time_t gpsToEpoch(const std::string& datePart, const std::string& timePart)
+{
+    if (datePart.size() < 10 || timePart.size() < 8) return 0;
+    struct tm t = {};
+    std::string combined = datePart + " " + timePart;
+    std::istringstream ss(combined);
+    ss >> std::get_time(&t, "%Y:%m:%d %H:%M:%S");
+    if (ss.fail()) return 0;
+    return timegm(&t);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +103,10 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help")    { printUsage(argv[0]); return 0; }
+        else if (arg == "-v" || arg == "--version") {
+            std::cout << APP_NAME << " pm_findgpslock v" << APP_VERSION << "\n";
+            return 0;
+        }
         else if (arg == "--verbose")           { verbose = true; }
         else if (arg[0] != '-')                { files.push_back(arg); }
         else {
@@ -99,8 +135,9 @@ int main(int argc, char* argv[])
 
     // ---- Process each file ----
     for (const auto& path : files) {
-        std::string fname = fs::path(path).filename().string();
-        std::string fts   = tsFromFilename(fname);
+        std::string fname          = fs::path(path).filename().string();
+        std::string fts            = tsFromFilename(fname);
+        time_t      fileStartEpoch = filenameToEpoch(fname);
 
         // Header line
         std::cout << "# " << fname;
@@ -119,7 +156,6 @@ int main(int argc, char* argv[])
         }
 
         char linebuf[512];
-        int  idx    = 0;
         bool locked = false;
 
         while (fgets(linebuf, sizeof(linebuf), pipe) && !locked) {
@@ -141,31 +177,35 @@ int main(int argc, char* argv[])
             int  year   = (datePart.size() >= 4) ? std::stoi(datePart.substr(0, 4)) : 0;
             bool noTime = (year < 2000);
 
+            if (noPos || noTime) continue;
+
+            // --- GPS lock acquired ---
+            locked = true;
+
+            time_t gpsEpoch   = gpsToEpoch(datePart, timePart);
+            long   lockOffset = (fileStartEpoch > 0 && gpsEpoch > 0)
+                                ? static_cast<long>(gpsEpoch - fileStartEpoch)
+                                : -1;
+
             // Reformat YYYY:MM:DD → YYYYMMDD for compact, consistent output
             std::string dateCompact = (datePart.size() >= 10)
                 ? datePart.substr(0, 4) + datePart.substr(5, 2) + datePart.substr(8, 2)
                 : datePart;
-            std::string ts = dateCompact + " " + timePart;
-            std::string status;
-            if      (noPos && noTime) status = "NO_POS+NO_TIME";
-            else if (noPos)           status = "NO_POS";
-            else if (noTime)          status = "NO_TIME";
-            else                      { status = "LOCKED"; locked = true; }
 
-            std::cout << "  " << std::setw(4) << idx << "  "
-                      << ts << "  "
+            std::cout << "  lock";
+            if (lockOffset >= 0)
+                std::cout << " +" << lockOffset << "s";
+            std::cout << "  " << dateCompact << " " << timePart << "  "
                       << std::fixed << std::setprecision(6)
                       << std::setw(11) << lat << "  "
-                      << std::setw(11) << lon << "  "
-                      << status << "\n";
-            ++idx;
+                      << std::setw(11) << lon << "\n";
         }
         pclose(pipe);
 
         if (!locked)
-            std::cout << "  (no lock found in " << idx << " sample(s))\n";
+            std::cout << "  (no GPS lock found)\n";
     }
 
     return 0;
 }
-// SN: 00082
+// SN: 00086

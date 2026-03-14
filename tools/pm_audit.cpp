@@ -14,6 +14,7 @@
 #include "pathmux.hpp"
 #include "compat.hpp"
 #include "json.hpp"
+#include "version.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -65,7 +66,8 @@ static void printUsage(const char* argv0)
         << "  MID          Audit one manifest\n"
         << "  MID:TID      Audit one trip\n"
         << "  --deep       Also run ffprobe on every segment (slow)\n"
-        << "  --json       Machine-readable JSON output\n\n"
+        << "  --json       Machine-readable JSON output\n"
+        << "  -v, --version  Show version and exit\n\n"
         << "  Exit 0 = all OK.  Exit 1 = one or more problems found.\n";
 }
 
@@ -181,6 +183,9 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help") { printUsage(argv[0]); return 0; }
+        else if (arg == "-v" || arg == "--version") {
+            std::cout << APP_NAME << " pm_audit v" << APP_VERSION << "\n"; return 0;
+        }
         else if (arg == "--deep")           { deepMode = true; }
         else if (arg == "--json")           { jsonMode = true; }
         else if (arg[0] != '-')             { filter = arg; }
