@@ -203,13 +203,17 @@ public:
             e.hwDevice = "cuda"; e.hwDeviceType = "cuda";
             e.normEncoder = "h264_nvenc"; e.collageEncoder = "hevc_nvenc";
             e.downEncoder = "h264_nvenc"; e.pixFmt = "yuv420p";
-            e.normQuality = "10"; e.collageQuality = "15"; e.downQuality = "22";
+            e.normQuality = "10"; e.collageQuality = "24"; e.downQuality = "24";
             // -preset p7: slowest/highest-quality NVENC preset (p1=fast .. p7=slow).
             // -tune hq:   driver-level quality tuning.
-            // -cq 15:     constrained-quality VBR; NVENC CQ 15 ≈ QSV ICQ 20 perceptually.
-            e.extraNormArgs = "-preset p4 -cq 10";
-            e.extraCollageArgs = "-preset p7 -tune hq -cq 15";
-            e.extraDownArgs = "-preset p4 -cq 18";
+            // -rc constqp -qp 24: constant quantizer mode — no hidden VBR bitrate cap.
+            //   CQ/VBR mode silently capped output at ~20 Mbps regardless of quality
+            //   setting, rendering the CQ value meaningless. constqp QP 24 produces
+            //   ~44 Mbps for 4K H.265 dashcam collage — clean Roku Ultra direct play,
+            //   visually indistinguishable from QP 20 (68 Mbps) on 85" 4K display.
+            e.extraNormArgs   = "-preset p4 -rc constqp -qp 24";
+            e.extraCollageArgs = "-preset p7 -tune hq -rc constqp -qp 24";
+            e.extraDownArgs   = "-preset p4 -rc constqp -qp 24";
         } else if (preset == "vaapi") {
             e.hwDevice = "vaapi=/dev/dri/renderD128"; e.hwDeviceType = "vaapi";
             e.normEncoder = "h264_vaapi"; e.collageEncoder = "hevc_vaapi";
@@ -321,4 +325,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00084
+// SN: 00086

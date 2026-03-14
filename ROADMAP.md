@@ -8,31 +8,39 @@ This document outlines planned features and future development direction for Pat
 
 ### Collage Encode Quality: NVENC vs QSV/VAAPI
 
-**Status:** OPEN — blocks all collage-related development
+**Status:** RESOLVED — v0.9.10k
 
-**Problem:**
-4K collage output on Windows (NVENC) is visibly inferior to Linux (QSV/VAAPI).
-Each 1080p quadrant shows obvious pixelation / softness even at low CQ values.
-The Linux QSV result looks "hands down better" — quadrants are crystal clear.
+**Root Cause (confirmed by empirical testing, 2026-03-14):**
+Two separate issues, both now fixed:
 
-**Root Cause Analysis:**
-- NVENC CQ quality scale is not equivalent to QSV ICQ or VAAPI quality values
-  at the same numeric setting. CQ 20 on NVENC ≠ q=20 on QSV.
-- The single-pass approach (source .ts files directly into filter_complex) is
-  now implemented — eliminates the two-pass quality loss from the normalization
-  intermediates. Still not matching Linux quality at equivalent nominal settings.
-- `h264_nvenc -preset lossless` exists and should produce bit-for-bit accurate
-  input streams before the final hevc_nvenc collage encode.
+1. **Two-pass normalization artifacts** — the original pipeline re-encoded source
+   segments through normalization intermediates before the collage encode, degrading
+   quality at each step. Fixed by the single-pass rewrite (v0.9.10h): source .ts
+   files feed directly into filter_complex with no intermediate re-encode.
 
-**Required Work:**
-1. Add a `lossless` encode mode to `EncodeSettings` (or per-step quality override)
-2. Test `h264_nvenc -preset lossless` as the per-camera concat encode step
-3. A/B compare: lossless intermediates → hevc_nvenc CQ 20 collage vs current
-4. Determine if the problem is in the final hevc_nvenc encode or earlier
-5. Update NVENC preset defaults once correct quality values are confirmed
-6. Document the quality scale mapping between encoder families
+2. **NVENC VBR silent bitrate cap** — `-cq` mode (constrained-quality VBR) imposes
+   an implicit ~20 Mbps ceiling when `-b:v` / `-maxrate` are not explicitly set.
+   This caused CQ 5 and CQ 15 to produce byte-for-byte identical output — the
+   quality setting was completely ignored. Lossless intermediates made no difference;
+   the problem was entirely in the final encoder mode, not the pipeline.
 
-**Workaround:** Use Linux QSV/VAAPI for collage production until resolved.
+**Fix:** Switch NVENC collage (and norm/down) encoders from `-cq` VBR to
+`-rc constqp -qp 24`. Constant quantizer mode has no hidden bitrate cap.
+
+**Calibration data (hevc_nvenc, 4K collage, dashcam content, 60s clip):**
+| Mode | Bitrate | Plays on Roku Ultra |
+|---|---|---|
+| -cq 15 VBR (old default, capped) | ~20 Mbps | Yes (but quality setting ignored) |
+| constqp QP 24 | ~44 Mbps | Yes — direct play, no buffer |
+| constqp QP 22 | ~55 Mbps | Yes — direct play, no buffer |
+| constqp QP 20 | ~68 Mbps | Yes — direct play, no buffer |
+| constqp QP 15 | ~111 Mbps | No — triggers Plex transcode |
+
+QP 20/22/24 were visually indistinguishable on an 85" 4K display. QP 24 chosen
+as default: smallest files, clean Roku direct play, no perceptible quality loss.
+
+**Applies to:** All NVENC users (Windows and Linux with NVIDIA GPU). QSV/VAAPI
+unaffected — their ICQ mode has no equivalent cap.
 
 ---
 
@@ -1163,4 +1171,4 @@ When a user reports an unsupported camera:
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
 
-<!-- SN: 00082 -->
+<!-- SN: 00086 -->
