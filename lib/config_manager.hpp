@@ -188,6 +188,14 @@ public:
     const EncodeSettings& getEncodeSettings() const { return settings.encode; }
     std::string        getLogLevel()           const { return settings.logLevel; }
 
+    // --- Host-specific settings (pathmux_<hostname>.json) ---
+    // Host file overlays base prefs for this machine only.
+    // Fields: encode.*, ffmpegPath, exiftoolPath, exiftoolOptions,
+    //         defaultExportDir, tmpDir, logLevel.
+    std::string        getHostname()        const { return hostname; }
+    std::string        getHostSettingsFile() const { return hostSettingsFile; }
+    void               saveHostSettings();   // write host subset to host file
+
     // Apply a named encode preset, populating EncodeSettings with known-good values.
     // preset: "qsv" | "nvenc" | "vaapi" | "cpu"
     void applyEncodePreset(const std::string& preset) {
@@ -288,6 +296,8 @@ public:
 private:
     std::string  configDir;
     std::string  settingsFile;      // ~/.config/pathmux/pathmux.json
+    std::string  hostname;          // short hostname, no domain
+    std::string  hostSettingsFile;  // ~/.config/pathmux/pathmux_<hostname>.json
     std::string  locationsFile;     // ~/.config/pathmux/locations.json
     std::string  manifestIndexFile; // ~/.config/pathmux/manifests.json
     std::string  staleArchiveFile;  // ~/.config/pathmux/manifests_stale.json
@@ -311,6 +321,9 @@ private:
     std::string  generateId(const std::set<std::string>& existing,
                              bool preferAlphaFirst);
 
+    // Apply host overlay from pathmux_<hostname>.json over already-loaded base settings.
+    void         loadHostOverlay();
+
     // Normalize user-typed ID input: uppercase, O→0, I→1, L→1
     static std::string normalizeId(const std::string& input);
 
@@ -325,4 +338,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00086
+// SN: 00087

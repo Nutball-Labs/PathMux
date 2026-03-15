@@ -28,6 +28,14 @@ public:
     // Segment paths are relative to each manifest's source path.
     void jsonDump(ConfigManager& config);
 
+    // --format=[json|csv|xml] [--fields=f1,f2,...]: structured trip output.
+    // json: same as jsonDump (--fields ignored).
+    // csv/xml: one record per trip; --fields selects columns (default set if empty).
+    // useImperial: applies to distance_mi vs distance_km default field selection.
+    void formatDump(ConfigManager& config,
+                    const std::string& format,
+                    const std::vector<std::string>& fields);
+
     // -s scan result summary (non-interactive).
     void showTripSummary(const std::vector<Trip>& trips,
                          const std::string& currentPath,
@@ -50,4 +58,4 @@ private:
 };
 
 #endif
-// SN: 00071
+// SN: 00087

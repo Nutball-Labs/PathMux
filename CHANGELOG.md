@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## [0.9.11 / SN: 00087] - 2026-03-15
+### Added
+- **Host-specific config overlay** (`--hostprefs`): per-hostname settings file
+  `~/.config/pathmux/pathmux_<hostname>.json` overlays the shared `pathmux.json`.
+  Encoder settings, ffmpeg/exiftool paths, export dir, tmp dir, and log level are
+  host-specific; all other prefs remain shared. Transparent load order: base first,
+  host overlay wins on any present key.
+- **`HostPrefsEditor`** (`cli/host_prefs.cpp/.hpp`): interactive menu for host
+  settings; encoder sub-menu via `EncoderPrefsEditor`; saves only to host file.
+- **`getShortHostname()`** in `lib/compat.hpp`: cross-platform hostname (Windows
+  `GetComputerNameA`, POSIX `gethostname` + strip domain). No Winsock init required.
+- **`--format=[json|csv|xml]` modifier for `-T`** (`pathmux`): structured trip output
+  with optional `--fields=<f1,f2,...>` column selection. Delegates to new
+  `lib/trip_format.hpp` shared library.
+- **`--format=[json|csv|xml]` and `--fields`** in `pm_ls`: same structured output
+  with optional MID / MID:TID scoping. `--format=json` is now an alias for `--json`.
+- **`lib/trip_format.hpp`** (new, header-only): shared structured output helpers
+  (`tripFieldVal`, `csvQuote`, `writeTripsCSV`, `writeTripsXML`, `defaultTripFields`).
+  Used by both `pathmux` (find_trips.cpp) and `pm_ls`.
+- **ccache + PCH** in `CMakeLists.txt`: ccache auto-detected and wired as
+  `CMAKE_CXX_COMPILER_LAUNCHER`; `json.hpp` compiled as PCH for `pathmuxlib`.
+  Dramatically reduces build time on GCC 14 (Alma 10).
+
+### Fixed
+- **NVENC collage 1080p downscale**: replaced `scale_cuda=1920:1080` (not universally
+  compiled into ffmpeg) with CPU `scale=1920:1080` + hwupload — portable fix.
+- **`EncoderPrefsEditor`** now saves to host file (`saveHostSettings()`) instead of
+  base prefs; encoder settings are machine-specific.
+
+### Tested
+- Linux/NVENC collage (RTX5060, Alma 10): 4K collage confirmed clean — direct Roku
+  Ultra play, no transcode; visual quality confirmed via frame grab (Gulfport MS).
+  constqp QP 24 chosen as default: ~44 Mbps, visually identical to QP 20/22 on 85" 4K.
+
+---
+
 ## [0.9.10g / SN: 00082] - 2026-03-07
 ### Added
 - **`pm_probe --wizard`**: interactive camera profile builder (full implementation).
@@ -952,4 +988,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00082 -->
+<!-- SN: 00087 -->

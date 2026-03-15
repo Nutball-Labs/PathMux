@@ -505,10 +505,12 @@ bool VideoBuilder::buildCollage1080(const std::string& source4K,
     if (!opts.encode.hwDevice.empty())
         cmd << " -init_hw_device " << opts.encode.hwDeviceType
             << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
+    // CPU scale first, then upload to GPU for encode.
+    // scale_cuda/scale_qsv/scale_vaapi are not universally compiled into ffmpeg
+    // builds — CPU scale is trivial for a single 4K→1080p pass and always works.
     std::string downVf = opts.encode.hwDevice.empty()
         ? "scale=1920:1080"
-        : "format=" + opts.encode.pixFmt + ",hwupload=extra_hw_frames=64,scale_"
-          + opts.encode.hwDeviceType + "=1920:1080";
+        : "scale=1920:1080,format=" + opts.encode.pixFmt + ",hwupload=extra_hw_frames=64";
     cmd << " -i \"" << source4K << "\""
         << " -vf \"" << downVf << "\""
         << " -c:v " << opts.encode.downEncoder;
@@ -1866,4 +1868,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00085
+// SN: 00087

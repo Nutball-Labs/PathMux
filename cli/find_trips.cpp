@@ -4,6 +4,7 @@
 #include "version.hpp"
 #include "video_build.hpp"
 #include "trip_detection.hpp"
+#include "trip_format.hpp"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -626,4 +627,34 @@ void FindTrips::jsonDump(ConfigManager& config) {
     std::cout << root.dump(2) << "\n";
 }
 
-// SN: 00083
+// ---------------------------------------------------------------------------
+// formatDump — --format=[json|csv|xml] [--fields=f1,f2,...]
+//
+// Outputs all trips in the requested format, one record per trip.
+// json: delegates to jsonDump (--fields ignored).
+// csv/xml: flat per-trip output with selectable fields.
+//
+// Available field names:
+//   manifest_id, trip_id, address, date, start_time, start_epoch,
+//   duration, duration_seconds, segment_count, note,
+//   start_lat, start_lon, end_lat, end_lon,
+//   distance_km, distance_mi, gps_lock_seconds, gps_track_status
+// ---------------------------------------------------------------------------
+void FindTrips::formatDump(ConfigManager& config,
+                            const std::string& format,
+                            const std::vector<std::string>& fields) {
+    if (format == "json") { jsonDump(config); return; }
+
+    auto index = config.loadManifestIndex();
+
+    if (format == "csv") {
+        writeTripsCSV(index, config, fields);
+    } else if (format == "xml") {
+        writeTripsXML(index, config, fields, APP_VERSION);
+    } else {
+        std::cerr << "Unknown format '" << format
+                  << "'. Valid: json, csv, xml\n";
+    }
+}
+
+// SN: 00087

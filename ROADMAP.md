@@ -127,9 +127,9 @@ values on D90) — stored but ignored. Speed in km/h.
 ### Phase 1 Active Work
 
 **Must ship before v1.0 (gate items):**
-- [ ] **License decision** — GPL vs MIT; CMakeLists.txt already has GPL-2.0 as a
-  placeholder — confirm or change. Apply header to all source files; add `LICENSE`
-  to repo root; update README. Repo is private — no urgency until public release.
+- [x] **License decision** — MIT. Phil Harvey responded: ExifTool called as external
+  process (no linking), GPL copyleft does not propagate. MIT suits target audience
+  (gig workers, Windows/macOS ports). Apply headers + `LICENSE` file pre-public-release.
 - [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
 - [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
 
@@ -157,9 +157,14 @@ values on D90) — stored but ignored. Speed in km/h.
   test against non-D90 hardware before declaring complete
 
 **CLI polish:**
-- [ ] `--format=[json,csv,xml]` — replaces `--jsondump`/`--csvdump`/`--xmldump` as a
-  serialization modifier on `--dump` / `--fulldump`
-- [ ] `--dump`/`--fulldump` field filtering (`--fields id,date,duration`)
+- [x] **`--format=[json,csv,xml]` + `--fields`** (v0.9.11) — structured trip output;
+  `--format` is a modifier to `-T` in `pathmux`; standalone in `pm_ls`. Shared
+  implementation in `lib/trip_format.hpp`. Supported fields: manifest_id, trip_id,
+  address, date, start_time, start_epoch, duration, duration_seconds, segment_count,
+  note, start_lat, start_lon, end_lat, end_lon, distance_km, distance_mi,
+  gps_lock_seconds, gps_track_status
+- [x] **Host-specific config overlay** (v0.9.11) — `--hostprefs` menu + hostname overlay
+  file; encoder settings, paths, output dirs per machine; shared base for trip/GPS prefs
 - [ ] `recordingProfile` config field — part of CameraProfile implementation; see "Multi-Brand Dashcam Support" section
 - [ ] `extra_hw_frames` CPU encoder guard
 
@@ -1171,4 +1176,4 @@ When a user reports an unsupported camera:
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
 
-<!-- SN: 00086 -->
+<!-- SN: 00087 -->

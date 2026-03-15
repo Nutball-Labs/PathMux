@@ -35,6 +35,19 @@ message(STATUS "*                                          *")
 message(STATUS "********************************************")
 
 # ---------------------------------------------------------------------------
+# ccache — speeds up incremental and clean rebuilds by caching compiled objects.
+# Each machine primes its own cache on first build; subsequent builds are fast.
+# Install: sudo dnf install ccache
+# ---------------------------------------------------------------------------
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    message(STATUS "ccache found: ${CCACHE_PROGRAM}")
+else()
+    message(STATUS "ccache not found — builds will not be cached")
+endif()
+
+# ---------------------------------------------------------------------------
 # Standard
 # ---------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 17)
@@ -72,6 +85,10 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(pathmuxlib PUBLIC stdc++fs)
 endif()
 
+# Precompiled header for json.hpp — compiled once, reused by all lib sources.
+# Eliminates the per-file GCC 14 template analysis cost on every rebuild.
+target_precompile_headers(pathmuxlib PRIVATE "${CMAKE_SOURCE_DIR}/json.hpp")
+
 # ---------------------------------------------------------------------------
 # CLI executable
 # ---------------------------------------------------------------------------
@@ -80,6 +97,7 @@ add_executable(pathmux
     cli/find_trips.cpp
     cli/gpx_export.cpp
     cli/prefs.cpp
+    cli/host_prefs.cpp
     cli/kml_prefs.cpp
     cli/locations.cpp
     cli/video_build.cpp
@@ -229,4 +247,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00086
+# SN: 00087

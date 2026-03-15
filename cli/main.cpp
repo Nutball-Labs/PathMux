@@ -1,12 +1,14 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <sstream>
 #include <filesystem>
 #include "find_trips.hpp"
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
 #include "gpx_export.hpp"
 #include "prefs.hpp"
+#include "host_prefs.hpp"
 #include "kml_prefs.hpp"
 #include "locations.hpp"
 #include "video_build.hpp"
@@ -23,11 +25,20 @@ void printUsage() {
               << "  -T, --dump              Show all manifests and trips\n"
               << "      --fulldump          Show all manifests, trips, and segment files\n"
               << "      --jsondump          Dump everything as JSON (scriptable)\n"
+              << "  -T  --format=<fmt>      Structured output modifier: json, csv, xml\n"
+              << "      --fields=<f1,f2>    Fields for csv/xml (use with -T --format)\n"
+              << "                          Fields: manifest_id trip_id address date\n"
+              << "                            start_time start_epoch duration\n"
+              << "                            duration_seconds segment_count note\n"
+              << "                            start_lat start_lon end_lat end_lon\n"
+              << "                            distance_km distance_mi\n"
+              << "                            gps_lock_seconds gps_track_status\n"
               << "  -I, --interactive       Interactive browser\n\n"
               << "GPS & export:\n"
               << "  -G, --gps               Interactive GPS extraction and GPX/KML export\n\n"
               << "Settings:\n"
               << "  -P, --prefs             Interactive preferences editor\n"
+              << "      --hostprefs         Host-specific prefs (encoder, paths, output dir)\n"
               << "      --encoderprefs      Interactive encoder/hardware preferences\n"
               << "      --kmlprefs          Interactive KML visual preferences editor\n"
               << "      --locations         Manage known locations (Home, Work, etc.)\n"
@@ -52,9 +63,10 @@ int main(int argc, char* argv[]) {
     TripDetection    detector;
     FindTrips        finder;
     GpxExport        exporter;
-    PrefsEditor      prefsEditor;
+    PrefsEditor        prefsEditor;
     EncoderPrefsEditor encoderPrefsEditor;
-    KmlPrefsEditor   kmlPrefsEditor;
+    HostPrefsEditor    hostPrefsEditor;
+    KmlPrefsEditor     kmlPrefsEditor;
     LocationsEditor  locationsEditor;
 
     if (argc < 2) { printUsage(); return 1; }
@@ -82,7 +94,8 @@ int main(int argc, char* argv[]) {
         bool isReadOnly = false;
         for (int i = 1; i < argc; ++i) {
             std::string a = argv[i];
-            if (a == "-t" || a == "-T" || a == "--dump" || a == "--validate")
+            if (a == "-t" || a == "-T" || a == "--dump" || a == "--validate"
+                || a == "--jsondump")
                 isReadOnly = true;
         }
         if (isReadOnly) {
@@ -105,7 +118,10 @@ int main(int argc, char* argv[]) {
     bool doEncoderPrefs  = false;
     bool doKmlPrefs      = false;
     bool doLocations     = false;
+    bool doHostPrefs     = false;
     bool doSet           = false;
+    std::string formatArg;
+    std::vector<std::string> fieldsArg;
 
     ExportOptions exportOpts;
     std::string   setKV;
@@ -162,9 +178,23 @@ int main(int argc, char* argv[]) {
 
         // ---- Settings flags ----
         if (arg == "-P" || arg == "--prefs")  { doPrefs        = true; continue; }
+        if (arg == "--hostprefs")             { doHostPrefs    = true; continue; }
         if (arg == "--encoderprefs")          { doEncoderPrefs = true; continue; }
         if (arg == "--kmlprefs")              { doKmlPrefs     = true; continue; }
         if (arg == "--locations")             { doLocations    = true; continue; }
+
+        if (arg.find("--format=") == 0) {
+            formatArg = arg.substr(9);
+            continue;
+        }
+        if (arg.find("--fields=") == 0) {
+            std::string fstr = arg.substr(9);
+            std::istringstream ss(fstr);
+            std::string tok;
+            while (std::getline(ss, tok, ','))
+                if (!tok.empty()) fieldsArg.push_back(tok);
+            continue;
+        }
 
         if (arg == "--set") {
             if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -180,6 +210,7 @@ int main(int argc, char* argv[]) {
 
     // ---- Settings modes ----
     if (doPrefs)       { prefsEditor.run(config);        return 0; }
+    if (doHostPrefs)   { hostPrefsEditor.run(config);   return 0; }
     if (doEncoderPrefs){ encoderPrefsEditor.run(config); return 0; }
     if (doKmlPrefs)    { kmlPrefsEditor.run(config);     return 0; }
     if (doLocations)   { locationsEditor.run(config);    return 0; }
@@ -269,7 +300,10 @@ int main(int argc, char* argv[]) {
 
     // ---- Full tree dump ----
     if (doFullTree) {
-        finder.showAllTrees(config);
+        if (!formatArg.empty())
+            finder.formatDump(config, formatArg, fieldsArg);
+        else
+            finder.showAllTrees(config);
         return 0;
     }
     if (doManifestList) {
@@ -299,4 +333,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00079
+// SN: 00087

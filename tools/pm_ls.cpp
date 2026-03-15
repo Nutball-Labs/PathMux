@@ -13,6 +13,7 @@
 
 #include "pathmux.hpp"
 #include "format_helpers.hpp"
+#include "trip_format.hpp"
 #include "json.hpp"
 #include "version.hpp"
 
@@ -31,13 +32,19 @@ using namespace Pathmux;
 static void printUsage(const char* argv0)
 {
     std::cerr
-        << "Usage: " << argv0 << " [--json] [MID | MID:TID]\n\n"
-        << "  (no args)    List all manifests and trips\n"
-        << "  MID          List trips for one manifest\n"
-        << "  MID:TID      Show details for one trip\n"
-        << "  --json        JSON output\n"
-        << "  -v, --version Show version and exit\n\n"
-        << "  One line per trip (default):\n"
+        << "Usage: " << argv0 << " [options] [MID | MID:TID]\n\n"
+        << "  (no args)          List all manifests and trips\n"
+        << "  MID                List trips for one manifest\n"
+        << "  MID:TID            Show details for one trip\n"
+        << "  --json             JSON output (all or filtered)\n"
+        << "  --format=<fmt>     Structured output: json, csv, xml\n"
+        << "  --fields=<f1,f2>   Fields for csv/xml output\n"
+        << "    Fields: manifest_id trip_id address date start_time start_epoch\n"
+        << "            duration duration_seconds segment_count note\n"
+        << "            start_lat start_lon end_lat end_lon\n"
+        << "            distance_km distance_mi gps_lock_seconds gps_track_status\n"
+        << "  -v, --version      Show version and exit\n\n"
+        << "  Default text columns:\n"
         << "    MID  TID  date        start     duration   segs  distance  GPS\n";
 }
 
@@ -136,6 +143,8 @@ static void printTripDetail(const std::string& mid,
 int main(int argc, char* argv[])
 {
     bool jsonMode = false;
+    std::string formatArg;
+    std::vector<std::string> fieldsArg;
     std::string filter;   // MID or MID:TID
 
     for (int i = 1; i < argc; ++i) {
@@ -144,10 +153,20 @@ int main(int argc, char* argv[])
         else if (arg == "-v" || arg == "--version") {
             std::cout << APP_NAME << " pm_ls v" << APP_VERSION << "\n"; return 0;
         }
-        else if (arg == "--json")           { jsonMode = true; }
-        else if (arg[0] != '-')             { filter = arg; }
+        else if (arg == "--json")              { jsonMode = true; }
+        else if (arg.find("--format=") == 0)   { formatArg = arg.substr(9); }
+        else if (arg.find("--fields=") == 0) {
+            std::istringstream ss(arg.substr(9));
+            std::string tok;
+            while (std::getline(ss, tok, ','))
+                if (!tok.empty()) fieldsArg.push_back(tok);
+        }
+        else if (arg[0] != '-')                { filter = arg; }
         else { std::cerr << "Unknown option: " << arg << "\n"; printUsage(argv[0]); return 1; }
     }
+
+    // --format=json is an alias for --json
+    if (formatArg == "json") jsonMode = true;
 
     // Determine if filter is MID or MID:TID
     bool filterHasColon = (filter.find(':') != std::string::npos);
@@ -182,6 +201,22 @@ int main(int argc, char* argv[])
     }
 
     bool imperial = config.getUseImperial();
+
+    // -------------------------------------------------------------------------
+    // Structured format output (csv / xml)
+    // -------------------------------------------------------------------------
+    if (!formatArg.empty() && formatArg != "json") {
+        if (formatArg == "csv") {
+            writeTripsCSV(index, config, fieldsArg, filterMid, filterTid);
+        } else if (formatArg == "xml") {
+            writeTripsXML(index, config, fieldsArg, APP_VERSION, filterMid, filterTid);
+        } else {
+            std::cerr << "Unknown format '" << formatArg
+                      << "'. Valid: json, csv, xml\n";
+            return 1;
+        }
+        return 0;
+    }
 
     // -------------------------------------------------------------------------
     // JSON output
@@ -299,4 +334,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00080
+// SN: 00087

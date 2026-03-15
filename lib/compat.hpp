@@ -3,6 +3,11 @@
 
 #include <string>
 #include <ctime>
+#ifdef _WIN32
+#  include <windows.h>   // GetComputerNameA — no Winsock init required
+#else
+#  include <unistd.h>    // gethostname
+#endif
 
 // ---------------------------------------------------------------------------
 // compat.hpp — Cross-platform portability shims.
@@ -44,6 +49,29 @@ inline struct tm* localtime_r(const time_t* timep, struct tm* result) {
 #endif
 
 // ---------------------------------------------------------------------------
+// getShortHostname — return the machine hostname with no domain suffix.
+// Windows: GetComputerNameA (no Winsock init required).
+// Linux/macOS: gethostname() + strip at first dot.
+// ---------------------------------------------------------------------------
+inline std::string getShortHostname() {
+#ifdef _WIN32
+    char buf[256] = {};
+    DWORD sz = sizeof(buf);
+    if (GetComputerNameA(buf, &sz)) return std::string(buf);
+    return "localhost";
+#else
+    char buf[256] = {};
+    if (gethostname(buf, sizeof(buf)) == 0) {
+        std::string hn = buf;
+        auto dot = hn.find('.');
+        if (dot != std::string::npos) hn = hn.substr(0, dot);
+        return hn;
+    }
+    return "localhost";
+#endif
+}
+
+// ---------------------------------------------------------------------------
 // pathBasename — return the filename portion of a path, handling both
 // forward-slash (Linux/macOS) and backslash (Windows) separators.
 // Used everywhere segment absolute paths are displayed as basenames.
@@ -53,4 +81,4 @@ inline std::string pathBasename(const std::string& p) {
     return (pos != std::string::npos) ? p.substr(pos + 1) : p;
 }
 
-// SN: 00083
+// SN: 00087

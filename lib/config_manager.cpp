@@ -28,6 +28,11 @@ ConfigManager::ConfigManager() {
     locationsFile     = configDir + "locations.json";
     manifestIndexFile = configDir + "manifests.json";
     staleArchiveFile  = configDir + "manifests_stale.json";
+
+    // Derive short hostname for host-specific settings overlay.
+    hostname         = getShortHostname();
+    hostSettingsFile = configDir + "pathmux_" + hostname + ".json";
+
     loadSettings();
 }
 
@@ -108,13 +113,17 @@ void ConfigManager::loadSettings() {
         settings.kml.showKnownLocations = k.value("showKnownLocations", settings.kml.showKnownLocations);
     }
 
+    // Apply host-specific overlay — host file wins on any key it contains.
+    loadHostOverlay();
+
     // INCOMPLETE if export dir is not set — key field for write operations
+    // (host overlay may have provided it, so evaluate after overlay)
     if (settings.defaultExportDir.empty())
         cfgState = ConfigState::INCOMPLETE;
     else
         cfgState = ConfigState::VALID;
 
-    // Open logger based on loaded log level
+    // Open logger based on loaded log level (host overlay may have set logLevel)
     LogLevel ll = LogLevel::OFF;
     if (settings.logLevel == "normal") ll = LogLevel::NORMAL;
     else if (settings.logLevel == "debug") ll = LogLevel::DEBUG;
@@ -177,6 +186,84 @@ void ConfigManager::saveSettings() {
         cfgState = ConfigState::INCOMPLETE;
     else
         cfgState = ConfigState::VALID;
+}
+
+// ---------------------------------------------------------------------------
+// Host overlay — pathmux_<hostname>.json
+// ---------------------------------------------------------------------------
+
+void ConfigManager::loadHostOverlay() {
+    std::ifstream ifs(hostSettingsFile);
+    if (!ifs.is_open()) return;   // no host file — fine, use base settings
+
+    json j;
+    try {
+        ifs >> j;
+    } catch (const json::parse_error&) {
+        std::cerr << "Warning: " << hostSettingsFile
+                  << " is corrupt — host overlay skipped.\n";
+        return;
+    }
+    if (j.empty()) return;
+
+    // Only override fields that are actually present in the host file.
+    if (j.contains("exiftoolPath"))    settings.exiftoolPath    = j["exiftoolPath"];
+    if (j.contains("exiftoolOptions")) settings.exiftoolOptions = j["exiftoolOptions"];
+    if (j.contains("ffmpegPath"))      settings.ffmpegPath      = j["ffmpegPath"];
+    if (j.contains("defaultExportDir")) settings.defaultExportDir = j["defaultExportDir"];
+    if (j.contains("tmpDir"))          settings.tmpDir          = j["tmpDir"];
+    if (j.contains("logLevel"))        settings.logLevel        = j["logLevel"];
+
+    if (j.contains("encode") && j["encode"].is_object()) {
+        const auto& e = j["encode"];
+        settings.encode.preset          = e.value("preset",           settings.encode.preset);
+        settings.encode.hwDevice        = e.value("hwDevice",         settings.encode.hwDevice);
+        settings.encode.hwDeviceType    = e.value("hwDeviceType",     settings.encode.hwDeviceType);
+        settings.encode.normEncoder     = e.value("normEncoder",      settings.encode.normEncoder);
+        settings.encode.collageEncoder  = e.value("collageEncoder",   settings.encode.collageEncoder);
+        settings.encode.downEncoder     = e.value("downEncoder",      settings.encode.downEncoder);
+        settings.encode.pixFmt          = e.value("pixFmt",           settings.encode.pixFmt);
+        settings.encode.normQuality     = e.value("normQuality",      settings.encode.normQuality);
+        settings.encode.collageQuality  = e.value("collageQuality",   settings.encode.collageQuality);
+        settings.encode.downQuality     = e.value("downQuality",      settings.encode.downQuality);
+        settings.encode.extraNormArgs   = e.value("extraNormArgs",    settings.encode.extraNormArgs);
+        settings.encode.extraCollageArgs= e.value("extraCollageArgs", settings.encode.extraCollageArgs);
+        settings.encode.extraDownArgs   = e.value("extraDownArgs",    settings.encode.extraDownArgs);
+    }
+}
+
+void ConfigManager::saveHostSettings() {
+    json j;
+    j["exiftoolPath"]     = settings.exiftoolPath;
+    j["exiftoolOptions"]  = settings.exiftoolOptions;
+    j["ffmpegPath"]       = settings.ffmpegPath;
+    j["defaultExportDir"] = settings.defaultExportDir;
+    j["tmpDir"]           = settings.tmpDir;
+    j["logLevel"]         = settings.logLevel;
+
+    json e;
+    e["preset"]            = settings.encode.preset;
+    e["hwDevice"]          = settings.encode.hwDevice;
+    e["hwDeviceType"]      = settings.encode.hwDeviceType;
+    e["normEncoder"]       = settings.encode.normEncoder;
+    e["collageEncoder"]    = settings.encode.collageEncoder;
+    e["downEncoder"]       = settings.encode.downEncoder;
+    e["pixFmt"]            = settings.encode.pixFmt;
+    e["normQuality"]       = settings.encode.normQuality;
+    e["collageQuality"]    = settings.encode.collageQuality;
+    e["downQuality"]       = settings.encode.downQuality;
+    e["extraNormArgs"]     = settings.encode.extraNormArgs;
+    e["extraCollageArgs"]  = settings.encode.extraCollageArgs;
+    e["extraDownArgs"]     = settings.encode.extraDownArgs;
+    j["encode"]            = e;
+
+    ensureConfigDir();
+    std::ofstream ofs(hostSettingsFile);
+    if (!ofs.is_open()) {
+        std::cerr << "Warning: Could not write " << hostSettingsFile << "\n";
+        return;
+    }
+    ofs << j.dump(2) << "\n";
 }
 
 void ConfigManager::setGapThreshold(int seconds) {
@@ -1289,4 +1376,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00084
+// SN: 00087

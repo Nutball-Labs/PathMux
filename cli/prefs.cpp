@@ -229,6 +229,7 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
 
         std::cout << "\n";
         UI::printTitle(title);
+        UI::printLine("  Encoder settings are host-specific. Saved to host file, not base prefs.");
         UI::printLine();
         UI::printLine("  Active preset: " + working.encode.preset
                       + "  (use [A] to apply a preset, then customize)");
@@ -271,8 +272,9 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
         }
         if (ch == 'S') {
             config.applySettings(working);
-            config.saveSettings();
-            std::cout << "Encoder settings saved.\n";
+            config.saveHostSettings();
+            std::cout << "Encoder settings saved to: "
+                      << config.getHostSettingsFile() << "\n";
             return true;
         }
 
@@ -366,4 +368,4 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00071
+// SN: 00087

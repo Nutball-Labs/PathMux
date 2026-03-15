@@ -5,6 +5,90 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-15
+
+### Session 1
+**Focus:** Host-specific config overlay; Linux/NVENC collage quality confirmation;
+structured output (`--format`/`--fields`); GCC 14 build time; v0.9.11
+
+**Code Changes (v0.9.11):**
+
+**Host config overlay (`lib/config_manager.cpp/.hpp`, `lib/compat.hpp`):**
+- `getShortHostname()` added to `lib/compat.hpp` — cross-platform, no Winsock init
+  required (Windows: `GetComputerNameA`; POSIX: `gethostname` + strip domain)
+- `ConfigManager` loads `pathmux_<hostname>.json` as an overlay on top of
+  `pathmux.json`. Host fields applied after base load, before cfgState/logger eval.
+  Host-specific: `encode.*`, `ffmpegPath`, `exiftoolPath`, `exiftoolOptions`,
+  `defaultExportDir`, `tmpDir`, `logLevel`. Base-only: all trip/GPS/display prefs.
+- `saveHostSettings()` writes only host-specific fields to host file
+- `EncoderPrefsEditor` redirected to save via `saveHostSettings()` — encoder settings
+  are now always host-specific
+
+**`--hostprefs` menu (`cli/host_prefs.cpp/.hpp`):**
+- New `HostPrefsEditor` class; interactive menu titled "Host Preferences (<hostname>)"
+- Items: [A] FFmpeg path, [B] ExifTool path, [C] ExifTool options, [D] Default output
+  dir, [E] Temp dir, [F] Log level, [G] Encoder settings (launches EncoderPrefsEditor)
+- [S] saves via `config.applySettings(working); config.saveHostSettings()`
+
+**Structured output (`lib/trip_format.hpp`, `cli/find_trips.cpp`, `tools/pm_ls.cpp`):**
+- New `lib/trip_format.hpp` (header-only): `tripFieldVal`, `csvQuote`, `writeTripsCSV`,
+  `writeTripsXML`, `defaultTripFields` — shared by both pathmux and pm_ls
+- `pathmux -T --format=csv` / `--format=xml` / `--format=json` — `--format` is a
+  modifier to `-T`, not standalone (pathmux alone does nothing)
+- `pm_ls --format=csv` / `--format=xml` / `--format=json [MID] [MID:TID]` — scoped
+  output; `--format=json` aliased to `--json`
+- `--fields=<f1,f2,...>` selects output columns for csv/xml
+
+**Video build fix (`cli/video_build.cpp`):**
+- `buildCollage1080()` downscale: replaced `scale_cuda=1920:1080` (not universally
+  compiled into ffmpeg) with CPU `scale=1920:1080,format=...,hwupload=extra_hw_frames=64`
+
+**Build system (`CMakeLists.txt`):**
+- ccache auto-detected via `find_program`, wired as `CMAKE_CXX_COMPILER_LAUNCHER`
+- `json.hpp` added as PCH for `pathmuxlib` — GCC 14 template analysis amortized
+
+**Discovery:**
+- GCC 14 (Alma 10, nutball1) is 5–10× slower than GCC 11 (Alma 9.7, penny) on
+  nlohmann/json template instantiation — not a code issue, compiler regression.
+  ccache + PCH reduces subsequent builds to seconds.
+- ccache is keyed on source content + compiler binary hash — GCC 11 and GCC 14 cache
+  entries never collide. Each machine primes its own entries on first build.
+
+**Linux/NVENC Collage Test (nutball1 / RTX5060 / Alma 10):**
+- 4K collage confirmed clean — direct Roku Ultra play, no transcode trigger
+- Visual quality confirmed via frame grab at 3:36 (Gulfport MS, Handsboro area,
+  Magnolia St & Lorraine-Cowan Rd). 4-camera layout, GPS overlay visible.
+- constqp QP 24: ~44 Mbps — chosen as default. QP 20/22/24 visually indistinguishable
+  on 85" 4K display; QP 15 (~111 Mbps) triggered Plex transcode (Roku limit).
+- Collage encode speed: ~1.89× realtime on 12-minute trip (4K output, GPU encode)
+- concat stage ran at ~80× (fast copy) as expected
+
+**Design Decisions:**
+- `--format` in `pathmux` is a modifier, not standalone — pathmux does nothing without
+  a mode flag; user correctly caught this during review
+- `useImperial` removed from `formatDump()` signature — users choose `distance_km` or
+  `distance_mi` explicitly; no ambiguity
+- Host overlay "base-only" list is intentional — trip detection params, display units,
+  and GPS settings should be consistent across machines working the same manifests
+
+**Files Changed:**
+`lib/compat.hpp`, `lib/config_manager.hpp`, `lib/config_manager.cpp`,
+`lib/trip_format.hpp` (new), `lib/version.hpp`,
+`cli/host_prefs.hpp` (new), `cli/host_prefs.cpp` (new),
+`cli/find_trips.hpp`, `cli/find_trips.cpp`,
+`cli/main.cpp`, `cli/prefs.cpp`, `cli/video_build.cpp`,
+`tools/pm_ls.cpp`, `CMakeLists.txt`
+
+**Pending (carry forward):**
+- CameraProfile/StorageFormat extraction from `trip_detection.cpp` — next gate item
+- `pm_probe --wizard` — trial scan deferred until CameraProfile layer exists
+- Default encoder + HW profile system (CPU-safe default; community contribution model)
+- README public-audience rewrite + LICENSE file + packaging audit
+- Man page update for v0.9.11 (`--hostprefs`, `--format`, `--fields`)
+- USB stick field test kit
+
+---
+
 ## 2026-03-07
 
 ### Session 1
@@ -646,4 +730,4 @@ the SRoute app mockup build on the Windows machine.
 
 ---
 
-<!-- SN: 00082 -->
+<!-- SN: 00087 -->
