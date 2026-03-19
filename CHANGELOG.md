@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [0.9.11a / SN: 00087] - 2026-03-19
+### Added
+- **ffmpeg build progress tracking** (`cli/video_build.cpp/.hpp`): live `\r`-overwritten
+  progress bar with ETA displayed during per-camera concat and collage encode steps.
+  Uses ffmpeg's `-progress <named_pipe>` for machine-readable `out_time_us=`/`speed=`
+  updates. Format: `  concat:Front      [=======>     ] 34%  ETA: 0:08`.
+  Stage labels: `concat:<camera>`, `collage:4K`, `collage:1080p`.
+- **`VideoBuilder::progressCallback`** — `std::function<void(label, pct, etaSecs)>`
+  member. Null = draw to terminal. Qt layer sets this to route updates to per-stage
+  progress bar widgets (Phase 2 hook). Stage labels are now established as the
+  binding key for Qt progress bars.
+- **`runFfmpegWithProgress()`** falls back to `runFfmpeg()` for unknown duration,
+  debug mode, Windows, or pipe creation failure — no regression on any existing path.
+
+---
+
 ## [0.9.11 / SN: 00087] - 2026-03-15
 ### Added
 - **Host-specific config overlay** (`--hostprefs`): per-hostname settings file

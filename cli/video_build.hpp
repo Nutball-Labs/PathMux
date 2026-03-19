@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <functional>
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
 
@@ -107,6 +108,12 @@ class VideoBuilder {
 public:
     void run(ConfigManager& config);
 
+    // Optional progress callback — set by Qt layer to route updates to a
+    // progress bar widget instead of the terminal.
+    // Args: stage label (e.g. "collage:4K"), percent complete (0–100), ETA seconds.
+    // Null (default) = draw to terminal.
+    std::function<void(const std::string& label, int pct, int etaSecs)> progressCallback;
+
     // Called from find_trips interactive browser.
     VideoOptions configureOptions(ConfigManager& config, Trip& trip);
     void buildTrip(Trip& trip, const VideoOptions& opts);
@@ -182,6 +189,15 @@ private:
     // Returns true if ffmpeg exits 0.
     bool runFfmpeg(const std::string& cmd);
 
+    // Run an ffmpeg command with a live progress bar.
+    // label            — stage name shown in bar / passed to progressCallback
+    // totalDurationSecs — expected output duration; used for % and ETA.
+    // Falls back to runFfmpeg() if duration is unknown, debug mode is active,
+    // or the platform doesn't support named pipes.
+    bool runFfmpegWithProgress(const std::string& cmd,
+                               const std::string& label,
+                               int totalDurationSecs);
+
     // Interactive trip picker — shows lastPath trips, offers manifest switch.
     // Returns selected trip index or -1 to abort.
     int pickTrip(const std::vector<Trip>& trips,
@@ -194,4 +210,4 @@ private:
 };
 
 #endif
-// SN: 00085
+// SN: 00087

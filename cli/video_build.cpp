@@ -3,7 +3,11 @@
 #include "compat.hpp"
 #ifndef _WIN32
 #  include <sys/wait.h>
+#  include <sys/stat.h>
+#  include <unistd.h>
+#  include <fcntl.h>
 #endif
+#include <functional>
 #include "ui_helpers.hpp"
 #include "version.hpp"
 #include "json.hpp"
@@ -201,6 +205,203 @@ bool VideoBuilder::runFfmpeg(const std::string& cmd) {
     return ret == 0;
 }
 
+// ---------------------------------------------------------------------------
+// ffprobeFromFfmpeg — derive ffprobe path from ffmpeg path.
+// Replaces trailing "ffmpeg" with "ffprobe".  If the path doesn't end in
+// "ffmpeg" (e.g. bare "ffmpeg" command), falls back to "ffprobe".
+// ---------------------------------------------------------------------------
+static std::string ffprobeFromFfmpeg(const std::string& ffmpegPath) {
+    const std::string needle = "ffmpeg";
+    if (ffmpegPath.size() >= needle.size() &&
+        ffmpegPath.substr(ffmpegPath.size() - needle.size()) == needle)
+        return ffmpegPath.substr(0, ffmpegPath.size() - needle.size()) + "ffprobe";
+    return "ffprobe";
+}
+
+// ---------------------------------------------------------------------------
+// drawProgressLine — overwrite current terminal line with a progress bar.
+// Format:  <label padded to 16>  [====>        ] NNN%  ETA: M:SS
+// Called repeatedly with \r; caller prints \n when done.
+// ---------------------------------------------------------------------------
+static void drawProgressLine(const std::string& label,
+                              int64_t doneUs, int64_t totalUs, double speed) {
+    double pct    = (totalUs > 0) ? std::min(1.0, (double)doneUs / (double)totalUs) : 0.0;
+    int    pctInt = (int)(pct * 100);
+
+    int etaSecs = 0;
+    if (speed > 0.001 && pct < 0.999 && pct > 0.0) {
+        double etaD = (double)(totalUs - doneUs) / (speed * 1000000.0);
+        if (etaD >= 0.0 && etaD < 86400.0) etaSecs = (int)etaD;
+    }
+
+    const int W = 30;
+    int filled = (int)(pct * W);
+    std::string bar;
+    bar.reserve(W);
+    for (int i = 0; i < W; ++i) {
+        if      (i < filled)              bar += '=';
+        else if (i == filled && pctInt < 100) bar += '>';
+        else                              bar += ' ';
+    }
+
+    char etaBuf[16];
+    std::snprintf(etaBuf, sizeof(etaBuf), "%d:%02d", etaSecs / 60, etaSecs % 60);
+
+    // Pad label to 16 chars
+    std::string lbl = label;
+    if (lbl.size() < 16) lbl.append(16 - lbl.size(), ' ');
+    else if (lbl.size() > 16) lbl = lbl.substr(0, 16);
+
+    std::cout << "\r  " << lbl << " [" << bar << "] "
+              << std::setw(3) << pctInt << "%  ETA: " << etaBuf
+              << "   " << std::flush;
+}
+
+// ---------------------------------------------------------------------------
+// runFfmpegWithProgress — run ffmpeg and display a live progress bar.
+//
+// Uses a POSIX named pipe and ffmpeg's -progress option to get machine-
+// readable key=value progress updates.  Parses out_time_us= and speed= to
+// compute percentage and ETA.
+//
+// label         — stage name shown in the bar (e.g. "concat:Front",
+//                 "collage:4K").  Also passed to progressCallback if set.
+// totalDurationSecs — known output duration; used for % and ETA.
+//
+// If progressCallback is set on the VideoBuilder instance, it is called
+// instead of drawing to the terminal — this is the Qt hook.
+//
+// Falls back to runFfmpeg() if:
+//   - totalDurationSecs <= 0 (duration unknown)
+//   - debug logging is active (user wants full ffmpeg output)
+//   - platform is Windows (_WIN32)
+//   - named pipe creation fails
+// ---------------------------------------------------------------------------
+bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
+                                          const std::string& label,
+                                          int totalDurationSecs) {
+#ifdef _WIN32
+    return runFfmpeg(cmd);
+#else
+    if (totalDurationSecs <= 0 || Logger::instance().isDebug())
+        return runFfmpeg(cmd);
+
+    // Create a temporary named pipe for ffmpeg's -progress output
+    char pipePath[64];
+    std::snprintf(pipePath, sizeof(pipePath), "/tmp/pm_progress_XXXXXX");
+    {
+        int fd = mkstemp(pipePath);
+        if (fd < 0) return runFfmpeg(cmd);
+        close(fd);
+        unlink(pipePath);
+        if (mkfifo(pipePath, 0600) != 0) return runFfmpeg(cmd);
+    }
+
+    // Build command: suppress ffmpeg log output, direct progress to pipe
+    std::string fullCmd = cmd;
+    auto pos = fullCmd.find(' ');
+    if (pos != std::string::npos)
+        fullCmd.insert(pos, " -loglevel quiet");
+    fullCmd += " -progress \"";
+    fullCmd += pipePath;
+    fullCmd += "\"";
+
+    LOG_NORMAL("ffmpeg: " + fullCmd);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        unlink(pipePath);
+        return runFfmpeg(cmd);
+    }
+
+    if (pid == 0) {
+        // Child: exec ffmpeg via shell
+        execl("/bin/sh", "sh", "-c", fullCmd.c_str(), (char*)nullptr);
+        _exit(127);
+    }
+
+    // Parent: open named pipe for reading immediately (O_NONBLOCK = no
+    // blocking even if ffmpeg hasn't opened the write end yet)
+    int pipeFd = open(pipePath, O_RDONLY | O_NONBLOCK);
+    if (pipeFd < 0) {
+        int st; waitpid(pid, &st, 0);
+        unlink(pipePath);
+        return WEXITSTATUS(st) == 0;
+    }
+
+    int64_t totalUs   = (int64_t)totalDurationSecs * 1000000LL;
+    int64_t outTimeUs = 0;
+    double  speed     = 1.0;
+    bool    childDone = false;
+    int     childSt   = 0;
+    std::string lineBuf;
+
+    while (!childDone) {
+        char tmp[4096];
+        ssize_t n = read(pipeFd, tmp, sizeof(tmp) - 1);
+
+        if (n > 0) {
+            tmp[n] = '\0';
+            lineBuf += tmp;
+            // Process all complete key=value lines
+            size_t p = 0, q;
+            while ((q = lineBuf.find('\n', p)) != std::string::npos) {
+                std::string line = lineBuf.substr(p, q - p);
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                p = q + 1;
+
+                auto eq = line.find('=');
+                if (eq == std::string::npos) continue;
+                std::string key = line.substr(0, eq);
+                std::string val = line.substr(eq + 1);
+
+                if (key == "out_time_us") {
+                    try { outTimeUs = std::stoll(val); } catch (...) {}
+                } else if (key == "speed") {
+                    if (!val.empty() && val.back() == 'x') val.pop_back();
+                    try { speed = std::stod(val); } catch (...) {}
+                } else if (key == "progress" && val == "end") {
+                    childDone = true;
+                }
+
+                // Redraw after each parsed line
+                if (progressCallback)
+                    progressCallback(label,
+                                     (int)(std::min(1.0, (double)outTimeUs / totalUs) * 100),
+                                     speed > 0.001 ? (int)((totalUs - outTimeUs) / (speed * 1000000.0)) : 0);
+                else
+                    drawProgressLine(label, outTimeUs, totalUs, speed);
+            }
+            lineBuf = lineBuf.substr(p);
+
+        } else if (n == 0) {
+            // EOF — ffmpeg closed the write end
+            childDone = true;
+        } else {
+            // EAGAIN — no data yet; check if child already exited
+            int wret = waitpid(pid, &childSt, WNOHANG);
+            if (wret == pid) childDone = true;
+            else             usleep(50000);  // 50 ms
+        }
+    }
+
+    // Final: show 100% then newline
+    if (!progressCallback)
+        drawProgressLine(label, totalUs, totalUs, speed);
+    else
+        progressCallback(label, 100, 0);
+    std::cout << "\n";
+
+    // Wait for child to fully exit if not already reaped
+    waitpid(pid, &childSt, 0);
+    close(pipeFd);
+    unlink(pipePath);
+
+    LOG_CMD(fullCmd, WEXITSTATUS(childSt), "");
+    return WEXITSTATUS(childSt) == 0;
+#endif
+}
+
 std::string VideoBuilder::resolveOutputDir(const VideoOptions& opts) {
     if (!opts.outputDir.empty())       return opts.outputDir;
     if (!opts.ffmpegPath.empty()) {
@@ -328,7 +529,9 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
         << " \"" << outFile << "\"";
 
     std::cout << "\nBuilding " << camera << " file: " << outFile << "\n";
-    bool ok = runFfmpeg(cmd.str());
+    int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
+                                                 : trip.segDetectedDuration;
+    bool ok = runFfmpegWithProgress(cmd.str(), "concat:" + camera, totalSecs);
 
     // Clean up temp file
     fs::remove(listFile);
@@ -471,7 +674,9 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         << " \"" << outFile << "\"";
 
     std::cout << "\nBuilding 4K collage: " << outFile << "\n";
-    bool ok = runFfmpeg(cmd.str());
+    int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
+                                                 : trip.segDetectedDuration;
+    bool ok = runFfmpegWithProgress(cmd.str(), "collage:4K", totalSecs);
 
     if (ok) {
         // Clean up concat lists
@@ -524,7 +729,8 @@ bool VideoBuilder::buildCollage1080(const std::string& source4K,
         << " \"" << outputPath << "\"";
 
     std::cout << "\nBuilding 1080p collage: " << outputPath << "\n";
-    bool ok = runFfmpeg(cmd.str());
+    double srcDur = getFileDuration(source4K, ffprobeFromFfmpeg(opts.ffmpegPath));
+    bool ok = runFfmpegWithProgress(cmd.str(), "collage:1080p", (int)srcDur);
     if (ok) std::cout << "  Done: " << outputPath << "\n";
     else    std::cerr << "  ffmpeg failed building 1080p collage.\n";
     return ok;
@@ -634,7 +840,9 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         << " \"" << outFile << "\"";
 
     std::cout << "\nBuilding 1080p collage (direct): " << outFile << "\n";
-    bool ok = runFfmpeg(cmd.str());
+    int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
+                                                 : trip.segDetectedDuration;
+    bool ok = runFfmpegWithProgress(cmd.str(), "collage:1080p", totalSecs);
 
     if (ok) {
         if (!listF.empty()) fs::remove(listF);

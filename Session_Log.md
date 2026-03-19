@@ -5,6 +5,43 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-19
+
+### Session 1
+**Focus:** ffmpeg build progress tracking — live progress bar with ETA; Qt callback hook
+
+**Code Changes (v0.9.11a):**
+
+**`cli/video_build.cpp` / `cli/video_build.hpp`:**
+- `runFfmpegWithProgress(cmd, label, totalDurationSecs)` — new method.  Uses a
+  POSIX named pipe (`mkfifo`) and ffmpeg's `-progress <pipe>` to get machine-readable
+  `out_time_us=` / `speed=` key-value updates. Parses these into a `\r`-overwritten
+  progress bar: `  concat:Front      [=======>     ] 34%  ETA: 0:08`
+- `drawProgressLine()` static helper — renders the bar; label padded to 16 chars,
+  30-char fill bar, `NNN%  ETA: M:SS`.
+- `ffprobeFromFfmpeg()` static helper — derives `ffprobe` path from `ffmpegPath` by
+  replacing trailing `"ffmpeg"` with `"ffprobe"`. Used in `buildCollage1080`.
+- `progressCallback` public member (`std::function<void(label, pct, etaSecs)>`) —
+  Phase 2 Qt hook. When set, called instead of printing to terminal. Qt sets this to
+  route updates to per-stage progress bar widgets.
+- Four callers upgraded: `buildCameraFile` (`concat:<camera>`), `buildCollage4K`
+  (`collage:4K`), `buildCollage1080` (`collage:1080p`), `buildCollage1080Direct`
+  (`collage:1080p`). Internal steps (`buildPaddedInput`, audio extract) keep
+  `runFfmpeg`.
+- Falls back to `runFfmpeg` for: unknown duration, debug mode, Windows, pipe
+  creation failure.
+- Trip duration source: `durationFFProbed` if available, else `segDetectedDuration`.
+  For 1080p-from-4K: `getFileDuration(source4K)` called before encode.
+
+**Design notes:**
+- Stage labels (`concat:Front`, `collage:4K`, `collage:1080p`) are the Phase 2
+  blocker resolved: Qt can bind one progress bar per label.
+- Concat bars zip fast (stream copy); collage bars move slowly (encode) — exactly
+  the visual behaviour envisioned.
+- Windows support deferred; named pipes work differently on Win32.
+
+---
+
 ## 2026-03-15
 
 ### Session 1
