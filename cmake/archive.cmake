@@ -55,3 +55,5 @@ if(NOT TAR_RESULT EQUAL 0)
 endif()
 
 message(STATUS "Archived source to archive/${VERSION}.tar")
+
+# SN: 00087

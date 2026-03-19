@@ -15,13 +15,15 @@ file(GLOB CLI_HPP   "${SRC}/cli/*.hpp")
 file(GLOB TOOLS_CPP "${SRC}/tools/*.cpp")
 file(GLOB TOOLS_HPP "${SRC}/tools/*.hpp")
 
-file(GLOB MD_FILES "${SRC}/*.md")
+file(GLOB MD_FILES    "${SRC}/*.md")
+file(GLOB CMAKE_FILES "${SRC}/cmake/*.cmake")
 
 set(ALL_SRC
     ${LIB_CPP} ${LIB_HPP}
     ${CLI_CPP} ${CLI_HPP}
     ${TOOLS_CPP} ${TOOLS_HPP}
     ${MD_FILES}
+    ${CMAKE_FILES}
 )
 
 # Non-code files that also carry SN comments
@@ -39,18 +41,25 @@ file(WRITE "${OUTFILE}" "--- PathMux SN Audit: ${NOW} ---\n")
 foreach(F ${ALL_SRC})
     get_filename_component(FNAME "${F}" NAME)
     file(STRINGS "${F}" LINES)
+    # Use only the last SN match — avoids false hits from doc examples in .md files
+    set(FOUND_SN "")
     foreach(LINE ${LINES})
         if(LINE MATCHES "^(//|#|<!--) SN: ([0-9]+)")
-            # Pad filename to 35 chars
-            string(LENGTH "${FNAME}" FLEN)
-            set(SPACES "")
-            if(FLEN LESS 35)
-                math(EXPR PADLEN "35 - ${FLEN}")
-                string(REPEAT " " ${PADLEN} SPACES)
-            endif()
-            file(APPEND "${OUTFILE}" "${FNAME}${SPACES}${CMAKE_MATCH_2}\n")
+            set(FOUND_SN "${CMAKE_MATCH_2}")
         endif()
     endforeach()
+    if(NOT FOUND_SN STREQUAL "")
+        # Pad filename to 35 chars
+        string(LENGTH "${FNAME}" FLEN)
+        set(SPACES "")
+        if(FLEN LESS 35)
+            math(EXPR PADLEN "35 - ${FLEN}")
+            string(REPEAT " " ${PADLEN} SPACES)
+        endif()
+        file(APPEND "${OUTFILE}" "${FNAME}${SPACES}${FOUND_SN}\n")
+    endif()
 endforeach()
 
 message(STATUS "SN Audit written to ${OUTFILE}")
+
+# SN: 00087

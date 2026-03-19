@@ -1,4 +1,4 @@
-.TH PATHMUX 1 "March 2026" "v0.9.10" "PathMux Dashcam Explorer Manual"
+.TH PATHMUX 1 "March 2026" "v0.9.11" "PathMux Dashcam Explorer Manual"
 .SH NAME
 pathmux \- Trip manager and video builder for multi-channel dashcam footage
 .SH SYNOPSIS
@@ -67,6 +67,84 @@ Segment paths are relative to each manifest's source path.
 Suitable for piping to
 .BR jq (1)
 or scripting.
+.TP
+.BI \-T\ \-\-format= fmt
+Structured output modifier.  Used together with
+.BR \-T .
+Valid values for
+.I fmt
+are
+.BR json ,
+.BR csv ,
+and
+.BR xml .
+.RS
+.TP
+.B json
+Equivalent to
+.BR \-\-jsondump ;
+the
+.B \-\-fields
+option is ignored.
+.TP
+.B csv
+One record per trip, comma-separated.  A header row is emitted first.
+Use
+.B \-\-fields
+to select which columns appear.  Default (no
+.BR \-\-fields )
+includes all available fields.
+.TP
+.B xml
+One
+.B <trip>
+element per trip inside a
+.B <trips>
+root.  Use
+.B \-\-fields
+to select which child elements are emitted.
+.RE
+.TP
+.BI \-\-fields= f1,f2,...
+Comma-separated list of fields to include in
+.B csv
+or
+.B xml
+output.  Ignored for
+.BR json .
+Available field names:
+.RS
+.TP
+.B manifest_id\fR,\fB trip_id
+Manifest and trip identifiers.
+.TP
+.B address\fR,\fB date\fR,\fB start_time\fR,\fB start_epoch
+Human-readable address (if geocoded), calendar date, wall-clock start
+time, and Unix epoch of trip start.
+.TP
+.B duration\fR,\fB duration_seconds
+Trip length as a formatted string and as raw seconds.
+.TP
+.B segment_count\fR,\fB note
+Number of video segments; optional free-text note attached to the trip.
+.TP
+.B start_lat\fR,\fB start_lon\fR,\fB end_lat\fR,\fB end_lon
+Start and end coordinates in decimal degrees (requires GPS extraction).
+.TP
+.B distance_km\fR,\fB distance_mi
+Great-circle distance between start and end coordinates.
+.TP
+.B gps_lock_seconds
+Seconds elapsed from segment start until the first GPS fix with a
+non-zero position.  Requires GPS extraction; zero if not yet run.
+.TP
+.B gps_track_status
+One of
+.BR none ,
+.BR partial ,
+or
+.BR complete .
+.RE
 .TP
 .B \-I ", " \-\-interactive
 Unified interactive browser.  Opens at the manifest list home screen.
@@ -146,6 +224,17 @@ Requires ExifTool (see
 .B \-P ", " \-\-prefs
 Launch the interactive preferences editor.  Settings are saved to
 .IR ~/.config/pathmux/pathmux.json .
+.TP
+.B \-\-hostprefs
+Launch the host-specific preferences editor.  Settings here are saved to
+.BI ~/.config/pathmux/pathmux_ hostname .json
+and are applied as an overlay on top of the base preferences.  They
+affect only the current machine.  Use this to configure encoder paths,
+hardware acceleration, output directories, and log level per host when
+the same footage library is shared across multiple machines.
+Available settings: FFmpeg path, ExifTool path, ExifTool options,
+default output directory, temp directory, log level, and encoder
+settings.
 .TP
 .B \-\-encoderprefs
 Launch the interactive encoder preferences editor.  Configure hardware
@@ -434,7 +523,13 @@ in tool output and future batch operations.
 .SH FILES
 .TP
 .I ~/.config/pathmux/pathmux.json
-Application settings.
+Application settings (base preferences, all hosts).
+.TP
+.BI ~/.config/pathmux/pathmux_ hostname .json
+Host-specific settings overlay written by
+.BR \-\-hostprefs .
+Merged on top of the base preferences at startup; only the current
+machine's file is loaded.
 .TP
 .I ~/.config/pathmux/manifests.json
 Manifest index — maps each scanned footage path to its two-character ID.
@@ -513,5 +608,5 @@ issue on GitHub \(em no reformatting needed.
 .BR pm_probe (1),
 .BR pm_tripdebug (1)
 .SH AUTHOR
-Developed by Steve Berg, 2026.
-.\" SN: 00081
+Developed by Stephen Berg, 2026.
+.\" SN: 00087

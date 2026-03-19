@@ -92,7 +92,10 @@ bottom of the file:
   bump unchanged files
 - Use `^// SN:` and `^# SN:` grep anchors to find/replace SNs and avoid
   false matches in comments or documentation
-- The `make sn-audit` target collects all SNs into `sn_audit.txt`
+- Run `cmake --build build-linux --target sn-audit` to regenerate `sn_audit.txt`
+  (build dir is `build-linux` — NOT `build`)
+- `sn_audit.cmake` uses **last-match-wins** per file — intentional, prevents doc
+  examples in CLAUDE.md from generating false duplicate entries. Do not change this.
 
 **Example workflow:**
 - Working on a bug fix: change the files, bump their SN to current HWM
