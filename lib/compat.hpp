@@ -4,6 +4,7 @@
 #include <string>
 #include <ctime>
 #ifdef _WIN32
+#  define NOMINMAX        // prevent windows.h from defining min/max macros
 #  include <windows.h>   // GetComputerNameA — no Winsock init required
 #else
 #  include <unistd.h>    // gethostname
@@ -37,6 +38,11 @@
 inline struct tm* localtime_r(const time_t* timep, struct tm* result) {
     localtime_s(result, timep);   // MSVC: reversed params vs POSIX
     return result;
+}
+
+// timegm — POSIX/GNU extension not available on MSVC; _mkgmtime is equivalent.
+inline time_t timegm(struct tm* t) {
+    return _mkgmtime(t);
 }
 #endif
 
