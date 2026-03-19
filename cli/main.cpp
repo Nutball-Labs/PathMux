@@ -71,15 +71,6 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) { printUsage(); return 1; }
 
-    // --- Config state warning — non-blocking, fires on every invocation ---
-    if (config.configState() == ConfigState::FIRST_RUN) {
-        std::cerr << "\n⚠  PathMux: No configuration found. Running with defaults.\n"
-                  << "   Use --prefs to configure before writing any files.\n\n";
-    } else if (config.configState() == ConfigState::INCOMPLETE) {
-        std::cerr << "\n⚠  PathMux: Configuration incomplete (export directory not set).\n"
-                  << "   Use --prefs to complete setup before writing any files.\n\n";
-    }
-
     // --- Short-circuit for flags that need no manifest state ---
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -87,6 +78,15 @@ int main(int argc, char* argv[]) {
         if (arg == "-v" || arg == "--version") {
             std::cout << APP_NAME << " v" << APP_VERSION << "\n"; return 0;
         }
+    }
+
+    // --- Config state warning — non-blocking, fires on every invocation ---
+    if (config.configState() == ConfigState::FIRST_RUN) {
+        std::cerr << "\n[!] PathMux: No configuration found. Running with defaults.\n"
+                  << "   Use --prefs to configure before writing any files.\n\n";
+    } else if (config.configState() == ConfigState::INCOMPLETE) {
+        std::cerr << "\n[!] PathMux: Configuration incomplete (export directory not set).\n"
+                  << "   Use --prefs to complete setup before writing any files.\n\n";
     }
 
     // --- Non-interactive read-only flags: bypass validation prompt ---

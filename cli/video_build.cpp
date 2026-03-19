@@ -211,6 +211,11 @@ bool VideoBuilder::runFfmpeg(const std::string& cmd) {
 // "ffmpeg" (e.g. bare "ffmpeg" command), falls back to "ffprobe".
 // ---------------------------------------------------------------------------
 static std::string ffprobeFromFfmpeg(const std::string& ffmpegPath) {
+    // Handle Windows .exe suffix before the bare check.
+    const std::string needleExe = "ffmpeg.exe";
+    if (ffmpegPath.size() >= needleExe.size() &&
+        ffmpegPath.substr(ffmpegPath.size() - needleExe.size()) == needleExe)
+        return ffmpegPath.substr(0, ffmpegPath.size() - needleExe.size()) + "ffprobe.exe";
     const std::string needle = "ffmpeg";
     if (ffmpegPath.size() >= needle.size() &&
         ffmpegPath.substr(ffmpegPath.size() - needle.size()) == needle)
@@ -285,7 +290,111 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
                                           const std::string& label,
                                           int totalDurationSecs) {
 #ifdef _WIN32
-    return runFfmpeg(cmd);
+    if (totalDurationSecs <= 0 || Logger::instance().isDebug())
+        return runFfmpeg(cmd);
+
+    // Build a unique temp file path for -progress output.
+    // GetTempPath returns a path with trailing backslash.
+    char tempDir[MAX_PATH] = {};
+    GetTempPathA(MAX_PATH, tempDir);
+    std::string progressPath = std::string(tempDir)
+        + "pm_progress_" + std::to_string(GetCurrentProcessId()) + ".txt";
+
+    // Build command: quiet log level, direct -progress to temp file.
+    std::string fullCmd = cmd;
+    {
+        auto pos = fullCmd.find(' ');
+        if (pos != std::string::npos)
+            fullCmd.insert(pos, " -loglevel quiet");
+    }
+    fullCmd += " -progress \"" + progressPath + "\"";
+
+    LOG_NORMAL("ffmpeg: " + fullCmd);
+
+    // Launch via cmd.exe /c so shell quoting behaves the same as system().
+    std::string shellCmd = std::string("cmd.exe /c ") + fullCmd;
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessA(nullptr, shellCmd.data(), nullptr, nullptr,
+                        FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        DeleteFileA(progressPath.c_str());
+        return runFfmpeg(cmd);
+    }
+
+    int64_t totalUs   = (int64_t)totalDurationSecs * 1000000LL;
+    int64_t outTimeUs = 0;
+    double  speed     = 1.0;
+    bool    done      = false;
+    std::ifstream pf;
+    std::streampos readPos = 0;
+
+    while (!done) {
+        // Wait up to 50ms for process exit; this also throttles our poll rate.
+        bool exited = (WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0);
+
+        // Open progress file on first appearance.
+        if (!pf.is_open()) pf.open(progressPath);
+
+        if (pf.is_open()) {
+            pf.clear();
+            pf.seekg(readPos);
+            std::string line;
+            while (std::getline(pf, line)) {
+                // Partial line at EOF — stop and wait for the next write.
+                if (pf.eof()) break;
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                readPos = pf.tellg();
+
+                auto eq = line.find('=');
+                if (eq == std::string::npos) continue;
+                std::string key = line.substr(0, eq);
+                std::string val = line.substr(eq + 1);
+
+                if (key == "out_time_us") {
+                    try { outTimeUs = std::stoll(val); } catch (...) {}
+                } else if (key == "speed") {
+                    if (!val.empty() && val.back() == 'x') val.pop_back();
+                    try { speed = std::stod(val); } catch (...) {}
+                } else if (key == "progress" && val == "end") {
+                    done = true;
+                }
+
+                if (progressCallback)
+                    progressCallback(label,
+                        (int)(std::min(1.0, (double)outTimeUs / totalUs) * 100),
+                        speed > 0.001 ? (int)((totalUs - outTimeUs) / (speed * 1000000.0)) : 0);
+                else
+                    drawProgressLine(label, outTimeUs, totalUs, speed);
+            }
+        }
+
+        if (exited) done = true;
+    }
+
+    // Final: show 100% then newline.
+    if (!progressCallback)
+        drawProgressLine(label, totalUs, totalUs, speed);
+    else
+        progressCallback(label, 100, 0);
+    std::cout << "\n";
+
+    // Ensure the process has fully exited before reading its exit code.
+    // progress=end is written by ffmpeg before cmd.exe itself exits, so
+    // GetExitCodeProcess without this wait can return STILL_ACTIVE (259).
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    pf.close();
+    DeleteFileA(progressPath.c_str());
+
+    LOG_CMD(fullCmd, (int)exitCode, "");
+    return exitCode == 0;
 #else
     if (totalDurationSecs <= 0 || Logger::instance().isDebug())
         return runFfmpeg(cmd);
