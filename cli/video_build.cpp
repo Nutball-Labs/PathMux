@@ -221,6 +221,7 @@ static std::string ffprobeFromFfmpeg(const std::string& ffmpegPath) {
 // ---------------------------------------------------------------------------
 // drawProgressLine — overwrite current terminal line with a progress bar.
 // Format:  <label padded to 16>  [====>        ] NNN%  ETA: M:SS
+// Bar width is computed dynamically from terminal width (min 20 cols).
 // Called repeatedly with \r; caller prints \n when done.
 // ---------------------------------------------------------------------------
 static void drawProgressLine(const std::string& label,
@@ -234,7 +235,7 @@ static void drawProgressLine(const std::string& label,
         if (etaD >= 0.0 && etaD < 86400.0) etaSecs = (int)etaD;
     }
 
-    const int W = 30;
+    const int W = std::max(20, Pathmux::Platform::getTerminalWidth() - 42);
     int filled = (int)(pct * W);
     std::string bar;
     bar.reserve(W);
@@ -245,7 +246,10 @@ static void drawProgressLine(const std::string& label,
     }
 
     char etaBuf[16];
-    std::snprintf(etaBuf, sizeof(etaBuf), "%d:%02d", etaSecs / 60, etaSecs % 60);
+    if (pctInt >= 100)
+        std::snprintf(etaBuf, sizeof(etaBuf), "Done");
+    else
+        std::snprintf(etaBuf, sizeof(etaBuf), "%d:%02d", etaSecs / 60, etaSecs % 60);
 
     // Pad label to 16 chars
     std::string lbl = label;
@@ -375,10 +379,14 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
             lineBuf = lineBuf.substr(p);
 
         } else if (n == 0) {
-            // EOF — ffmpeg closed the write end
-            childDone = true;
+            // POSIX: read() on a FIFO returns 0 when no writer has the pipe
+            // open yet — NOT necessarily true EOF.  Treat the same as EAGAIN:
+            // check whether the child has exited; if not, keep waiting.
+            int wret = waitpid(pid, &childSt, WNOHANG);
+            if (wret == pid) childDone = true;
+            else             usleep(50000);  // 50 ms — no writer connected yet
         } else {
-            // EAGAIN — no data yet; check if child already exited
+            // EAGAIN — writer connected but no new data; check child status
             int wret = waitpid(pid, &childSt, WNOHANG);
             if (wret == pid) childDone = true;
             else             usleep(50000);  // 50 ms
@@ -528,7 +536,6 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
         << flags
         << " \"" << outFile << "\"";
 
-    std::cout << "\nBuilding " << camera << " file: " << outFile << "\n";
     int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
                                                  : trip.segDetectedDuration;
     bool ok = runFfmpegWithProgress(cmd.str(), "concat:" + camera, totalSecs);
@@ -536,8 +543,7 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
     // Clean up temp file
     fs::remove(listFile);
 
-    if (ok) std::cout << "  Done: " << outFile << "\n";
-    else    std::cerr << "  ffmpeg failed for camera: " << camera << "\n";
+    if (!ok) std::cerr << "  ffmpeg failed for camera: " << camera << "\n";
     return ok;
 }
 
@@ -673,7 +679,6 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         << " -movflags +faststart"
         << " \"" << outFile << "\"";
 
-    std::cout << "\nBuilding 4K collage: " << outFile << "\n";
     int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
                                                  : trip.segDetectedDuration;
     bool ok = runFfmpegWithProgress(cmd.str(), "collage:4K", totalSecs);
@@ -689,7 +694,6 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
             std::error_code ec;
             fs::remove(tmpDir, ec);
         }
-        std::cout << "  Done: " << outFile << "\n";
     } else {
         std::cerr << "  ffmpeg failed building 4K collage.\n";
         std::cerr << "  Temp files preserved in: " << tmpDir << "\n";
@@ -728,11 +732,9 @@ bool VideoBuilder::buildCollage1080(const std::string& source4K,
         << " -movflags +faststart"
         << " \"" << outputPath << "\"";
 
-    std::cout << "\nBuilding 1080p collage: " << outputPath << "\n";
     double srcDur = getFileDuration(source4K, ffprobeFromFfmpeg(opts.ffmpegPath));
     bool ok = runFfmpegWithProgress(cmd.str(), "collage:1080p", (int)srcDur);
-    if (ok) std::cout << "  Done: " << outputPath << "\n";
-    else    std::cerr << "  ffmpeg failed building 1080p collage.\n";
+    if (!ok) std::cerr << "  ffmpeg failed building 1080p collage.\n";
     return ok;
 }
 
@@ -839,7 +841,6 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         << " -movflags +faststart"
         << " \"" << outFile << "\"";
 
-    std::cout << "\nBuilding 1080p collage (direct): " << outFile << "\n";
     int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
                                                  : trip.segDetectedDuration;
     bool ok = runFfmpegWithProgress(cmd.str(), "collage:1080p", totalSecs);
@@ -853,7 +854,6 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
             std::error_code ec;
             fs::remove(tmpDir, ec);
         }
-        std::cout << "  Done: " << outFile << "\n";
     } else {
         std::cerr << "  ffmpeg failed building 1080p collage (direct).\n";
         std::cerr << "  Temp files preserved in: " << tmpDir << "\n";
