@@ -917,6 +917,43 @@ enable multi-brand dashcam support. Performance testing on nutball1 RTX5060.
 - Man page update: --hostprefs, --format, --fields (v0.9.11)
 - README public-audience rewrite + LICENSE file
 
+### Session 2 (Afternoon)
+**Focus:** Wire profile loading from disk into `detectTrips()` callers — completing
+the CameraProfile layer so active profile drives scanning.
+
+**Code Changes (SN 00088):**
+
+**`lib/config_manager.hpp`:**
+- `#include "camera_profile.hpp"` added
+- `activeProfileId = "pruveeo_d90"` added to `AppSettings`
+- `getActiveProfileId()` accessor added
+- `getCameraProfile() const` declared on `ConfigManager`
+
+**`lib/config_manager.cpp`:**
+- `#include "camera_profile.hpp"` added
+- `loadSettings()`: reads `activeProfileId` from pathmux.json
+- `saveSettings()`: writes `activeProfileId` to pathmux.json
+- `getCameraProfile()` implemented: looks up
+  `~/.config/pathmux/profiles/<activeProfileId>.json`, calls
+  `CameraProfile::loadFromFile()` and validates. Falls back to `d90Default()`
+  if file absent or profile fails `isValid()`. Prints warning on invalid profile.
+
+**Callers updated (`CameraProfile::d90Default()` → `config.getCameraProfile()`):**
+- `cli/main.cpp`
+- `cli/find_trips.cpp` (both scan-path call sites)
+- `tools/pm_tripdebug.cpp`
+
+D90 hardcoding fully removed from all call sites. Profile is now read from disk;
+new dashcam support requires only dropping a profile JSON into the profiles directory.
+
+**Build:** Clean rebuild (corrupted .o from earlier partial build). One pre-existing
+warning in pm_gpsinfo.cpp. No errors, no new warnings.
+
+**SN HWM:** Bumped to 00088.
+
+**Next session:**
+- `pm_probe --wizard` trial scan for D90 and Cobra (both cameras in hand)
+
 ---
 
-<!-- SN: 00087 -->
+<!-- SN: 00088 -->
