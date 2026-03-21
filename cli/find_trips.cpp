@@ -98,6 +98,7 @@ void FindTrips::runInteractive(ConfigManager& config) {
             std::cout << "  Scanning: " << path
                       << "  (gap=" << config.getGapThreshold() << "s)\n";
             auto trips = detector.detectTrips(path,
+                                              CameraProfile::d90Default(),
                                               config.getGapThreshold(),
                                               config.getFuzzyWindow(),
                                               config.getFfprobePath(),
@@ -266,11 +267,12 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
             std::cout << "  Re-scanning " << entry.path << " ...\n";
             TripDetection detector;
             auto newTrips = detector.detectTrips(entry.path,
+                                                  CameraProfile::d90Default(),
                                                   config.getGapThreshold(),
                                                   config.getFuzzyWindow(),
                                                   config.getFfprobePath(),
                                                   config.getExiftoolPath(),
-                                              config.getExiftoolOptions());
+                                                  config.getExiftoolOptions());
             if (!newTrips.empty()) {
                 config.saveTripCache(entry.path, newTrips);
                 std::cout << "  Scan complete — " << newTrips.size()
@@ -295,6 +297,7 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
             if (!selected->note.empty())
                 std::cout << "  Note: " << selected->note << "\n";
 
+            config.reloadHostSettings();
             VideoOptions opts = videoBuilder.configureOptions(config, *selected);
             opts.sourcePath = entry.path;
             opts.manifestId = config.getManifestIdForPath(entry.path);
@@ -377,10 +380,10 @@ void FindTrips::showTripDetails(const Trip& trip, bool imperial) {
     std::cout << std::string(45, '-') << "\n";
     for (const auto& seg : trip.segments) {
         std::cout << std::left << std::setw(20) << seg.timestamp << "[ ";
-        std::cout << (seg.front != "-" ? "F  " : "   ");
-        std::cout << (seg.rear  != "-" ? "B  " : "   ");
-        std::cout << (seg.left  != "-" ? "L  " : "   ");
-        std::cout << (seg.right != "-" ? "R " : "  ");
+        std::cout << (camPath(seg,"front") != "-" ? "F  " : "   ");
+        std::cout << (camPath(seg,"rear")  != "-" ? "B  " : "   ");
+        std::cout << (camPath(seg,"left")  != "-" ? "L  " : "   ");
+        std::cout << (camPath(seg,"right") != "-" ? "R "  : "  ");
         std::cout << "]\n";
     }
 }
@@ -493,16 +496,16 @@ void FindTrips::showFullDump(ConfigManager& config) {
 
             for (const auto& seg : t.segments) {
                 // Front filename only (not full path)
-                std::string frontName = pathBasename(seg.front);
+                std::string frontName = pathBasename(camPath(seg, "front"));
                 if (frontName == "-" || frontName.empty())
                     frontName = "(no front)";
 
                 // Camera presence flags
                 std::string flags = "[";
-                flags += (seg.front != "-" && !seg.front.empty()) ? 'F' : '-';
-                flags += (seg.rear  != "-" && !seg.rear.empty())  ? 'B' : '-';
-                flags += (seg.left  != "-" && !seg.left.empty())  ? 'L' : '-';
-                flags += (seg.right != "-" && !seg.right.empty()) ? 'R' : '-';
+                flags += (camPath(seg,"front") != "-") ? 'F' : '-';
+                flags += (camPath(seg,"rear")  != "-") ? 'B' : '-';
+                flags += (camPath(seg,"left")  != "-") ? 'L' : '-';
+                flags += (camPath(seg,"right") != "-") ? 'R' : '-';
                 flags += ']';
 
                 std::cout << "    " << seg.timestamp
@@ -590,15 +593,12 @@ void FindTrips::jsonDump(ConfigManager& config) {
                     return f;
                 };
 
-                std::string fr = rel(seg.front);
-                std::string br = rel(seg.rear);
-                std::string lr = rel(seg.left);
-                std::string rr = rel(seg.right);
-
-                if (!fr.empty()) js["front"] = fr;
-                if (!br.empty()) js["rear"]  = br;
-                if (!lr.empty()) js["left"]  = lr;
-                if (!rr.empty()) js["right"] = rr;
+                json jCams;
+                for (const auto& [camName, path] : seg.cameras) {
+                    std::string r = rel(path);
+                    if (!r.empty()) jCams[camName] = r;
+                }
+                if (!jCams.empty()) js["cameras"] = jCams;
 
                 jt["segments"].push_back(js);
             }

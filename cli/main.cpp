@@ -274,6 +274,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Scanning: " << scanPath
                   << "  (gap=" << config.getGapThreshold() << "s)\n";
         auto trips = detector.detectTrips(scanPath,
+                                          CameraProfile::d90Default(),
                                           config.getGapThreshold(),
                                           config.getFuzzyWindow(),
                                           config.getFfprobePath(),

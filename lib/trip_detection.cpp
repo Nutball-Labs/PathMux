@@ -1,4 +1,5 @@
 #include "trip_detection.hpp"
+#include "camera_profile.hpp"
 #include "compat.hpp"
 #include <filesystem>
 #include <algorithm>
@@ -14,22 +15,30 @@ namespace fs = std::filesystem;
 namespace Pathmux {
 
 namespace {
-    std::time_t stringToTimestamp(const std::string& ts) {
+
+    std::time_t stringToTimestamp(const std::string& ts, const std::string& fmt) {
         std::tm t = {};
         std::istringstream ss(ts);
-        ss >> std::get_time(&t, "%Y%m%d_%H%M%S");
+        ss >> std::get_time(&t, fmt.c_str());
         t.tm_isdst = -1;
         return std::mktime(&t);
     }
 
-    // Return the .jpg sidecar path for a video file, or "" if absent.
-    // Replaces the file extension (e.g. .ts → .jpg).
-    std::string thumbFor(const std::string& videoPath) {
+    // Return the sidecar thumbnail path for a video file, or "" if absent.
+    // method: "replace_ext" — swap extension with ".jpg"
+    //         "ths_sidecar" — replace extension with "_ths.jpg" (Pruveeo D90)
+    //         anything else — no thumbnail
+    std::string thumbFor(const std::string& videoPath, const std::string& method) {
         if (videoPath.empty() || videoPath == "-") return "";
+        if (method == "none") return "";
         auto dot = videoPath.rfind('.');
         if (dot == std::string::npos) return "";
-        std::string jpg = videoPath.substr(0, dot) + ".jpg";
-        return fs::exists(jpg) ? jpg : "";
+        std::string candidate;
+        if (method == "ths_sidecar")
+            candidate = videoPath.substr(0, dot) + "_ths.jpg";
+        else
+            candidate = videoPath.substr(0, dot) + ".jpg";
+        return fs::exists(candidate) ? candidate : "";
     }
 
     // Probe pixel format and color characteristics from first video stream.
@@ -99,19 +108,20 @@ namespace {
     }
 
 
-// Runs exiftool on firstSeg to find the first valid fix (non-zero lat/lon),
-// and on lastSeg to find the last valid fix.  Populates firstLock* fields,
-// startLat/Lon, and endLat/Lon on the trip.
+// Runs exiftool on the primary-camera file of the first and last segments to
+// find the first valid GPS fix (non-zero lat/lon) and the last valid fix.
+// Populates firstLock*, startLat/Lon, and endLat/Lon on the trip.
 // Does nothing if exiftool is unavailable or the segment has no GPS data.
 // ---------------------------------------------------------------------------
 void extractStartEndGps(Trip& trip,
+                        const std::string& primarySlot,
                         const std::string& exiftoolPath,
                         const std::string& exiftoolOptions)
 {
     if (trip.segments.empty()) return;
 
-    const std::string& firstSeg = trip.segments.front().front;
-    const std::string& lastSeg  = trip.segments.back().front;
+    const std::string firstSeg = camPath(trip.segments.front(), primarySlot);
+    const std::string lastSeg  = camPath(trip.segments.back(),  primarySlot);
     if (firstSeg == "-" || firstSeg.empty()) return;
 
     const std::string exifCmd = exiftoolPath + " " + exiftoolOptions + " ";
@@ -148,8 +158,6 @@ void extractStartEndGps(Trip& trip,
                 trip.startLat           = lat;
                 trip.startLon           = lon;
                 foundLock = true;
-                // Don't break — keep reading to allow early exit is fine,
-                // but we need endLat from last segment anyway.
                 break;
             }
             ++recordIdx;
@@ -160,7 +168,7 @@ void extractStartEndGps(Trip& trip,
     // --- Last segment: find last valid fix ---
     // (may be same as first segment on a single-segment trip)
     {
-        const std::string& seg = lastSeg.empty() || lastSeg == "-"
+        const std::string& seg = (lastSeg.empty() || lastSeg == "-")
                                  ? firstSeg : lastSeg;
         std::string cmd = exifCmd + "\"" + seg + "\" " NULL_REDIRECT;
         FILE* pipe = popen(cmd.c_str(), "r");
@@ -194,6 +202,7 @@ void extractStartEndGps(Trip& trip,
 } // anonymous namespace
 
 std::vector<Trip> TripDetection::detectTrips(const std::string& path,
+                                              const CameraProfile& profile,
                                               int gapThresholdSeconds,
                                               int fuzzyWindowSeconds,
                                               const std::string& ffprobePath,
@@ -203,30 +212,48 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     std::vector<Trip> trips;
     if (!fs::exists(path)) return trips;
 
-    std::regex filePattern(R"((\d{8})_(\d{6}).*\.[tT][sS])");
-    std::map<std::time_t, std::string> frontFiles, rearFiles, leftFiles, rightFiles;
+    const std::string primary = profile.primarySlot();
+    if (primary.empty()) return trips;
 
-    auto scanDir = [&](const std::string& sub,
-                       std::map<std::time_t, std::string>& targetMap) {
-        fs::path subDir = fs::path(path) / sub;
-        if (!fs::exists(subDir)) return;
-        for (const auto& entry : fs::directory_iterator(subDir)) {
+    std::regex filePattern(profile.filenameRegex);
+
+    // Build one timestamp->path map per slot.
+    std::map<std::string, std::map<std::time_t, std::string>> slotFiles;
+    for (const auto& slot : profile.slots)
+        slotFiles[slot.name] = {};
+
+    auto scanSlot = [&](const CameraSlot& slot) {
+        fs::path scanDir = slot.scanSubdir.empty()
+                         ? fs::path(path)
+                         : fs::path(path) / slot.scanSubdir;
+        if (!fs::exists(scanDir)) return;
+
+        auto& targetMap = slotFiles[slot.name];
+        for (const auto& entry : fs::directory_iterator(scanDir)) {
             std::string filename = entry.path().filename().string();
             if (filename.empty() || filename[0] == '.') continue;
+
             std::smatch match;
-            if (std::regex_search(filename, match, filePattern)) {
-                std::string tsStr = match[1].str() + "_" + match[2].str();
-                targetMap[stringToTimestamp(tsStr)] = entry.path().string();
+            if (!std::regex_search(filename, match, filePattern)) continue;
+
+            // Group 1 = timestamp string.
+            // Group 2 (optional) = camera token.  If present and a
+            // filenameToken is configured for this slot, verify they match.
+            if (match.size() > 2 && match[2].matched && !slot.filenameToken.empty()) {
+                if (match[2].str() != slot.filenameToken) continue;
             }
+
+            std::string tsStr = match[1].str();
+            std::time_t epoch = stringToTimestamp(tsStr, profile.timestampFormat);
+            if (epoch <= 0) continue;
+            targetMap[epoch] = entry.path().string();
         }
     };
 
-    scanDir("Front", frontFiles);
-    scanDir("Rear",  rearFiles);
-    scanDir("Left",  leftFiles);
-    scanDir("Right", rightFiles);
+    for (const auto& slot : profile.slots)
+        scanSlot(slot);
 
-    if (frontFiles.empty()) return trips;
+    if (slotFiles[primary].empty()) return trips;
 
     auto findClosest = [&](std::time_t target,
                            std::map<std::time_t, std::string>& cameraMap) -> std::string {
@@ -246,39 +273,33 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     };
 
     Trip currentTrip;
-    // Lambda: close a trip — compute timestamp-arithmetic duration and probe
-    // the last segment for an ffprobe-refined display string.
+
     auto closeTrip = [&](Trip& trip) {
         const int segCount = (int)trip.segments.size();
-        time_t firstEpoch = stringToTimestamp(trip.segments.front().timestamp);
-        time_t lastEpoch  = stringToTimestamp(trip.segments.back().timestamp);
+        time_t firstEpoch = stringToTimestamp(trip.segments.front().timestamp,
+                                              profile.timestampFormat);
+        time_t lastEpoch  = stringToTimestamp(trip.segments.back().timestamp,
+                                              profile.timestampFormat);
 
         // Trip-level thumbnail convenience fields.
-        // firstThumb: use segments[1] to avoid cold-start frames (garage door,
-        // parking lot, etc.).  Fall back to segments[0] on single-segment trips.
+        // firstThumbs: segments[1] to avoid cold-start frames; fall back to [0].
         const TripSegment& firstSeg = (segCount >= 2) ? trip.segments[1] : trip.segments[0];
         const TripSegment& lastSeg  = trip.segments.back();
-        trip.firstFrontThumb = firstSeg.frontThumb;
-        trip.firstRearThumb  = firstSeg.rearThumb;
-        trip.firstLeftThumb  = firstSeg.leftThumb;
-        trip.firstRightThumb = firstSeg.rightThumb;
-        trip.lastFrontThumb  = lastSeg.frontThumb;
-        trip.lastRearThumb   = lastSeg.rearThumb;
-        trip.lastLeftThumb   = lastSeg.leftThumb;
-        trip.lastRightThumb  = lastSeg.rightThumb;
+        trip.firstThumbs = firstSeg.thumbs;
+        trip.lastThumbs  = lastSeg.thumbs;
 
         // segDetectedDuration: pure timestamp arithmetic.
-        // Nominal segment length = spacing between segments[0] and segments[1].
         int nominalSegdur = (segCount > 1)
-            ? static_cast<int>(stringToTimestamp(trip.segments[1].timestamp) - firstEpoch)
+            ? static_cast<int>(stringToTimestamp(trip.segments[1].timestamp,
+                                                 profile.timestampFormat) - firstEpoch)
             : 0;
         trip.segDetectedDuration = static_cast<int>(lastEpoch - firstEpoch) + nominalSegdur;
 
         // Probe last segment for display duration string.
-        int lastDur = probeSegmentDuration(trip.segments.back().front, ffprobePath);
+        int lastDur = probeSegmentDuration(camPath(trip.segments.back(), primary),
+                                           ffprobePath);
 
         if (lastDur == 0) {
-            // ffprobe failed — fall back to timestamp estimate + one segment margin
             int estimate = static_cast<int>(lastEpoch - firstEpoch) + 180;
             trip.duration = std::to_string(estimate / 60) + "m "
                           + std::to_string(estimate % 60) + "s";
@@ -290,14 +311,14 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         trip.duration = std::to_string(total / 60) + "m "
                       + std::to_string(total % 60) + "s";
 
-        // segdur from timestamp spacing.  Skip segments[0]/[1] boundary when
-        // possible to avoid cold-start truncation bias on the first segment.
         if (segCount >= 3)
-            trip.segdur = static_cast<int>(stringToTimestamp(trip.segments[2].timestamp)
-                                         - stringToTimestamp(trip.segments[1].timestamp));
+            trip.segdur = static_cast<int>(
+                stringToTimestamp(trip.segments[2].timestamp, profile.timestampFormat)
+              - stringToTimestamp(trip.segments[1].timestamp, profile.timestampFormat));
         else if (segCount >= 2)
-            trip.segdur = static_cast<int>(stringToTimestamp(trip.segments[1].timestamp)
-                                         - firstEpoch);
+            trip.segdur = static_cast<int>(
+                stringToTimestamp(trip.segments[1].timestamp, profile.timestampFormat)
+              - firstEpoch);
         else
             trip.segdur = lastDur;
     };
@@ -305,7 +326,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     bool inTrip = false;
     std::time_t lastTime = 0;
 
-    for (auto const& [fTime, fPath] : frontFiles) {
+    for (auto const& [fTime, fPath] : slotFiles[primary]) {
 
         if (inTrip && (fTime - lastTime > gapThresholdSeconds)) {
             closeTrip(currentTrip);
@@ -332,31 +353,33 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         localtime_r(&fTime, &tmBuf);
         char tsBuf[20];
         std::strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", &tmBuf);
-        seg.timestamp  = tsBuf;
-        seg.front      = fPath;
-        seg.rear       = findClosest(fTime, rearFiles);
-        seg.left       = findClosest(fTime, leftFiles);
-        seg.right      = findClosest(fTime, rightFiles);
-        seg.frontThumb = thumbFor(seg.front);
-        seg.rearThumb  = thumbFor(seg.rear);
-        seg.leftThumb  = thumbFor(seg.left);
-        seg.rightThumb = thumbFor(seg.right);
+        seg.timestamp = tsBuf;
+
+        // Primary camera — already resolved from slotFiles[primary].
+        seg.cameras[primary] = fPath;
+        seg.thumbs[primary]  = thumbFor(fPath, profile.thumbnailMethod);
+
+        // Non-primary cameras — fuzzy-matched against primary timestamp.
+        for (const auto& slot : profile.slots) {
+            if (slot.isPrimary) continue;
+            std::string p = findClosest(fTime, slotFiles[slot.name]);
+            seg.cameras[slot.name] = p;
+            seg.thumbs[slot.name]  = thumbFor(p, profile.thumbnailMethod);
+        }
+
         currentTrip.segments.push_back(seg);
         lastTime = fTime;
     }
 
-    // Close the final trip
     if (inTrip) {
         closeTrip(currentTrip);
         trips.push_back(currentTrip);
     }
 
     // GPS extraction pass — find first lock and end coords for each trip.
-    // Runs exiftool once per trip (first + last segment).  Non-fatal if
-    // exiftool is absent or segments have no GPS data.
     std::cout << "  Extracting GPS start/end coords";
     for (auto& trip : trips) {
-        extractStartEndGps(trip, exiftoolPath, exiftoolOptions);
+        extractStartEndGps(trip, primary, exiftoolPath, exiftoolOptions);
         std::cout << "." << std::flush;
     }
     std::cout << "\n";
@@ -365,5 +388,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 }
 
 } // namespace Pathmux
-
-// SN: 00082
+// SN: 00087

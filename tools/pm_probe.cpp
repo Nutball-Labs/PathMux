@@ -124,7 +124,7 @@ static std::string resolveMidTid(const std::string& midtid)
                 std::cerr << "Error: " << midtid << " has no segments.\n";
                 return "";
             }
-            return trip.segments[0].front;
+            return camPath(trip.segments[0], "front");
         }
         std::cerr << "Error: trip '" << tid << "' not found in '" << mid << "'.\n";
         return "";
@@ -1643,4 +1643,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00083
+// SN: 00087

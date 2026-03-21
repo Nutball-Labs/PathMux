@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <array>
+#include <chrono>
 
 namespace fs = std::filesystem;
 using namespace Pathmux;
@@ -126,10 +127,11 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
         ojson frontSegs = ojson::array(), rearSegs  = ojson::array();
         ojson leftSegs  = ojson::array(), rightSegs = ojson::array();
         for (const auto& seg : trip.segments) {
-            if (videoFront && seg.front != "-" && !seg.front.empty()) frontSegs.push_back(bn(seg.front));
-            if (videoRear  && seg.rear  != "-" && !seg.rear.empty())  rearSegs.push_back(bn(seg.rear));
-            if (videoLeft  && seg.left  != "-" && !seg.left.empty())  leftSegs.push_back(bn(seg.left));
-            if (videoRight && seg.right != "-" && !seg.right.empty()) rightSegs.push_back(bn(seg.right));
+            auto cp = [&](const std::string& n) { return camPath(seg, n); };
+            if (videoFront && cp("front") != "-") frontSegs.push_back(bn(cp("front")));
+            if (videoRear  && cp("rear")  != "-") rearSegs.push_back(bn(cp("rear")));
+            if (videoLeft  && cp("left")  != "-") leftSegs.push_back(bn(cp("left")));
+            if (videoRight && cp("right") != "-") rightSegs.push_back(bn(cp("right")));
         }
         ojson vid = ojson::object();
         if (!frontSegs.empty()) vid["front"] = frontSegs;
@@ -144,12 +146,8 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
         const std::string& ac = opts.audioExtractCamera;
         ojson camSegs = ojson::array();
         for (const auto& seg : trip.segments) {
-            std::string f;
-            if      (ac == "front") f = seg.front;
-            else if (ac == "rear")  f = seg.rear;
-            else if (ac == "right") f = seg.right;
-            else                    f = seg.left;
-            if (f != "-" && !f.empty()) camSegs.push_back(bn(f));
+            std::string f = camPath(seg, ac);
+            if (f != "-") camSegs.push_back(bn(f));
         }
         if (!camSegs.empty()) {
             ojson aud = ojson::object();
@@ -264,6 +262,34 @@ static void drawProgressLine(const std::string& label,
     std::cout << "\r  " << lbl << " [" << bar << "] "
               << std::setw(3) << pctInt << "%  ETA: " << etaBuf
               << "   " << std::flush;
+}
+
+// ---------------------------------------------------------------------------
+// drawFinalizingLine — shown when ffmpeg stops emitting progress events
+// (e.g. writing the moov atom over NFS).  Displays the last-known percentage
+// and a spinning indicator so the user knows the process is still alive.
+// ---------------------------------------------------------------------------
+static void drawFinalizingLine(const std::string& label,
+                                int64_t doneUs, int64_t totalUs) {
+    static int spinIdx = 0;
+    const char spin[]  = { '|', '/', '-', '\\' };
+
+    double pct    = (totalUs > 0) ? std::min(1.0, (double)doneUs / (double)totalUs) : 0.0;
+    int    pctInt = (int)(pct * 100);
+
+    const int W = std::max(20, Pathmux::Platform::getTerminalWidth() - 42);
+    int filled = (int)(pct * W);
+    std::string bar;
+    bar.reserve(W);
+    for (int i = 0; i < W; ++i) bar += (i < filled) ? '=' : ' ';
+
+    std::string lbl = label;
+    if (lbl.size() < 16) lbl.append(16 - lbl.size(), ' ');
+    else if (lbl.size() > 16) lbl = lbl.substr(0, 16);
+
+    std::cout << "\r  " << lbl << " [" << bar << "] "
+              << std::setw(3) << pctInt << "%  writing "
+              << spin[spinIdx++ % 4] << "  " << std::flush;
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +474,7 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
     bool    childDone = false;
     int     childSt   = 0;
     std::string lineBuf;
+    auto lastProgressTime = std::chrono::steady_clock::now();
 
     while (!childDone) {
         char tmp[4096];
@@ -469,7 +496,10 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
                 std::string val = line.substr(eq + 1);
 
                 if (key == "out_time_us") {
-                    try { outTimeUs = std::stoll(val); } catch (...) {}
+                    try {
+                        outTimeUs = std::stoll(val);
+                        lastProgressTime = std::chrono::steady_clock::now();
+                    } catch (...) {}
                 } else if (key == "speed") {
                     if (!val.empty() && val.back() == 'x') val.pop_back();
                     try { speed = std::stod(val); } catch (...) {}
@@ -487,18 +517,20 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
             }
             lineBuf = lineBuf.substr(p);
 
-        } else if (n == 0) {
-            // POSIX: read() on a FIFO returns 0 when no writer has the pipe
-            // open yet — NOT necessarily true EOF.  Treat the same as EAGAIN:
-            // check whether the child has exited; if not, keep waiting.
-            int wret = waitpid(pid, &childSt, WNOHANG);
-            if (wret == pid) childDone = true;
-            else             usleep(50000);  // 50 ms — no writer connected yet
         } else {
-            // EAGAIN — writer connected but no new data; check child status
+            // n == 0: FIFO has no writer yet (or idle between progress blocks)
+            // n < 0: EAGAIN — writer connected but no new data right now
+            // Either way: check child, sleep, animate if stalled.
             int wret = waitpid(pid, &childSt, WNOHANG);
-            if (wret == pid) childDone = true;
-            else             usleep(50000);  // 50 ms
+            if (wret == pid) {
+                childDone = true;
+            } else {
+                auto elapsed = std::chrono::steady_clock::now() - lastProgressTime;
+                bool stalled = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >= 2;
+                if (stalled && !progressCallback)
+                    drawFinalizingLine(label, outTimeUs, totalUs);
+                usleep(50000);  // 50 ms
+            }
         }
     }
 
@@ -690,10 +722,11 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     // -----------------------------------------------------------------------
     std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
     for (const auto& seg : trip.segments) {
-        if (!seg.front.empty() && seg.front != "-") srcFront.push_back(seg.front);
-        if (!seg.rear.empty()  && seg.rear  != "-") srcRear.push_back(seg.rear);
-        if (!seg.left.empty()  && seg.left  != "-") srcLeft.push_back(seg.left);
-        if (!seg.right.empty() && seg.right != "-") srcRight.push_back(seg.right);
+        auto cp = [&](const std::string& n) { return camPath(seg, n); };
+        if (cp("front") != "-") srcFront.push_back(cp("front"));
+        if (cp("rear")  != "-") srcRear.push_back(cp("rear"));
+        if (cp("left")  != "-") srcLeft.push_back(cp("left"));
+        if (cp("right") != "-") srcRight.push_back(cp("right"));
     }
 
     if (srcFront.empty()) {
@@ -778,9 +811,14 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         << " -map " << audioIdx << ":a:0"
         << " -shortest"
         << " -c:v " << opts.encode.collageEncoder;
-    // QSV/VAAPI/CPU: -q sets global_quality (ICQ) or constant QP.
-    // NVENC: quality is controlled via -cq in extraCollageArgs; -q is redundant and wrong.
-    if (opts.encode.collageEncoder.find("nvenc") == std::string::npos)
+    // NVENC: quality via -cq in extraCollageArgs; -q is wrong.
+    // VideoToolbox: quality scale not supported; use -b:v <quality>M.
+    // QSV/VAAPI/CPU: -q sets global_quality/constant QP.
+    if (opts.encode.collageEncoder.find("nvenc") != std::string::npos)
+        ; // no -q; handled via extraCollageArgs
+    else if (opts.encode.collageEncoder.find("videotoolbox") != std::string::npos)
+        cmd << " -b:v " << opts.encode.collageQuality << "M";
+    else
         cmd << " -q " << opts.encode.collageQuality;
     if (!opts.encode.extraCollageArgs.empty())
         cmd << " " << opts.encode.extraCollageArgs;
@@ -832,8 +870,14 @@ bool VideoBuilder::buildCollage1080(const std::string& source4K,
     cmd << " -i \"" << source4K << "\""
         << " -vf \"" << downVf << "\""
         << " -c:v " << opts.encode.downEncoder;
-    // NVENC: quality via -cq in extraDownArgs; -q is wrong flag for nvenc.
-    if (opts.encode.downEncoder.find("nvenc") == std::string::npos)
+    // NVENC: quality via -cq in extraDownArgs; -q is wrong.
+    // VideoToolbox: use -b:v <quality>M.
+    // QSV/VAAPI/CPU: -q sets global_quality/constant QP.
+    if (opts.encode.downEncoder.find("nvenc") != std::string::npos)
+        ; // no -q; handled via extraDownArgs
+    else if (opts.encode.downEncoder.find("videotoolbox") != std::string::npos)
+        cmd << " -b:v " << opts.encode.downQuality << "M";
+    else
         cmd << " -q " << opts.encode.downQuality;
     if (!opts.encode.extraDownArgs.empty())
         cmd << " " << opts.encode.extraDownArgs;
@@ -869,10 +913,11 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
 
     std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
     for (const auto& seg : trip.segments) {
-        if (!seg.front.empty() && seg.front != "-") srcFront.push_back(seg.front);
-        if (!seg.rear.empty()  && seg.rear  != "-") srcRear.push_back(seg.rear);
-        if (!seg.left.empty()  && seg.left  != "-") srcLeft.push_back(seg.left);
-        if (!seg.right.empty() && seg.right != "-") srcRight.push_back(seg.right);
+        auto cp = [&](const std::string& n) { return camPath(seg, n); };
+        if (cp("front") != "-") srcFront.push_back(cp("front"));
+        if (cp("rear")  != "-") srcRear.push_back(cp("rear"));
+        if (cp("left")  != "-") srcLeft.push_back(cp("left"));
+        if (cp("right") != "-") srcRight.push_back(cp("right"));
     }
 
     if (srcFront.empty()) {
@@ -942,7 +987,11 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         << " -map " << audioIdx << ":a:0"
         << " -shortest"
         << " -c:v " << opts.encode.collageEncoder;
-    if (opts.encode.collageEncoder.find("nvenc") == std::string::npos)
+    if (opts.encode.collageEncoder.find("nvenc") != std::string::npos)
+        ; // no -q; handled via extraCollageArgs
+    else if (opts.encode.collageEncoder.find("videotoolbox") != std::string::npos)
+        cmd << " -b:v " << opts.encode.collageQuality << "M";
+    else
         cmd << " -q " << opts.encode.collageQuality;
     if (!opts.encode.extraCollageArgs.empty())
         cmd << " " << opts.encode.extraCollageArgs;
@@ -1213,6 +1262,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
     CollageOptions opts;
     opts.ffmpegPath  = config.getFfmpegPath();
     opts.ffprobePath = config.getFfmpegPath();   // ffprobe lives alongside ffmpeg
+    opts.encode      = config.getEncodeSettings();
     // Replace trailing "ffmpeg" with "ffprobe" if explicit path given
     if (opts.ffprobePath.size() >= 6) {
         auto& p = opts.ffprobePath;
@@ -1439,23 +1489,27 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
 
     std::string collage4KBuilt;
     if (opts.build4K) {
-        buildCollageFromSlots(opts, collage4KPath, paddedInputs);
-        collage4KBuilt = collage4KPath;
+        if (buildCollageFromSlots(opts, collage4KPath, paddedInputs))
+            collage4KBuilt = collage4KPath;
     }
 
     if (opts.build1080) {
-        if (collage4KBuilt.empty()) {
+        if (collage4KBuilt.empty() && opts.build4K) {
+            std::cerr << "  Skipping 1080p — 4K collage failed.\n";
+        } else if (collage4KBuilt.empty()) {
             // Need 4K as intermediate — not a user deliverable
             std::string tmp4K = (fs::path(outDir) / "pm_tmp_collage4k.mp4").string();
             buildCollageFromSlots(opts, tmp4K, paddedInputs);
             VideoOptions vopts;
             vopts.ffmpegPath = opts.ffmpegPath;
+            vopts.encode     = opts.encode;
             buildCollage1080(tmp4K, collage1080Path, vopts);
             std::error_code ec;
             fs::remove(tmp4K, ec);
         } else {
             VideoOptions vopts;
             vopts.ffmpegPath = opts.ffmpegPath;
+            vopts.encode     = opts.encode;
             buildCollage1080(collage4KBuilt, collage1080Path, vopts);
         }
     }
@@ -1748,8 +1802,8 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
             std::string ffprobe = config.getFfprobePath();
             int total = 0;
             for (const auto& seg : trip.segments) {
-                if (seg.front != "-" && !seg.front.empty()) {
-                    double d = getFileDuration(seg.front, ffprobe);
+                if (camPath(seg, "front") != "-") {
+                    double d = getFileDuration(camPath(seg, "front"), ffprobe);
                     if (d > 0.0) total += static_cast<int>(d);
                 }
             }
@@ -1855,8 +1909,8 @@ void VideoBuilder::validateTrip(const Trip& trip, const std::string& sourcePath)
     // first segment's absolute path by stripping the camera subdir.
     std::string root = sourcePath;
     if (!trip.segments.empty()) {
-        const std::string& front = trip.segments[0].front;
-        if (front != "-" && !front.empty()) {
+        const std::string front = camPath(trip.segments[0], "front");
+        if (front != "-") {
             // Strip last two path components (camera/filename)
             auto fsRoot = fs::path(front).parent_path().parent_path();
             if (!fsRoot.empty())
@@ -1936,12 +1990,11 @@ void VideoBuilder::validateTrip(const Trip& trip, const std::string& sourcePath)
 void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     namespace fs = std::filesystem;
 
-    auto collectSegments = [&](const std::string TripSegment::* field)
-            -> std::vector<std::string> {
+    auto collectSegments = [&](const std::string& slot) -> std::vector<std::string> {
         std::vector<std::string> files;
         for (const auto& seg : trip.segments) {
-            const std::string& f = seg.*field;
-            if (f != "-" && !f.empty()) files.push_back(f);
+            std::string f = camPath(seg, slot);
+            if (f != "-") files.push_back(f);
         }
         return files;
     };
@@ -1950,23 +2003,26 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     std::string outDir = opts.outputDir.empty() ? "." : opts.outputDir;
 
     if (opts.buildFront)
-        buildCameraFile(trip, "Front", collectSegments(&TripSegment::front), opts);
+        buildCameraFile(trip, "Front", collectSegments("front"), opts);
     if (opts.buildRear)
-        buildCameraFile(trip, "Rear",  collectSegments(&TripSegment::rear),  opts);
+        buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
     if (opts.buildLeft)
-        buildCameraFile(trip, "Left",  collectSegments(&TripSegment::left),  opts);
+        buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
     if (opts.buildRight)
-        buildCameraFile(trip, "Right", collectSegments(&TripSegment::right), opts);
+        buildCameraFile(trip, "Right", collectSegments("right"), opts);
 
     std::string collage4KPath;
+    bool collage4KOk = false;
     if (opts.buildCollage4K) {
         collage4KPath = (fs::path(outDir) /
                          makeOutputName(trip, "Collage_4K", "mp4",
                                         opts.basenameOverride)).string();
-        buildCollage4K(trip, opts);
+        collage4KOk = buildCollage4K(trip, opts);
     }
     if (opts.buildCollage1080) {
-        if (!collage4KPath.empty()) {
+        if (opts.buildCollage4K && !collage4KOk) {
+            std::cerr << "  Skipping 1080p — 4K collage failed.\n";
+        } else if (!collage4KPath.empty() && collage4KOk) {
             std::string proposed1080 = (fs::path(outDir) /
                                         makeOutputName(trip, "Collage_1080p", "mp4",
                                                        opts.basenameOverride)).string();
@@ -1980,12 +2036,8 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
         std::vector<std::string> audioSegs;
         const std::string& ac = opts.audioExtractCamera;
         for (const auto& seg : trip.segments) {
-            std::string f;
-            if      (ac == "front") f = seg.front;
-            else if (ac == "rear")  f = seg.rear;
-            else if (ac == "right") f = seg.right;
-            else                    f = seg.left;
-            if (f != "-" && !f.empty()) audioSegs.push_back(f);
+            std::string f = camPath(seg, ac);
+            if (f != "-") audioSegs.push_back(f);
         }
         buildAudioFile(trip, audioSegs, opts);
     }
@@ -2059,6 +2111,7 @@ void VideoBuilder::run(ConfigManager& config) {
             std::cout << "  Note: " << trip.note << "\n";
 
         // Configure build options — [N] may edit trip.note, [T] may set durationFFProbed
+        config.reloadHostSettings();
         VideoOptions opts = configureOptions(config, trip);
         opts.sourcePath = selManifest;
         opts.manifestId = config.getManifestIdForPath(selManifest);
@@ -2101,24 +2154,23 @@ void VideoBuilder::run(ConfigManager& config) {
         // -----------------------------------------------------------------------
         // Per-camera files
         // -----------------------------------------------------------------------
-        auto collectSegments = [&](const std::string TripSegment::* field)
-                -> std::vector<std::string> {
+        auto collectSegments = [&](const std::string& slot) -> std::vector<std::string> {
             std::vector<std::string> files;
             for (const auto& seg : trip.segments) {
-                const std::string& f = seg.*field;
-                if (f != "-" && !f.empty()) files.push_back(f);
+                std::string f = camPath(seg, slot);
+                if (f != "-") files.push_back(f);
             }
             return files;
         };
 
         if (opts.buildFront)
-            buildCameraFile(trip, "Front", collectSegments(&TripSegment::front), opts);
+            buildCameraFile(trip, "Front", collectSegments("front"), opts);
         if (opts.buildRear)
-            buildCameraFile(trip, "Rear",  collectSegments(&TripSegment::rear),  opts);
+            buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
         if (opts.buildLeft)
-            buildCameraFile(trip, "Left",  collectSegments(&TripSegment::left),  opts);
+            buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
         if (opts.buildRight)
-            buildCameraFile(trip, "Right", collectSegments(&TripSegment::right), opts);
+            buildCameraFile(trip, "Right", collectSegments("right"), opts);
 
         // -----------------------------------------------------------------------
         // Collage
@@ -2154,11 +2206,8 @@ void VideoBuilder::run(ConfigManager& config) {
             const std::string& ac = opts.audioExtractCamera;
             for (const auto& seg : trip.segments) {
                 std::string f;
-                if      (ac == "front") f = seg.front;
-                else if (ac == "rear")  f = seg.rear;
-                else if (ac == "right") f = seg.right;
-                else                    f = seg.left;
-                if (f != "-" && !f.empty()) audioSegs.push_back(f);
+                f = camPath(seg, ac);
+                if (f != "-") audioSegs.push_back(f);
             }
             buildAudioFile(trip, audioSegs, opts);
         }

@@ -68,6 +68,7 @@ endif()
 # Static library — core logic shared by CLI and future Qt6 GUI
 # ---------------------------------------------------------------------------
 add_library(pathmuxlib STATIC
+    lib/camera_profile.cpp
     lib/trip_detection.cpp
     lib/config_manager.cpp
     lib/platform.cpp

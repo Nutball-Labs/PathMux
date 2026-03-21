@@ -141,10 +141,11 @@ static void deepAuditTrip(TripResult& r,
 
     for (const auto& seg : trip.segments) {
         // Check front camera — the primary stream
-        if (seg.front.empty() || seg.front == "-") continue;
-        if (!fs::exists(seg.front)) {
+        std::string front = camPath(seg, "front");
+        if (front == "-") continue;
+        if (!fs::exists(front)) {
             r.status = TripStatus::Missing;
-            r.detail = seg.front;
+            r.detail = front;
             return;
         }
 
@@ -152,7 +153,7 @@ static void deepAuditTrip(TripResult& r,
         std::string cmd = ffprobePath
             + " -v error -select_streams v:0"
             + " -show_entries stream=duration"
-            + " -of csv=p=0 \"" + seg.front + "\" " NULL_REDIRECT;
+            + " -of csv=p=0 \"" + front + "\" " NULL_REDIRECT;
 
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) continue;
@@ -165,7 +166,7 @@ static void deepAuditTrip(TripResult& r,
         if (!gotOutput || dur <= 0.0) {
             r.status = TripStatus::DeepFail;
             // Extract basename for display
-            r.detail = pathBasename(seg.front);
+            r.detail = pathBasename(front);
             return;
         }
     }
@@ -354,4 +355,4 @@ int main(int argc, char* argv[])
 
     return problemTrips > 0 ? 1 : 0;
 }
-// SN: 00083
+// SN: 00087

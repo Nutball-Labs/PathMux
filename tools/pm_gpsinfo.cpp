@@ -455,8 +455,8 @@ static std::vector<LockScanResult> scanAllTrips(
         for (auto& trip : trips) {
             if (trip.segments.empty()) continue;
 
-            const std::string& front = trip.segments[0].front;
-            if (front == "-" || front.empty()) continue;
+            const std::string front = camPath(trip.segments[0], "front");
+            if (front == "-") continue;
 
             // front is an absolute path in the manifest; extract basename for display.
             std::string baseName = pathBasename(front);
@@ -611,8 +611,8 @@ static std::string resolveMidTid(const std::string& midtid)
                 std::cerr << "Error: " << midtid << " has no segments.\n";
                 return "";
             }
-            const std::string& front = trip.segments[0].front;
-            if (front == "-" || front.empty()) {
+            const std::string front = camPath(trip.segments[0], "front");
+            if (front == "-") {
                 std::cerr << "Error: " << midtid << " has no Front segment.\n";
                 return "";
             }
@@ -721,4 +721,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-// SN: 00086
+// SN: 00087

@@ -56,10 +56,10 @@ void showTripTree(const Trip& trip, int id) {
 
     for (size_t si = 0; si < trip.segments.size(); ++si) {
         const auto& seg = trip.segments[si];
-        std::string f = (seg.front != "-" && !seg.front.empty()) ? "F" : ".";
-        std::string b = (seg.rear  != "-" && !seg.rear.empty())  ? "B" : ".";
-        std::string l = (seg.left  != "-" && !seg.left.empty())  ? "L" : ".";
-        std::string r = (seg.right != "-" && !seg.right.empty()) ? "R" : ".";
+        std::string f = (camPath(seg,"front") != "-") ? "F" : ".";
+        std::string b = (camPath(seg,"rear")  != "-") ? "B" : ".";
+        std::string l = (camPath(seg,"left")  != "-") ? "L" : ".";
+        std::string r = (camPath(seg,"right") != "-") ? "R" : ".";
 
         std::cout << "  [" << std::setw(3) << (si + 1) << "]  "
                   << seg.timestamp << "  [" << f << b << l << r << "]\n";
@@ -69,10 +69,10 @@ void showTripTree(const Trip& trip, int id) {
                 std::cout << "         " << label << ": "
                           << fs::path(path).filename().string() << "\n";
         };
-        showFile("F", seg.front);
-        showFile("B", seg.rear);
-        showFile("L", seg.left);
-        showFile("R", seg.right);
+        showFile("F", camPath(seg,"front"));
+        showFile("B", camPath(seg,"rear"));
+        showFile("L", camPath(seg,"left"));
+        showFile("R", camPath(seg,"right"));
     }
     std::cout << std::string(65, '-') << "\n";
 }
@@ -121,6 +121,7 @@ int main(int argc, char* argv[]) {
     ConfigManager config;
     std::vector<Trip> trips = detector.detectTrips(
         path,
+        CameraProfile::d90Default(),
         config.getGapThreshold(),
         config.getFuzzyWindow()
     );
@@ -170,4 +171,4 @@ int main(int argc, char* argv[]) {
     std::cout << "Exiting pm_tripdebug.\n";
     return 0;
 }
-// SN: 00081
+// SN: 00087

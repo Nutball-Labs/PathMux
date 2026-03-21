@@ -91,7 +91,13 @@ std::string GpxExport::buildStem(const json& jTrip)
             || jTrip["segments"].empty())
         return "pathmux_unknown";
 
-    std::string front = jTrip["segments"][0].value("front", "");
+    // Support both new ("cameras" object) and old (flat named fields) formats.
+    std::string front;
+    const auto& seg0 = jTrip["segments"][0];
+    if (seg0.contains("cameras") && seg0["cameras"].is_object())
+        front = seg0["cameras"].value("front", "");
+    else
+        front = seg0.value("front", "");
     if (front.empty() || front == "-")
         return "pathmux_unknown";
 
@@ -432,7 +438,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
     if (doAll)
         std::cout << exported << " file" << (exported != 1 ? "s" : "") << " written.\n";
 }
-// SN: 00083
+// SN: 00087
 
 // ===========================================================================
 // runInteractive — interactive GPS menu entry point

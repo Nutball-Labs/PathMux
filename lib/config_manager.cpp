@@ -266,6 +266,10 @@ void ConfigManager::saveHostSettings() {
     ofs << j.dump(2) << "\n";
 }
 
+void ConfigManager::reloadHostSettings() {
+    loadHostOverlay();
+}
+
 void ConfigManager::setGapThreshold(int seconds) {
     if (seconds < 30) {
         std::cerr << "Warning: Gap threshold below 30s is impractical; clamping to 30.\n";
@@ -557,7 +561,7 @@ std::string ConfigManager::tripIdentityHash(const Trip& trip) {
     std::string key = std::to_string(trip.startEpoch)
                     + "|" + std::to_string(trip.segments.size());
     if (!trip.segments.empty())
-        key += "|" + trip.segments[0].front;
+        key += "|" + camPath(trip.segments[0], "front");
     // Simple djb2 hash, returned as 8-char hex
     uint32_t hash = 5381;
     for (char c : key) hash = ((hash << 5) + hash) + (unsigned char)c;
@@ -577,7 +581,7 @@ std::vector<ValidationFile> ConfigManager::selectValidationFiles(
     // Build flat list of relative paths for all non-placeholder files
     std::vector<std::string> pool;
     for (const auto& seg : trip.segments) {
-        for (const std::string& f : {seg.front, seg.rear, seg.left, seg.right}) {
+        for (const auto& [camName, f] : seg.cameras) {
             if (f != "-" && !f.empty()) {
                 // Make relative to sourcePath
                 std::string rel = f;
@@ -1034,14 +1038,13 @@ void ConfigManager::saveTripCache(const std::string& path,
         }
         jTrip["gpsTrackStatus"] = trip.gpsTrackStatus;
 
-        if (!trip.firstFrontThumb.empty()) jTrip["firstFrontThumb"] = trip.firstFrontThumb;
-        if (!trip.lastFrontThumb.empty())  jTrip["lastFrontThumb"]  = trip.lastFrontThumb;
-        if (!trip.firstRearThumb.empty())  jTrip["firstRearThumb"]  = trip.firstRearThumb;
-        if (!trip.lastRearThumb.empty())   jTrip["lastRearThumb"]   = trip.lastRearThumb;
-        if (!trip.firstLeftThumb.empty())  jTrip["firstLeftThumb"]  = trip.firstLeftThumb;
-        if (!trip.lastLeftThumb.empty())   jTrip["lastLeftThumb"]   = trip.lastLeftThumb;
-        if (!trip.firstRightThumb.empty()) jTrip["firstRightThumb"] = trip.firstRightThumb;
-        if (!trip.lastRightThumb.empty())  jTrip["lastRightThumb"]  = trip.lastRightThumb;
+        {
+            json jFirst, jLast;
+            for (const auto& [k, v] : trip.firstThumbs) if (!v.empty()) jFirst[k] = v;
+            for (const auto& [k, v] : trip.lastThumbs)  if (!v.empty()) jLast[k]  = v;
+            if (!jFirst.empty()) jTrip["firstThumbs"] = jFirst;
+            if (!jLast.empty())  jTrip["lastThumbs"]  = jLast;
+        }
 
         {
             json vp;
@@ -1081,14 +1084,11 @@ void ConfigManager::saveTripCache(const std::string& path,
         for (const auto& seg : trip.segments) {
             json jSeg;
             jSeg["timestamp"] = seg.timestamp;
-            jSeg["front"]     = seg.front;
-            jSeg["rear"]      = seg.rear;
-            jSeg["left"]      = seg.left;
-            jSeg["right"]     = seg.right;
-            if (!seg.frontThumb.empty()) jSeg["frontThumb"] = seg.frontThumb;
-            if (!seg.rearThumb.empty())  jSeg["rearThumb"]  = seg.rearThumb;
-            if (!seg.leftThumb.empty())  jSeg["leftThumb"]  = seg.leftThumb;
-            if (!seg.rightThumb.empty()) jSeg["rightThumb"] = seg.rightThumb;
+            json jCams, jThumbs;
+            for (const auto& [k, v] : seg.cameras) jCams[k] = v;
+            for (const auto& [k, v] : seg.thumbs)  if (!v.empty()) jThumbs[k] = v;
+            jSeg["cameras"] = jCams;
+            if (!jThumbs.empty()) jSeg["thumbs"] = jThumbs;
             jTrip["segments"].push_back(jSeg);
         }
         root["trips"].push_back(jTrip);
@@ -1163,14 +1163,25 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         trip.endLon         = jTrip.value("endLon",         0.0);
         trip.gpsTrackStatus = jTrip.value("gpsTrackStatus", "none");
 
-        trip.firstFrontThumb = jTrip.value("firstFrontThumb", "");
-        trip.lastFrontThumb  = jTrip.value("lastFrontThumb",  "");
-        trip.firstRearThumb  = jTrip.value("firstRearThumb",  "");
-        trip.lastRearThumb   = jTrip.value("lastRearThumb",   "");
-        trip.firstLeftThumb  = jTrip.value("firstLeftThumb",  "");
-        trip.lastLeftThumb   = jTrip.value("lastLeftThumb",   "");
-        trip.firstRightThumb = jTrip.value("firstRightThumb", "");
-        trip.lastRightThumb  = jTrip.value("lastRightThumb",  "");
+        // Trip thumbnails — new format uses firstThumbs/lastThumbs maps.
+        // Migrate old per-camera named fields transparently on read.
+        if (jTrip.contains("firstThumbs") && jTrip["firstThumbs"].is_object()) {
+            for (const auto& [k, v] : jTrip["firstThumbs"].items())
+                trip.firstThumbs[k] = v.get<std::string>();
+            for (const auto& [k, v] : jTrip["lastThumbs"].items())
+                trip.lastThumbs[k] = v.get<std::string>();
+        } else {
+            // Old format — migrate D90 named fields into maps.
+            auto gt = [&](const std::string& key) { return jTrip.value(key, std::string("")); };
+            trip.firstThumbs["front"] = gt("firstFrontThumb");
+            trip.firstThumbs["rear"]  = gt("firstRearThumb");
+            trip.firstThumbs["left"]  = gt("firstLeftThumb");
+            trip.firstThumbs["right"] = gt("firstRightThumb");
+            trip.lastThumbs["front"]  = gt("lastFrontThumb");
+            trip.lastThumbs["rear"]   = gt("lastRearThumb");
+            trip.lastThumbs["left"]   = gt("lastLeftThumb");
+            trip.lastThumbs["right"]  = gt("lastRightThumb");
+        }
 
         if (jTrip.contains("videoProfile") && jTrip["videoProfile"].is_object()) {
             const auto& vp       = jTrip["videoProfile"];
@@ -1207,15 +1218,27 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         if (jTrip.contains("segments") && jTrip["segments"].is_array()) {
             for (const auto& jSeg : jTrip["segments"]) {
                 TripSegment seg;
-                seg.timestamp  = jSeg.value("timestamp",  "");
-                seg.front      = jSeg.value("front",      "-");
-                seg.rear       = jSeg.value("rear", jSeg.value("back", "-"));
-                seg.left       = jSeg.value("left",       "-");
-                seg.right      = jSeg.value("right",      "-");
-                seg.frontThumb = jSeg.value("frontThumb", "");
-                seg.rearThumb  = jSeg.value("rearThumb",  "");
-                seg.leftThumb  = jSeg.value("leftThumb",  "");
-                seg.rightThumb = jSeg.value("rightThumb", "");
+                seg.timestamp = jSeg.value("timestamp", "");
+                // Segment cameras — new format uses "cameras" object.
+                // Migrate old D90 named fields transparently on read.
+                if (jSeg.contains("cameras") && jSeg["cameras"].is_object()) {
+                    for (const auto& [k, v] : jSeg["cameras"].items())
+                        seg.cameras[k] = v.get<std::string>();
+                    if (jSeg.contains("thumbs") && jSeg["thumbs"].is_object())
+                        for (const auto& [k, v] : jSeg["thumbs"].items())
+                            seg.thumbs[k] = v.get<std::string>();
+                } else {
+                    // Old format — migrate D90 named fields.
+                    seg.cameras["front"] = jSeg.value("front",      "-");
+                    seg.cameras["rear"]  = jSeg.value("rear",
+                                           jSeg.value("back",       "-"));
+                    seg.cameras["left"]  = jSeg.value("left",       "-");
+                    seg.cameras["right"] = jSeg.value("right",      "-");
+                    seg.thumbs["front"]  = jSeg.value("frontThumb", "");
+                    seg.thumbs["rear"]   = jSeg.value("rearThumb",  "");
+                    seg.thumbs["left"]   = jSeg.value("leftThumb",  "");
+                    seg.thumbs["right"]  = jSeg.value("rightThumb", "");
+                }
                 trip.segments.push_back(seg);
             }
         }
@@ -1376,4 +1399,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00087
+// SN: 00088
