@@ -274,7 +274,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Scanning: " << scanPath
                   << "  (gap=" << config.getGapThreshold() << "s)\n";
         auto trips = detector.detectTrips(scanPath,
-                                          CameraProfile::d90Default(),
+                                          config.getCameraProfile(),
                                           config.getGapThreshold(),
                                           config.getFuzzyWindow(),
                                           config.getFfprobePath(),
@@ -334,4 +334,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00087
+// SN: 00088

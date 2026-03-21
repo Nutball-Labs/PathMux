@@ -5,6 +5,7 @@
 #include <vector>
 #include <set>
 #include "trip_detection.hpp"
+#include "camera_profile.hpp"
 #include "logger.hpp"
 
 namespace Pathmux {
@@ -105,6 +106,9 @@ struct AppSettings {
     // KML visual settings (nested)
     KmlSettings kml;
 
+    // Camera profile
+    std::string activeProfileId  = "pruveeo_d90"; // matches profile JSON filename stem
+
     // Internal
     int  schemaVersion       = 1;
 };
@@ -187,6 +191,11 @@ public:
     std::string        getDefaultAudioSource() const { return settings.defaultAudioSource; }
     const EncodeSettings& getEncodeSettings() const { return settings.encode; }
     std::string        getLogLevel()           const { return settings.logLevel; }
+    std::string        getActiveProfileId()    const { return settings.activeProfileId; }
+
+    // Load the active camera profile from disk.
+    // Returns d90Default() if the profile file is absent or invalid.
+    CameraProfile      getCameraProfile()      const;
 
     // --- Host-specific settings (pathmux_<hostname>.json) ---
     // Host file overlays base prefs for this machine only.
@@ -194,7 +203,8 @@ public:
     //         defaultExportDir, tmpDir, logLevel.
     std::string        getHostname()        const { return hostname; }
     std::string        getHostSettingsFile() const { return hostSettingsFile; }
-    void               saveHostSettings();   // write host subset to host file
+    void               saveHostSettings();    // write host subset to host file
+    void               reloadHostSettings(); // re-apply host overlay from disk (picks up --encoderprefs changes without restart)
 
     // Apply a named encode preset, populating EncodeSettings with known-good values.
     // preset: "qsv" | "nvenc" | "vaapi" | "cpu"
@@ -338,4 +348,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00087
+// SN: 00088

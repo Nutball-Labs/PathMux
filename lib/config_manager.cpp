@@ -1,4 +1,5 @@
 #include "config_manager.hpp"
+#include "camera_profile.hpp"
 #include "compat.hpp"
 #include "platform.hpp"
 #include "json.hpp"
@@ -84,6 +85,7 @@ void ConfigManager::loadSettings() {
     settings.videoFormat         = j.value("videoFormat",         settings.videoFormat);
     settings.defaultAudioSource  = j.value("defaultAudioSource",  settings.defaultAudioSource);
     settings.logLevel            = j.value("logLevel",            settings.logLevel);
+    settings.activeProfileId     = j.value("activeProfileId",     settings.activeProfileId);
 
     if (j.contains("encode") && j["encode"].is_object()) {
         const auto& e = j["encode"];
@@ -147,6 +149,7 @@ void ConfigManager::saveSettings() {
     j["videoFormat"]         = settings.videoFormat;
     j["defaultAudioSource"]  = settings.defaultAudioSource;
     j["logLevel"]            = settings.logLevel;
+    j["activeProfileId"]     = settings.activeProfileId;
 
     json e;
     e["preset"]           = settings.encode.preset;
@@ -186,6 +189,22 @@ void ConfigManager::saveSettings() {
         cfgState = ConfigState::INCOMPLETE;
     else
         cfgState = ConfigState::VALID;
+}
+
+// ---------------------------------------------------------------------------
+// Camera profile
+// ---------------------------------------------------------------------------
+
+CameraProfile ConfigManager::getCameraProfile() const {
+    std::string profileFile = configDir + "profiles/"
+                            + settings.activeProfileId + ".json";
+    if (fs::exists(profileFile)) {
+        CameraProfile p = CameraProfile::loadFromFile(profileFile);
+        if (p.isValid()) return p;
+        std::cerr << "Warning: profile " << profileFile
+                  << " failed validation — using D90 default.\n";
+    }
+    return CameraProfile::d90Default();
 }
 
 // ---------------------------------------------------------------------------

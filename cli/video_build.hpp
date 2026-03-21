@@ -33,8 +33,9 @@ struct CollageOptions {
     bool        build1080       = false;
     std::string outputDir;
     std::string outputFilename;         // "" = auto-generate at build time
-    std::string ffmpegPath;
-    std::string ffprobePath;
+    std::string    ffmpegPath;
+    std::string    ffprobePath;
+    EncodeSettings encode;
 };
 // Navigation action returned by configureOptions to tell run() what to do
 // when the user exits the Build Options menu without building.
@@ -210,4 +211,4 @@ private:
 };
 
 #endif
-// SN: 00087
+// SN: 00088

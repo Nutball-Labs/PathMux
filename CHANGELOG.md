@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## [0.9.11a / SN: 00088] - 2026-03-20 / 2026-03-21
+### Fixed
+- **VideoToolbox `-q` rejection**: `h264_videotoolbox` and `hevc_videotoolbox` do not
+  accept `-q` (quality scale). Replaced with `-b:v <quality>M` when encoder name
+  contains `videotoolbox`. Applies to `buildCollage4K`, `buildCollage1080`,
+  `buildCollage1080Direct`. Quality values now interpreted as Mbps for VideoToolbox.
+- **1080p proceeds on 4K failure**: `buildCollageFromSlots` and `buildTrip` now check
+  the 4K build return value before attempting the 1080p downscale. Prints
+  "Skipping 1080p — 4K collage failed." on failure.
+- **`CollageOptions` encode settings not propagated**: `CollageOptions` struct lacked
+  an `encode` field; `vopts` for 1080p-from-4K was constructed with bare defaults,
+  falling back to QSV regardless of host config. Added `EncodeSettings encode` to
+  `CollageOptions` and populated it from config in `runCollageFromFiles()`.
+- **Host settings stale in interactive session**: `--encoderprefs` run as a separate
+  invocation updated the host file but the running `-I` session kept old in-memory
+  settings. Added `ConfigManager::reloadHostSettings()` (public wrapper for
+  `loadHostOverlay()`); called before `configureOptions()` in both interactive
+  build paths. Encoder/path changes now take effect without restart.
+
+### Platform
+- **macOS confirmed working**: full build and collage pipeline verified on MacBook Air
+  (i5-8210Y, Intel UHD 617, macOS, Homebrew ffmpeg). All three platforms now
+  build and produce collages: Linux (QSV/NVENC), macOS (VideoToolbox), Windows (pending collage test).
+
+---
+
 ## [0.9.11a / SN: 00087] - 2026-03-19
 ### Added
 - **ffmpeg build progress tracking** (`cli/video_build.cpp/.hpp`): live `\r`-overwritten

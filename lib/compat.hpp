@@ -31,6 +31,13 @@
 #  ifndef WEXITSTATUS
 #    define WEXITSTATUS(s) (s)
 #  endif
+#elif defined(__APPLE__)
+// Apple's sys/wait.h defines WEXITSTATUS via _W_INT(w) = *(int*)&(w), which
+// requires an lvalue.  Pull the header in now so its definition is processed,
+// then replace it with the portable bit-shift form that accepts rvalues.
+#  include <sys/wait.h>
+#  undef  WEXITSTATUS
+#  define WEXITSTATUS(s) (((s) >> 8) & 0xff)
 #endif
 
 // localtime_r — MSVC only (MinGW provides it natively via <time.h>).

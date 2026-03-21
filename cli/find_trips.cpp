@@ -98,7 +98,7 @@ void FindTrips::runInteractive(ConfigManager& config) {
             std::cout << "  Scanning: " << path
                       << "  (gap=" << config.getGapThreshold() << "s)\n";
             auto trips = detector.detectTrips(path,
-                                              CameraProfile::d90Default(),
+                                              config.getCameraProfile(),
                                               config.getGapThreshold(),
                                               config.getFuzzyWindow(),
                                               config.getFfprobePath(),
@@ -267,7 +267,7 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
             std::cout << "  Re-scanning " << entry.path << " ...\n";
             TripDetection detector;
             auto newTrips = detector.detectTrips(entry.path,
-                                                  CameraProfile::d90Default(),
+                                                  config.getCameraProfile(),
                                                   config.getGapThreshold(),
                                                   config.getFuzzyWindow(),
                                                   config.getFfprobePath(),
@@ -657,4 +657,4 @@ void FindTrips::formatDump(ConfigManager& config,
     }
 }
 
-// SN: 00087
+// SN: 00088

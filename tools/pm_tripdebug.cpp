@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
     ConfigManager config;
     std::vector<Trip> trips = detector.detectTrips(
         path,
-        CameraProfile::d90Default(),
+        config.getCameraProfile(),
         config.getGapThreshold(),
         config.getFuzzyWindow()
     );
@@ -171,4 +171,4 @@ int main(int argc, char* argv[]) {
     std::cout << "Exiting pm_tripdebug.\n";
     return 0;
 }
-// SN: 00087
+// SN: 00088

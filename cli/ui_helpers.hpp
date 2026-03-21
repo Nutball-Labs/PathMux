@@ -244,6 +244,8 @@ inline std::string promptLine(const std::string& label,
 
 // ---------------------------------------------------------------------------
 // promptString
+// Does NOT use cin >> ws — bare Enter returns default (or empty if no
+// default), consistent with promptLine.  Leading/trailing whitespace trimmed.
 // ---------------------------------------------------------------------------
 inline std::string promptString(const std::string& label,
                                  const std::string& defaultVal = "") {
@@ -253,7 +255,14 @@ inline std::string promptString(const std::string& label,
         std::cout << label << " [" << defaultVal << "]: ";
 
     std::string input;
-    std::getline(std::cin >> std::ws, input);
+    std::getline(std::cin, input);
+    // Trim leading whitespace
+    auto first = input.find_first_not_of(" \t\r");
+    if (first == std::string::npos) input.clear();
+    else input = input.substr(first);
+    // Trim trailing whitespace
+    while (!input.empty() && (input.back() == ' ' || input.back() == '\t' || input.back() == '\r'))
+        input.pop_back();
     if (input.empty() && !defaultVal.empty()) return defaultVal;
     return input;
 }
@@ -268,7 +277,7 @@ inline int promptInt(const std::string& label,
     while (true) {
         std::cout << label << " [" << defaultVal << "]: ";
         std::string input;
-        std::getline(std::cin >> std::ws, input);
+        std::getline(std::cin, input);
         if (input.empty()) return defaultVal;
         try {
             int v = std::stoi(input);

@@ -60,26 +60,21 @@ Xcode Command Line Tools) or Homebrew GCC. CMake works identically.
 ## Code Changes Required
 
 ### Config Directory
-- [ ] `lib/platform.cpp` `getConfigDir()` — implement macOS path.
-  macOS convention is `~/Library/Application Support/pathmux/`, NOT `~/.config/pathmux/`.
-  The Windows/macOS stubs are already commented in platform.cpp.
-  ```cpp
-  #elif defined(__APPLE__)
-  return getHomePath() + "/Library/Application Support/pathmux/";
-  #endif
-  ```
-  Note: `~/.config/pathmux/` technically works on macOS too but violates platform convention.
-  Users and tools (Time Machine, iCloud) expect app data in `~/Library/`.
+- [x] `lib/platform.cpp` `getConfigDir()` — macOS path implemented.
+  Returns `~/Library/Application Support/pathmux/`. ✓
 
 ### Platform Detection Macro
-- [ ] Confirm `__APPLE__` macro is used (not `__MACH__` or `TARGET_OS_MAC`) for
-  all macOS-specific `#ifdef` guards. Apple Clang defines `__APPLE__` on macOS.
+- [x] `__APPLE__` used throughout `compat.hpp` and `platform.cpp`. ✓
 
-### No Other Changes Expected
-- All POSIX calls used in PathMux are available unchanged on macOS.
-- `ffprobe` and `exiftool` binaries are named the same as on Linux.
-- `popen`/`pclose`, `access()`, `localtime_r`, `ioctl(TIOCGWINSZ)` all work.
-- `std::filesystem` is available on macOS 10.15+ with Apple Clang or Homebrew GCC.
+### VideoToolbox Encoder Support (discovered during macOS testing)
+- [x] `compat.hpp`: `WEXITSTATUS` rvalue fix for Apple's `sys/wait.h` (which requires
+  lvalue; replaced with portable `(((s) >> 8) & 0xff)` form). ✓
+- [x] `video_build.cpp`: VideoToolbox encoders reject `-q`; replaced with `-b:v <quality>M`
+  when encoder name contains `videotoolbox`. ✓
+- [x] Host config `pathmux_Patsys-Air.json` created with VideoToolbox encoder profile. ✓
+
+### No Other Changes Required
+- All POSIX calls used by PathMux work unchanged on macOS. ✓
 
 ---
 
@@ -114,11 +109,12 @@ All installable via Homebrew:
 
 ## Testing
 
-- [ ] `pathmux --version` runs on macOS 13 Ventura or later (primary test target)
-- [ ] `-s <path>` scan against footage on a macOS volume
-- [ ] Manifest written to `~/Library/Application Support/pathmux/` correctly
-- [ ] Terminal box drawing renders correctly in Terminal.app and iTerm2
-- [ ] `pm_gpsinfo` operates correctly
+- [x] `pathmux --version` runs on macOS (tested on Ventura/Sonoma, MacBook Air i5-8210Y) ✓
+- [x] `-s <path>` scan against footage on NFS-mounted volume ✓
+- [x] Manifest written to `~/Library/Application Support/pathmux/` correctly ✓
+- [x] Terminal box drawing renders correctly in iTerm2 ✓
+- [x] Full collage build (4K + 1080p) via VideoToolbox confirmed working ✓
+- [ ] `pm_gpsinfo` operates correctly — not yet tested on macOS
 - [ ] Test on Apple Silicon hardware (or arm64 GitHub Actions runner)
 - [ ] Test paths with spaces (common on macOS, e.g., `/Volumes/My Dashcam/`)
 
@@ -175,7 +171,7 @@ Qt6 is fully supported on macOS and handles all platform differences natively.
 
 ---
 
-*Last updated: 2026-03-01*
-*Status: Planning — no macOS build attempted yet*
+*Last updated: 2026-03-20*
+*Status: CLI fully working — collage pipeline confirmed on Intel macOS via VideoToolbox*
 
 <!-- SN: 00081 -->
