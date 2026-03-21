@@ -42,6 +42,69 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-03-20
+
+### Session 1
+**Focus:** macOS first run — compile verified, collage build debugged and confirmed working.
+All three platforms (Linux, macOS, Windows) now build and produce collages.
+
+**Platform news:**
+- macOS compile confirmed clean (Apple Clang, Homebrew ffmpeg/cmake). First collage
+  build on "Patsy's Air" (MacBook Air i5-8210Y, Intel UHD 617) succeeded.
+- TV upgrade: office 32" Roku 1080p TV plays 4K collages correctly. Green screen on
+  the previous TV was a display compatibility issue, not a PathMux codec problem.
+
+**Code Changes (SN 00088):**
+
+**`lib/config_manager.hpp` / `lib/config_manager.cpp`:**
+- `reloadHostSettings()` added as public method — calls `loadHostOverlay()`.
+  Allows interactive sessions to pick up `--encoderprefs` changes made in a
+  separate invocation without requiring a restart.
+
+**`cli/find_trips.cpp`:**
+- `config.reloadHostSettings()` called before `videoBuilder.configureOptions()` in
+  the interactive browser build path — host overlay always fresh at build time.
+
+**`cli/video_build.hpp`:**
+- `CollageOptions` struct gains `EncodeSettings encode` field.
+
+**`cli/video_build.cpp`:**
+- `config.reloadHostSettings()` called before `configureOptions()` in the
+  `VideoBuilder` interactive build loop.
+- `CollageOptions.encode` populated from `config.getEncodeSettings()` in
+  `runCollageFromFiles()`.
+- `vopts.encode = opts.encode` propagated in both 1080p-from-4K branches
+  (`buildCollageFromSlots` path and direct path). Previously `vopts` was
+  constructed with only `ffmpegPath`, causing 1080p downscale to fall back
+  to default (QSV) encode settings regardless of host config.
+- 4K collage failure now skips 1080p: both `buildCollageFromSlots` and
+  `buildTrip` paths check return value of 4K build before attempting 1080p.
+  Prints "Skipping 1080p — 4K collage failed." instead of attempting the
+  downscale on a 0-byte or missing file.
+- VideoToolbox `-q` fix: `h264_videotoolbox` and `hevc_videotoolbox` do not
+  support `-q` (quality scale); replaced with `-b:v <quality>M` when encoder
+  name contains `videotoolbox`. Applied in `buildCollage4K`,
+  `buildCollage1080`, and `buildCollage1080Direct`.
+
+**Diagnosed (not fixed this session):**
+- Progress bar freezes at ~57-58% during per-camera concat on macOS/NFS.
+  Root cause: ffmpeg stops emitting progress events while the moov atom is
+  written via NFS seek-back (~97-98 KB for these files). Linux NFS client
+  is faster; macOS NFS client holds write-back longer. Fix: animated
+  "finalizing..." indicator when no progress arrives for >2 seconds. Deferred.
+- `promptString()` hangs on bare Enter input — `std::cin >> std::ws` consumes
+  the newline. Also: bare Enter returns the existing value, preventing field
+  clear. Deferred.
+
+**Decisions:**
+- VideoToolbox quality values (collageQuality, downQuality) are now treated as
+  Mbps bitrates when encoder is `*_videotoolbox`. Current values: 4K=20Mbps,
+  1080p=22Mbps. 1080p is too high — adjust downQuality to 8–10 next session.
+- macOS host profile "Patsy's Air": `h264_videotoolbox` (4K collage),
+  `h264_videotoolbox` (1080p), `h264_videotoolbox` (norm); `yuv420p`.
+
+---
+
 ## 2026-03-15
 
 ### Session 1
@@ -764,6 +827,95 @@ the SRoute app mockup build on the Windows machine.
 - CameraProfile/StorageFormat extraction from `trip_detection.cpp`
 - GPS lock corpus scan results — analyze when complete
 - License decision: GPL vs MIT — waiting on Phil Harvey response
+
+---
+
+## 2026-03-21
+
+### Session 1 (Morning)
+**Focus:** CameraProfile abstraction layer — strip D90 hardcoding from `trip_detection.cpp`,
+enable multi-brand dashcam support. Performance testing on nutball1 RTX5060.
+
+**Performance diagnostics:**
+- Concat stall at ~88% on 24-min trip: confirmed expected behavior — ffmpeg moov atom
+  write. `drawFinalizingLine()` spinner confirmed visible and working as designed.
+- 4K collage encode: initially 45 min ETA at 5% — root cause: `-preset p7` in extra
+  collage args. NVENC p7 = multi-pass max-quality, ~10x slower than p4.
+  Fixed: both norm and collage extra args now `-preset p4 -rc constqp -qp 24`.
+  After fix: ~13.5 min for 24-min 4K collage (~1.6x realtime), ~9 min for 1080p.
+
+**Design decisions:**
+- Camera identity: filename token is authoritative; directory structure is a scan hint
+  (reduces search space). D90 uses both; Tesla/Cobra use filename token only.
+  Flat-layout cameras still identifiable if directory is removed.
+- Profile JSON: `scan_subdir` optional — absent = scan source root (flat layout).
+  `filename_token` optional — absent = directory scan only.
+- Regex group 1 = full timestamp string; group 2 (optional) = camera token.
+  `timestampFormat` is strptime applied to group 1.
+- `TripSegment`: named fields replaced with `cameras` and `thumbs` maps keyed by
+  slot name (e.g. "front", "rear", "left_repeater"). Profile-agnostic.
+- `Trip`: `firstThumbs`/`lastThumbs` maps replace 8 named thumbnail fields.
+- `detectTrips()` signature: `CameraProfile` added as second param with
+  `d90Default()` default — all existing callers unmodified.
+- Manifest migration: `config_manager` detects old flat-key format on read,
+  reshapes to new `cameras`/`thumbs`/`firstThumbs`/`lastThumbs` structure silently.
+  No user action required.
+
+**Code Changes (SN 00087):**
+
+**New: `lib/camera_profile.hpp` / `lib/camera_profile.cpp`:**
+- `CameraSlot`: name, displayName, filenameToken, scanSubdir, isPrimary
+- `CameraProfile`: slots, filenameRegex, timestampFormat, containerExt,
+  thumbnailMethod, gpsMethod, defaultLayout. Load/save JSON. `d90Default()`.
+- `primarySlot()`, `slotByName()`, `isValid()` helpers.
+
+**`lib/trip_detection.hpp`:**
+- `TripSegment::front/rear/left/right/frontThumb/...` → `cameras` and `thumbs` maps
+- `Trip::firstFrontThumb/...` (8 fields) → `firstThumbs`/`lastThumbs` maps
+- `camPath(seg, slot)` and `camThumb(seg, slot)` inline helpers added
+- `#include "camera_profile.hpp"` added; `<map>` added
+- `detectTrips()` signature gains `const CameraProfile& profile = CameraProfile::d90Default()`
+
+**`lib/trip_detection.cpp`:**
+- `stringToTimestamp()` parameterized: now takes format string from profile
+- `thumbFor()` parameterized: now takes thumbnailMethod from profile
+- `scanDir` per-camera → `scanSlot` loop over `profile.slots`; supports flat and
+  subdir layouts; optional filename token verification from group 2 capture
+- `extractStartEndGps()` takes `primarySlot` string parameter
+- All `seg.front/rear/left/right` → map operations throughout
+- `closeTrip` lambda: `firstThumbs`/`lastThumbs` assigned from segment thumb maps
+
+**`lib/config_manager.cpp`:**
+- Write: segment cameras → `"cameras"` JSON object; thumbs → `"thumbs"` object;
+  trip thumbnails → `"firstThumbs"`/`"lastThumbs"` objects
+- Read: detects old vs new format, migrates D90 named fields to maps transparently
+- `tripIdentityHash()`: `seg.front` → `camPath(seg, "front")`
+- `selectValidationFiles()`: named field iteration → `seg.cameras` map iteration
+
+**Updated consumers (mechanical):**
+- `cli/find_trips.cpp`, `cli/video_build.cpp`, `cli/gpx_export.cpp`,
+  `tools/pm_tripdebug.cpp`, `tools/pm_audit.cpp`, `tools/pm_gpsinfo.cpp`,
+  `tools/pm_probe.cpp`, `cli/main.cpp`
+- `video_build.cpp`: `collectSegments` member-pointer lambda → slot-name lambda;
+  all audio if-else ladders → `camPath(seg, ac)`; `TripSegment::*` member pointers gone
+- `gpx_export.cpp::buildStem()`: handles both old and new JSON segment format
+
+**`CMakeLists.txt`:** `lib/camera_profile.cpp` added to pathmuxlib sources.
+
+**Build:** Clean. One pre-existing warning in pm_gpsinfo.cpp (unused param). No new warnings.
+
+**Files Changed:** `lib/camera_profile.hpp` (new), `lib/camera_profile.cpp` (new),
+`lib/trip_detection.hpp`, `lib/trip_detection.cpp`, `lib/config_manager.cpp`,
+`cli/main.cpp`, `cli/find_trips.cpp`, `cli/video_build.cpp`, `cli/gpx_export.cpp`,
+`tools/pm_tripdebug.cpp`, `tools/pm_audit.cpp`, `tools/pm_gpsinfo.cpp`,
+`tools/pm_probe.cpp`, `CMakeLists.txt`
+
+**Pending (carry forward):**
+- Wire profile loading from `~/.config/pathmux/profiles/` into callers
+  (currently all callers use `d90Default()` explicitly)
+- pm_probe trial scan — now unblocked
+- Man page update: --hostprefs, --format, --fields (v0.9.11)
+- README public-audience rewrite + LICENSE file
 
 ---
 
