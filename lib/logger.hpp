@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
 
@@ -134,4 +136,4 @@ private:
 #define LOG_CMD(cmd, exit, out) Pathmux::Logger::instance().logCommand(cmd, exit, out)
 
 #endif
-// SN: 00083
+// SN: 00089

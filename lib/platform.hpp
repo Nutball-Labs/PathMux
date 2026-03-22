@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef PLATFORM_HPP
 #define PLATFORM_HPP
 
@@ -35,4 +37,4 @@ int getTerminalWidth();
 } // namespace Pathmux
 
 #endif
-// SN: 00071
+// SN: 00089

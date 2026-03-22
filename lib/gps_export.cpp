@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "gps_export.hpp"
 #include "compat.hpp"
 #include "config_manager.hpp"
@@ -456,4 +458,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 }
 
 } // namespace Pathmux
-// SN: 00082
+// SN: 00089

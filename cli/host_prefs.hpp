@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef HOST_PREFS_HPP
 #define HOST_PREFS_HPP
 
@@ -18,4 +20,4 @@ public:
 };
 
 #endif
-// SN: 00087
+// SN: 00089

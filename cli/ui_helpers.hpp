@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef UI_HELPERS_HPP
 #define UI_HELPERS_HPP
 
@@ -359,4 +361,4 @@ inline std::string confirmOutputPath(const std::string& path) {
 } // namespace UI
 
 #endif
-// SN: 00083
+// SN: 00089

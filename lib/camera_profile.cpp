@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "camera_profile.hpp"
 #include "../json.hpp"
 #include <fstream>
@@ -155,4 +157,4 @@ CameraProfile CameraProfile::d90Default() {
 }
 
 } // namespace Pathmux
-// SN: 00088
+// SN: 00089

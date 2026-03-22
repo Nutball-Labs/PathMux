@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 // pm_ls — non-interactive trip lister (PathMux suite)
 //
 // Usage:
@@ -334,4 +336,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00087
+// SN: 00089

@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [1.0.0 / SN: 00089] - 2026-03-22
+### Changed
+- **License: MIT → GNU General Public License v3 or later** — prevents closed-source
+  rebranded redistribution. `LICENSE` file replaced with canonical FSF GPL v3 text.
+  CMake packaging metadata updated (`GPL-3.0-or-later`). README license section updated.
+- **SPDX headers + copyright notice** added to all 38 source files
+  (`// SPDX-License-Identifier: GPL-3.0-or-later` + `// Copyright (C) 2026 Nutball Labs / Stephen Berg`).
+- **License canary** embedded in binary via `PATHMUX_LICENSE_NOTICE[]` in `version.hpp`:
+  copyright, license, URL, and Kali's editorial opinion. Survives strip;
+  visible with `strings pathmux | grep -A 14 "GNU General"`.
+
+---
+
 ## [0.9.11a / SN: 00088] - 2026-03-20 / 2026-03-21
 ### Fixed
 - **VideoToolbox `-q` rejection**: `h264_videotoolbox` and `hevc_videotoolbox` do not
@@ -1062,4 +1075,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00088 -->
+<!-- SN: 00089 -->

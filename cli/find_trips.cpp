@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "find_trips.hpp"
 #include "config_manager.hpp"
 #include "ui_helpers.hpp"
@@ -657,4 +659,4 @@ void FindTrips::formatDump(ConfigManager& config,
     }
 }
 
-// SN: 00088
+// SN: 00089

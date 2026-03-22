@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 // pm_findgpslock — scan raw dashcam .ts files and report GPS lock acquisition
 //
 // For each .ts file prints a "# filename  parsed-timestamp" header line,
@@ -208,4 +210,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00086
+// SN: 00089

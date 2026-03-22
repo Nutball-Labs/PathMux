@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "kml_prefs.hpp"
 #include "ui_helpers.hpp"
 #include "version.hpp"
@@ -101,4 +103,4 @@ bool KmlPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00071
+// SN: 00089

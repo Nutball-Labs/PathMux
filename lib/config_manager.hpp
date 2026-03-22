@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef CONFIG_MANAGER_HPP
 #define CONFIG_MANAGER_HPP
 
@@ -350,4 +352,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00088
+// SN: 00089

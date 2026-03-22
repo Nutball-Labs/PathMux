@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef TRIP_FORMAT_HPP
 #define TRIP_FORMAT_HPP
 
@@ -154,4 +156,4 @@ inline void writeTripsXML(const std::vector<ManifestEntry>& index,
 } // namespace Pathmux
 
 #endif
-// SN: 00087
+// SN: 00089

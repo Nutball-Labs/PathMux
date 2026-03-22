@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef GPX_EXPORT_HPP
 #define GPX_EXPORT_HPP
 
@@ -80,4 +82,4 @@ private:
 };
 
 #endif
-// SN: 00080
+// SN: 00089

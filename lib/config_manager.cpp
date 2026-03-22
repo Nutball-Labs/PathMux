@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "config_manager.hpp"
 #include "camera_profile.hpp"
 #include "compat.hpp"
@@ -1418,4 +1420,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00088
+// SN: 00089

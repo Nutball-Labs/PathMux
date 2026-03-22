@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 // pm_gpsinfo — standalone GPS inspection tool for PathMux suite.
 // Runs exiftool on a Pruveeo D90 .ts file and reports GPS data.
 //
@@ -721,4 +723,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-// SN: 00087
+// SN: 00089

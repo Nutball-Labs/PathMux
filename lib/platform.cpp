@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "platform.hpp"
 #include <cstdlib>
 #include <iostream>
@@ -71,4 +73,4 @@ int getTerminalWidth() {
 } // namespace Platform
 } // namespace Pathmux
 
-// SN: 00082
+// SN: 00089

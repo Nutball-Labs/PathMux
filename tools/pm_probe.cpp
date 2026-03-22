@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 // pm_probe — camera compatibility profiler (PathMux suite)
 //
 // Usage:
@@ -1918,4 +1920,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00088
+// SN: 00089

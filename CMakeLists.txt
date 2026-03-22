@@ -227,11 +227,11 @@ set(CPACK_PACKAGE_NAME "pathmux")
 set(CPACK_PACKAGE_VERSION "${PATHMUX_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
 set(CPACK_PACKAGE_CONTACT "Stephen Berg")
-set(CPACK_PACKAGE_LICENSE "MIT")
+set(CPACK_PACKAGE_LICENSE "GPL-3.0-or-later")
 
 # RPM specific
 set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
-set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_LICENSE "GPL-3.0-or-later")
 set(CPACK_RPM_PACKAGE_SUGGESTS "exiftool")  # Soft dep: version req is camera-dependent
 # Note: ffmpeg is in RPM Fusion, not EPEL. Document as soft dependency.
 # Users must install ffmpeg from RPM Fusion separately.
@@ -252,4 +252,4 @@ set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
 
 include(CPack)
 
-# SN: 00087
+# SN: 00089

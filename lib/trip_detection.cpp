@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "trip_detection.hpp"
 #include "camera_profile.hpp"
 #include "compat.hpp"
@@ -428,4 +430,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 }
 
 } // namespace Pathmux
-// SN: 00088
+// SN: 00089

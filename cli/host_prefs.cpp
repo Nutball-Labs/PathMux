@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "host_prefs.hpp"
 #include "prefs.hpp"
 #include "ui_helpers.hpp"
@@ -124,4 +126,4 @@ bool HostPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00087
+// SN: 00089

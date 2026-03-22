@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 
 // ---------------------------------------------------------------------------
@@ -11,4 +13,4 @@
 #include "format_helpers.hpp"
 #include "version.hpp"
 
-// SN: 00080
+// SN: 00089

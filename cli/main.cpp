@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include <iostream>
 #include <vector>
 #include <string>
@@ -334,4 +336,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00088
+// SN: 00089

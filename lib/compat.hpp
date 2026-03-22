@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 
 #include <string>
@@ -94,4 +95,4 @@ inline std::string pathBasename(const std::string& p) {
     return (pos != std::string::npos) ? p.substr(pos + 1) : p;
 }
 
-// SN: 00087
+// SN: 00089

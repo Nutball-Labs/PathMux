@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef FIND_TRIPS_HPP
 #define FIND_TRIPS_HPP
 
@@ -58,4 +60,4 @@ private:
 };
 
 #endif
-// SN: 00087
+// SN: 00089

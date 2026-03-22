@@ -257,7 +257,8 @@ Fastest 4K collage build times for a standardized reference trip
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GNU General Public License v3 — see [LICENSE](LICENSE).
+Copyright (C) 2026 Nutball Labs / Stephen Berg
 
 ---
 
@@ -269,4 +270,4 @@ ships Linux-first but targets all three platforms.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
-<!-- SN: 00088 -->
+<!-- SN: 00089 -->

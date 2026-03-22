@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef TRIP_DETECTION_HPP
 #define TRIP_DETECTION_HPP
 
@@ -153,4 +155,4 @@ public:
 } // namespace Pathmux
 
 #endif
-// SN: 00088
+// SN: 00089

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 // pm_audit — footage integrity checker (PathMux suite)
 //
 // Usage:
@@ -355,4 +357,4 @@ int main(int argc, char* argv[])
 
     return problemTrips > 0 ? 1 : 0;
 }
-// SN: 00087
+// SN: 00089

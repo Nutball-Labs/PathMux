@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "gpx_export.hpp"
 #include "config_manager.hpp"
 #include "gps_export.hpp"
@@ -438,7 +440,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
     if (doAll)
         std::cout << exported << " file" << (exported != 1 ? "s" : "") << " written.\n";
 }
-// SN: 00087
+// SN: 00089
 
 // ===========================================================================
 // runInteractive — interactive GPS menu entry point

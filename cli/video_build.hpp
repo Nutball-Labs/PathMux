@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef VIDEO_BUILD_HPP
 #define VIDEO_BUILD_HPP
 
@@ -211,4 +213,4 @@ private:
 };
 
 #endif
-// SN: 00088
+// SN: 00089

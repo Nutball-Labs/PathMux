@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 // pm_gpsexport — non-interactive GPS track exporter
 //
 // Usage:
@@ -387,4 +389,4 @@ int main(int argc, char* argv[])
 
     return exitCode;
 }
-// SN: 00083
+// SN: 00089

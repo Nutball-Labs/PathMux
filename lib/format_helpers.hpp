@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
 #ifndef FORMAT_HELPERS_HPP
 #define FORMAT_HELPERS_HPP
 
@@ -114,4 +116,4 @@ inline std::string formatFrameRate(const std::string& raw) {
 } // namespace Pathmux
 
 #endif
-// SN: 00088
+// SN: 00089
