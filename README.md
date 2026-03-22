@@ -1,105 +1,272 @@
-# PathMux Dashcam Manager
+# PathMux
 
-PathMux is a lightweight C++ tool designed to organize and manage multi-camera dashcam footage. It automatically groups related video segments into "Trips" and provides both human-readable trees and machine-readable JSON manifests.
+Organize your dashcam footage into trips, export GPS tracks, and build
+synchronized multi-camera videos — from the command line.
 
-## Key Features
+PathMux scans your dashcam's SD card (or a copy of it), groups video
+segments into trips by timestamp, and caches everything in a compact JSON
+manifest so subsequent loads are instant.  From there you can browse trips,
+extract GPS tracks for mileage logging, export GPX/KML files, or assemble
+per-camera MP4 files and 4K collages.
 
-- **Smart Path Discovery**: Just run `./pathmux -s <path>`. It will find dashcam footage and analyze the data for distinct trips.
-- **Fast Caching**: Scans once and saves a manifest in `<path>` for instant subsequent loads.
-- **Multi-Camera Support**: Automatically aligns Front, Rear, Left, and Right camera segments by timestamp.
-- **Ignore Hidden**: Automatically ignores hidden dot files (`.` files).
-- **GPS Extraction**: Extracts per-second GPS tracks via ExifTool including lat, lon, altitude, speed, heading, and accelerometer data.
-- **GPS Export**: Exports tracks to GPX, KML, or GeoJSON (FeatureCollection, one feature per track point).
-- **Base36 IDs**: Manifests and trips get short two-character base36 IDs for quick reference.
-- **Crow's Distance**: Haversine displacement calculation between trip start and end points.
-- **Metric/Imperial**: All values stored in metric; display toggleable to imperial in preferences.
-- **Manifest Validation**: MD5-based manifest integrity checking with `--validate` for cron use.
+---
+
+## Who it's for
+
+- **Rideshare and delivery drivers** (Uber, Lyft, DoorDash, Amazon Flex, etc.)
+  who need organized trip records, GPS mileage logs, and incident footage for
+  tax or reimbursement purposes.
+- **Anyone with a multi-camera dashcam** who wants more than a phone app.
+- Power users who prefer local tools over cloud upload services.
+
+> **GPS lock warning — read this if you use PathMux for mileage or tax records**
+>
+> Most dashcams need 30–120 seconds (sometimes longer) to acquire a GPS fix
+> after startup.  The GPS track for each trip's first minute or two may be
+> incomplete or missing entirely.  PathMux reports the lock time per trip
+> (`gpsLockSeconds`) so you can see how much data was lost, but it cannot
+> recover GPS data the camera never recorded.  If you use GPS tracks for
+> tax deductions, mileage reimbursement, or legal documentation, be aware
+> of this gap and account for it appropriately.
+
+---
+
+## Features
+
+- **Trip detection** — groups video segments into trips based on timestamp
+  gaps; configurable gap threshold (default 15 minutes)
+- **Multi-camera support** — aligns Front, Rear, Left, and Right camera
+  streams by timestamp; handles optional cameras gracefully
+- **GPS extraction** — one fix per second via ExifTool; stores lat, lon,
+  speed, heading in the manifest
+- **GPS export** — GPX, KML, and GeoJSON (RFC 7946) output
+- **Video build** — per-camera MP4 concat and synchronized 4K collage via
+  ffmpeg; hardware acceleration (NVENC, QSV, VAAPI) configurable
+- **Camera profiles** — JSON profiles for different dashcam models; create
+  your own with the interactive `pm_probe --wizard`
+- **Manifest caching** — scan once, load instantly; MD5 integrity checking
+- **Structured output** — `--format=json/csv/xml` and `--fields` filtering
+  for scripting and fleet integration
+- **Multi-host support** — shared footage library with per-machine encoder
+  settings via `--hostprefs`
+
+---
+
+## Supported Cameras
+
+| Camera | Layout | GPS | Status |
+|---|---|---|---|
+| Pruveeo D90 360° | `Front/` `Rear/` `Left/` `Right/` subdirs, `.ts` | LIGOGPSINFO via ExifTool | ✅ Confirmed |
+| Cobra CCDC4500 | Flat single directory, `.MOV`, H.264 | None | ✅ Confirmed (no GPS) |
+
+**Don't see your camera?**  See [Adding Camera Support](#adding-camera-support) below.
+
+---
 
 ## Requirements
 
-- Alma Linux 9.x (or compatible RHEL 9 derivative)
-- g++ with C++17 support
-- CMake 3.16+
-- ffmpeg/ffprobe (RPM Fusion or static build)
-- ExifTool (minimum version is camera-dependent; see GPS Extraction note below)
+**Platform:** Linux (x86_64) — this is a Linux application.  Nutball Labs
+believes in cross-platform portability, so Windows and macOS ports are a
+stated goal, but they are not yet available.  All current development and
+testing is on Linux (Alma 9.x / RHEL 9).
 
-## Build
+**Build dependencies:**
+- g++ with C++17 support (GCC 11+ recommended)
+- CMake 3.16+
+
+**Runtime dependencies:**
+- `ffmpeg` / `ffprobe` — not in base RHEL/Alma repos; install from
+  [RPM Fusion](https://rpmfusion.org/) or use a static build
+- `exiftool` — for GPS extraction from cameras that embed GPS in footage.
+  Version requirements vary by camera GPS format; if extraction fails,
+  try updating ExifTool first.
+
+---
+
+## Installation
 
 ```bash
-mkdir build && cd build
+git clone https://github.com/Nutball-Labs/PathMux.git
+cd PathMux
+mkdir build-linux && cd build-linux
 cmake ..
 make
 ```
 
+Binaries are placed in `build-linux/`:
+
+| Binary | Purpose |
+|---|---|
+| `pathmux` | Main CLI — scan, browse, export, build video |
+| `pm_probe` | Camera profiler — fingerprint and wizard |
+| `pm_gpsinfo` | GPS inspection and batch lock-time scan |
+| `pm_gpsexport` | Export GPS tracks from existing manifests |
+| `pm_ls` | Quick manifest listing |
+| `pm_audit` | Manifest integrity checker |
+
+---
+
 ## Quick Start
 
-1. **Compile**: `cmake .. && make` (from a `build/` subdirectory)
-2. **Run**: `./pathmux` Shows usage.
-3. **Scan**: `./pathmux -s <path>` Scans path for dashcam videos and runs trip detection routines.
-4. **List Manifests**: `./pathmux -t`
-5. **Full Tree**: `./pathmux -T` Shows manifests and the trips contained in each.
-6. **Interactive Browser**: `./pathmux -I`
-7. **GPS Menu**: `./pathmux -G`
-8. **Validate Manifests**: `./pathmux --validate` (exit 0=ok, 1=problems)
-
-## GPS Workflow
+### 1. Profile your camera (first time only)
 
 ```bash
-./pathmux -G        # Opens interactive GPS menu
-                    # Select manifest → select trip → [G] Extract GPS to file
-                    # Produces pm_trip_<ID>_track.geojson colocated with manifest
-                    # Then [X] export GPX or [K] export KML as needed
+./pm_probe --wizard /path/to/sdcard
 ```
 
-> **Note**: GPS extraction relies entirely on ExifTool. PathMux passes the configured options string to ExifTool and parses its output — it does not validate ExifTool versions or maintain a camera compatibility list. If GPS extraction fails for your camera, that is an ExifTool compatibility issue; contact the ExifTool maintainer at https://exiftool.org. Run `pm_probe --card <path>` to generate a structured camera fingerprint report you can attach to an ExifTool bug report.
+The wizard walks through camera layout, filename format, GPS method, and
+timezone.  It saves a profile to `~/.config/pathmux/profiles/` and runs a
+trial scan to confirm it works.
 
-## Manifest Location
+If the wizard produces a working profile, you're done.  If not, see
+[Adding Camera Support](#adding-camera-support).
 
-Manifests are stored colocated with the footage:
+### 2. Select your profile
 
+```bash
+./pathmux --prefs    # [N] Camera profile → pick from list → [S] Save
 ```
-/path/to/footage/pm_manifest_<id>.json
+
+### 3. Scan your footage
+
+```bash
+./pathmux -s /path/to/sdcard
 ```
 
-If the footage path is not writable, falls back to `~/.config/pathmux/`. The manifest index at `~/.config/pathmux/manifests.json` tracks all known manifests.
+PathMux detects trips and prints a one-line summary per trip.  The manifest
+is saved alongside your footage.
 
-## Camera Support
+### 4. Browse trips
 
-**Confirmed Working**
+```bash
+./pathmux -I        # interactive browser — select manifest → trip → details
+./pathmux -t        # quick one-line summary per manifest
+./pathmux -T        # full trip list across all manifests
+```
 
-- **Pruveeo D90 360°** — developed and tested on this camera. Produces MPEG-2 Transport Stream (`.ts`) segments in `Front/`, `Rear/`, `Left/`, `Right/` subdirectories with `YYYYMMDD_HHMMSS_X.ts` filename convention. GPS extraction via ExifTool from embedded LIGOGPSINFO stream.
+### 5. Extract GPS and export
 
-**Adding Support for Other Cameras**
+```bash
+./pathmux -G        # interactive GPS menu
+                    # Select trip → [G] Extract → [X] GPX  [K] KML  [J] GeoJSON
+```
 
-If you have a dashcam that PathMux doesn't recognize, the following information would allow analysis of the footage format for inclusion in trip detection:
+### 6. Build video
 
-1. **Directory listing** — run `find /path/to/footage -type f | sort` and share the output. Shows the directory structure and filename conventions.
+From the interactive browser (`-I`): select a trip → **[V] Build video**.
+Configure cameras, resolution, output directory, then **GO**.
 
-2. **Sample filename** — a few representative filenames from each camera channel, e.g. `20260225_135653F.ts`. The timestamp encoding and channel suffix conventions vary between manufacturers.
+---
 
-3. **File format probe** — run the following on one segment from each channel:
-   ```bash
-   ffprobe -v quiet -print_format json -show_format -show_streams yourfile.ts
-   ```
+## GPS and Mileage Logging
 
-4. **GPS tag dump** — if your camera embeds GPS data, run:
-   ```bash
-   exiftool -ee3 -G1 -a -s yourfile.ts | grep -i gps | head -40
-   ```
-   This shows what GPS fields are present and their format.
+GPS tracks are extracted from the footage on demand (they are not parsed
+during the initial scan to keep scanning fast).
 
-5. **Segment duration** — typical segment length in seconds (60, 120, 180, 300 are common).
+```bash
+./pathmux -G                       # interactive — pick trip, extract, export
+./pm_gpsinfo --scan-all-trips      # batch: scan every trip for GPS lock time
+```
 
-6. **Gap behavior** — does the camera produce a short stub segment at startup before the first full-length segment? If so, approximately how long is it?
+The `gpsLockSeconds` field in each trip manifest records how many seconds
+elapsed before the first valid GPS fix.  Use `pm_gpsinfo --scan-all-trips`
+to populate this field across all manifests after a scan.
 
-Open an issue on GitHub with the above information and I'll analyze the format and add detection support.
+Exported GPX and KML files open in Google Earth, Google Maps, OsmAnd,
+and most mapping applications.
 
-## Project Status
+---
 
-Active CLI development (Phase 1). Qt6 GUI planned for Phase 2.
+## Adding Camera Support
+
+### Try the wizard first
+
+```bash
+./pm_probe --wizard /path/to/sdcard
+```
+
+The wizard handles subdirectory layouts (one folder per camera) and flat
+layouts (all cameras in one directory, distinguished by filename token).
+It detects timestamp format, GPS method, and thumbnail handling
+automatically where possible.
+
+### If the wizard doesn't produce a working profile
+
+Collect a structured fingerprint and open a GitHub issue:
+
+```bash
+./pm_probe --card /path/to/sdcard --json > camera_report.json
+```
+
+Open an issue at **https://github.com/Nutball-Labs/PathMux/issues**, attach
+`camera_report.json`, and include the camera make and model in the title.
+The `--card` output contains everything needed to build a profile without
+having the hardware in hand.
+
+---
+
+## Configuration
+
+Settings are stored in `~/.config/pathmux/`:
+
+| File | Purpose |
+|---|---|
+| `pathmux.json` | Base preferences (all hosts) |
+| `pathmux_<hostname>.json` | Host-specific overlay (encoder, paths) |
+| `manifests.json` | Index of all scanned footage paths |
+| `profiles/<name>.json` | Camera profiles |
+
+```bash
+./pathmux --prefs          # general preferences
+./pathmux --encoderprefs   # hardware encoder settings (NVENC, QSV, VAAPI)
+./pathmux --hostprefs      # per-machine settings (paths, encoder, output dir)
+./pathmux --kmlprefs       # KML visual settings (colors, line width, pins)
+./pathmux --locations      # named locations for KML proximity pins
+```
+
+---
+
+## Structured Output
+
+```bash
+./pathmux -T --format=csv --fields=date,start_time,duration,distance_km
+./pathmux -T --format=json
+./pathmux -T --format=xml
+```
+
+Available fields: `manifest_id`, `trip_id`, `date`, `start_time`,
+`start_epoch`, `duration`, `duration_seconds`, `segment_count`, `note`,
+`start_lat`, `start_lon`, `end_lat`, `end_lon`, `distance_km`,
+`distance_mi`, `gps_lock_seconds`, `gps_track_status`.
+
+---
+
+## Brag Board
+
+Fastest 4K collage build times for a standardized reference trip
+(47 minutes, 4 cameras).  Submit yours via a GitHub issue — copy the
+`buildHistory` JSON block from your manifest and paste it in.
+
+| | Machine | 4K collage |
+|---|---|---|
+| 🥇 | i7 / RTX 4060 / NVMe | 6m 22s |
+| 🥈 | Ryzen 5 5600 / GTX 1660 Super / SSD | 31m 48s (libx265) |
+| 🥉 | Core i5-11400 / no GPU / HDD | 24m 33s (libx264) |
+
+---
 
 ## License
 
-Private repository — all rights reserved.
+MIT — see [LICENSE](LICENSE).
 
-<!-- SN: 00081 -->
+---
+
+## Project Status
+
+Phase 1 (CLI) is under active development on Linux.  Phase 2 (Qt6 GUI) is
+planned.  Windows and macOS ports are a portability goal — Nutball Labs
+ships Linux-first but targets all three platforms.
+
+See [ROADMAP.md](ROADMAP.md) for the full plan.
+
+<!-- SN: 00088 -->

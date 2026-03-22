@@ -188,6 +188,10 @@ install(FILES
     OPTIONAL
 )
 
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pathmux"
+)
+
 # ---------------------------------------------------------------------------
 # SN Audit target — scans all source files for SN: comments, writes
 # sn_audit.txt to the source root. Uses a cmake script to avoid shell
@@ -223,12 +227,12 @@ set(CPACK_PACKAGE_NAME "pathmux")
 set(CPACK_PACKAGE_VERSION "${PATHMUX_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
 set(CPACK_PACKAGE_CONTACT "Stephen Berg")
-set(CPACK_PACKAGE_LICENSE "GPL-2.0")
+set(CPACK_PACKAGE_LICENSE "MIT")
 
 # RPM specific
 set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
-set(CPACK_RPM_PACKAGE_LICENSE "GPLv2")
-set(CPACK_RPM_PACKAGE_REQUIRES "exiftool")
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_SUGGESTS "exiftool")  # Soft dep: version req is camera-dependent
 # Note: ffmpeg is in RPM Fusion, not EPEL. Document as soft dependency.
 # Users must install ffmpeg from RPM Fusion separately.
 # Note: exiftool GPS support is camera-dependent. If GPS extraction fails,
