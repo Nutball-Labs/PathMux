@@ -243,15 +243,35 @@ Available fields: `manifest_id`, `trip_id`, `date`, `start_time`,
 
 ## Brag Board
 
-Fastest 4K collage build times for a standardized reference trip
-(47 minutes, 4 cameras).  Submit yours via a GitHub issue — copy the
-`buildHistory` JSON block from your manifest and paste it in.
+Fastest 4K collage builds, ranked by realtime multiplier
+(footage duration ÷ encode time — higher is faster).
+Minimum qualifying trip: **20 minutes, 4 cameras**.
 
-| | Machine | 4K collage |
-|---|---|---|
-| 🥇 | i7 / RTX 4060 / NVMe | 6m 22s |
-| 🥈 | Ryzen 5 5600 / GTX 1660 Super / SSD | 31m 48s (libx265) |
-| 🥉 | Core i5-11400 / no GPU / HDD | 24m 33s (libx264) |
+To submit: open a GitHub issue with your machine specs, footage duration,
+encode time, and encoder used.  Copy the `buildHistory` JSON block from
+your manifest and paste it in.
+
+| | Machine | Encoder | 4K realtime | Encode time |
+|---|---|---|---|---|
+| 🥇 | i7 / RTX 4060 / NVMe | hevc_nvenc | 7.4x | 6m 22s (47 min trip) |
+| 🥈 | Core i5-11400 / no GPU / HDD | libx264 | 1.9x | 24m 33s (47 min trip) |
+| 🥉 | Ryzen 5 5600 / GTX 1660 Super / SSD | libx265 | 1.5x | 31m 48s (47 min trip) |
+
+---
+
+## Development Paradigm
+
+PathMux is the product of a collaboration between a self-described geek with 40+ years
+of experience in communications, computer systems, and Linux sysadmin work — and Claude,
+Anthropic's AI, which handled the low-level C++ implementation.
+
+The architecture, feature decisions, hardware knowledge, and real-world dashcam testing
+are entirely human-driven.  Claude translated that domain expertise into C++17 code under
+continuous guidance and review.  No C++ experience was harmed in the making of this software.
+
+This project is offered as a demonstration that deep systems knowledge and AI-assisted
+implementation can produce production-quality tooling — even when the human half has never
+written a line of C++ before.
 
 ---
 
