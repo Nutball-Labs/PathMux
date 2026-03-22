@@ -528,6 +528,8 @@ static int segDurationFfprobe(const std::string& filePath,
 // ---------------------------------------------------------------------------
 // probeCard — SD card / dashcam storage root fingerprint
 // ---------------------------------------------------------------------------
+static std::string guessTimestampFormat(const std::string& filename); // defined below
+
 static void probeCard(const std::string& root, bool jsonMode,
                        const std::string& ffprobePath,
                        const std::string& exiftoolPath,
@@ -626,6 +628,13 @@ static void probeCard(const std::string& root, bool jsonMode,
             };
         }
         j["gps"] = jGps;
+
+        // Timestamp source detection
+        std::string tsFmtCard = sampleFiles.empty() ? ""
+                              : guessTimestampFormat(sampleFiles[0]);
+        j["timestamp_source"] = tsFmtCard.empty() ? "exiftool_metadata" : "filename";
+        if (!tsFmtCard.empty()) j["timestamp_format_guess"] = tsFmtCard;
+
         j["submit_to"] = "https://github.com/Nutball-Labs/PathMux/issues";
 
         std::cout << j.dump(2) << "\n";
@@ -669,6 +678,15 @@ static void probeCard(const std::string& root, bool jsonMode,
         std::cout << " (full-range)";
     std::cout << "\n"
               << "  Color space:  " << probe.video.colorSpace << "\n";
+
+    {
+        std::string tsFmtCard = sampleFiles.empty() ? ""
+                              : guessTimestampFormat(sampleFiles[0]);
+        if (!tsFmtCard.empty())
+            std::cout << "Timestamp:    filename (" << tsFmtCard << ")\n";
+        else
+            std::cout << "Timestamp:    file metadata (no time-of-day in filename)\n";
+    }
 
     if (probe.gps.method == "LIGOGPSINFO") {
         std::cout << "GPS method:   LIGOGPSINFO";
