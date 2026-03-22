@@ -52,19 +52,21 @@ struct KmlSettings {
 // Presets populate these fields with known-good values; user can override.
 // ---------------------------------------------------------------------------
 struct EncodeSettings {
-    std::string preset          = "qsv";        // qsv|nvenc|vaapi|cpu
-    std::string hwDevice        = "qsv:hw";     // passed to -init_hw_device
-    std::string hwDeviceType    = "qsv";        // qsv|vaapi|cuda|none
-    std::string normEncoder     = "h264_qsv";   // normalization encode
-    std::string collageEncoder  = "hevc_qsv";   // 4K collage encode
-    std::string downEncoder     = "h264_qsv";   // 1080p downscale encode
-    std::string pixFmt          = "nv12";       // pixel format before encoder
-    std::string normQuality     = "24";         // -q value for norm encode
-    std::string collageQuality  = "20";         // -q value for collage encode
-    std::string downQuality     = "22";         // -q value for downscale
-    std::string extraNormArgs   = "";           // injected after -c:v in norm
-    std::string extraCollageArgs = "";          // injected after -c:v in collage
-    std::string extraDownArgs    = "";          // injected after -c:v in 1080p downscale
+    // Default to CPU software encode — works on any machine without GPU setup.
+    // Users upgrade to qsv/nvenc/vaapi via --encoderprefs or --prefs [L].
+    std::string preset          = "cpu";        // qsv|nvenc|vaapi|cpu
+    std::string hwDevice        = "";           // passed to -init_hw_device
+    std::string hwDeviceType    = "none";       // qsv|vaapi|cuda|none
+    std::string normEncoder     = "libx264";    // normalization encode
+    std::string collageEncoder  = "libx265";    // 4K collage encode
+    std::string downEncoder     = "libx264";    // 1080p downscale encode
+    std::string pixFmt          = "yuv420p";    // pixel format before encoder
+    std::string normQuality     = "23";         // -crf for libx264
+    std::string collageQuality  = "18";         // -crf for libx265
+    std::string downQuality     = "20";         // -crf for libx264
+    std::string extraNormArgs   = "-preset fast";   // injected after -c:v in norm
+    std::string extraCollageArgs = "-preset slow";  // injected after -c:v in collage
+    std::string extraDownArgs    = "-preset fast";  // injected after -c:v in 1080p downscale
 };
 
 // Known presets — populated by applyEncodePreset()

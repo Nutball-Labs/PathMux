@@ -4,6 +4,11 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <filesystem>
+#include <vector>
+#include <algorithm>
+
+namespace fs = std::filesystem;
 
 using namespace Pathmux;
 
@@ -66,6 +71,7 @@ bool PrefsEditor::run(ConfigManager& config) {
                       + "  -- use --encoderprefs for encoder details");
         UI::printLine("[M]  Temp directory            "
                       + (working.tmpDir.empty() ? "(auto: <export dir>/pm_tmp)" : working.tmpDir));
+        UI::printLine("[N]  Camera profile            " + working.activeProfileId);
         UI::printLine();
         UI::printLine(unsaved);
         UI::printFooter("[S] Save and exit   [Q] Quit");
@@ -207,6 +213,56 @@ bool PrefsEditor::run(ConfigManager& config) {
             if (!working.tmpDir.empty())
                 UI::confirmExists(working.tmpDir);
             changed = true;
+        }
+        else if (ch == 'N') {
+            // Enumerate available profiles from ~/.config/pathmux/profiles/
+            std::string profilesDir = Pathmux::Platform::getConfigDir() + "profiles";
+            std::vector<std::string> profileIds;
+            std::error_code ec;
+            if (fs::is_directory(profilesDir, ec)) {
+                for (const auto& entry : fs::directory_iterator(profilesDir, ec)) {
+                    if (entry.path().extension() == ".json")
+                        profileIds.push_back(entry.path().stem().string());
+                }
+                std::sort(profileIds.begin(), profileIds.end());
+            }
+            if (profileIds.empty()) {
+                std::cout << "  No profiles found in " << profilesDir << "\n"
+                          << "  Run 'pm_probe --wizard <path>' to create one.\n";
+            } else {
+                std::cout << "  Available profiles:\n";
+                for (int i = 0; i < (int)profileIds.size(); ++i)
+                    std::cout << "    [" << (i + 1) << "]  " << profileIds[i]
+                              << (profileIds[i] == working.activeProfileId ? "  <active>" : "") << "\n";
+                std::cout << "  Current: " << working.activeProfileId << "\n"
+                          << "  Enter number or profile ID (blank to keep): ";
+                std::string inp;
+                std::getline(std::cin, inp);
+                if (!inp.empty()) {
+                    // Accept number or direct ID
+                    bool found = false;
+                    // Try as index
+                    try {
+                        int idx = std::stoi(inp) - 1;
+                        if (idx >= 0 && idx < (int)profileIds.size()) {
+                            working.activeProfileId = profileIds[idx];
+                            found = true;
+                        }
+                    } catch (...) {}
+                    // Try as direct ID
+                    if (!found) {
+                        for (const auto& id : profileIds)
+                            if (id == inp) { found = true; break; }
+                        if (found) working.activeProfileId = inp;
+                    }
+                    if (found) {
+                        std::cout << "  Profile set to: " << working.activeProfileId << "\n";
+                        changed = true;
+                    } else {
+                        std::cout << "  Not found: " << inp << "\n";
+                    }
+                }
+            }
         }
         else {
             std::cout << "  Invalid option.\n";
@@ -368,4 +424,4 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00087
+// SN: 00088
