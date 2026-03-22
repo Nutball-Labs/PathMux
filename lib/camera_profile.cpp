@@ -123,7 +123,7 @@ CameraProfile CameraProfile::d90Default() {
     CameraProfile p;
     p.name            = "Pruveeo D90";
     p.profileId       = "pruveeo_d90";
-    p.filenameRegex   = R"((\d{8}_\d{6})_[A-Za-z]\.[tT][sS])";
+    p.filenameRegex   = R"((\d{8}_\d{6})[A-Za-z]\.[tT][sS])";
     p.timestampFormat = "%Y%m%d_%H%M%S";
     p.containerExt    = ".ts";
     p.thumbnailMethod = "ths_sidecar";

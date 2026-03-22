@@ -943,7 +943,8 @@ static std::string extRegex(const std::string& ext)
 static std::string thumbnailMethodFrom(const std::string& thumbSource,
                                         const std::string& thumbPattern)
 {
-    if (thumbSource != "sidecar_jpg") return "none";
+    if (thumbSource == "generate_ffmpeg") return "generate_ffmpeg";
+    if (thumbSource != "sidecar_jpg")    return "none";
     // _ths suffix in pattern → ths_sidecar
     if (thumbPattern.find("_ths") != std::string::npos) return "ths_sidecar";
     return "replace_ext";
