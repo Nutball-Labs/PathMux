@@ -372,7 +372,7 @@ static void printFileProbe(const FileProbe& p)
     std::cout << "File:         " << p.filePath << "\n"
               << "Container:    " << containerLabel(p.container, p.containerExt) << "\n"
               << "Resolution:   " << p.video.width << "x" << p.video.height << "\n"
-              << "Frame rate:   " << p.video.frameRate << "\n"
+              << "Frame rate:   " << Pathmux::formatFrameRate(p.video.frameRate) << "\n"
               << "Pixel format: " << p.video.pixFmt;
     if (p.video.colorRange == "pc" || p.video.colorRange == "jpeg")
         std::cout << "  (full-range)";
@@ -663,7 +663,7 @@ static void probeCard(const std::string& root, bool jsonMode,
     std::cout << "Video profile (" << fs::path(primaryDir).filename().string()
               << ", first segment):\n"
               << "  Resolution:   " << probe.video.width << "x" << probe.video.height << "\n"
-              << "  Frame rate:   " << probe.video.frameRate << "\n"
+              << "  Frame rate:   " << Pathmux::formatFrameRate(probe.video.frameRate) << "\n"
               << "  Pixel format: " << probe.video.pixFmt;
     if (probe.video.colorRange == "pc" || probe.video.colorRange == "jpeg")
         std::cout << " (full-range)";
@@ -1071,8 +1071,9 @@ static void wizardCard(const std::string& root,
         std::cout << ")\n";
         if (c.probe.video.width > 0)
             std::cout << "    video: " << c.probe.video.width << "x"
-                      << c.probe.video.height << " @ " << c.probe.video.frameRate
-                      << " fps, " << c.probe.video.pixFmt << "\n";
+                      << c.probe.video.height << " @ "
+                      << Pathmux::formatFrameRate(c.probe.video.frameRate)
+                      << ", " << c.probe.video.pixFmt << "\n";
         for (const auto& s : c.probe.streams) {
             if (s.codecType != "audio") continue;
             std::cout << "    audio: " << s.codecName;
@@ -1643,4 +1644,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00087
+// SN: 00088

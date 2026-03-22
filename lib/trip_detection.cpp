@@ -16,6 +16,34 @@ namespace Pathmux {
 
 namespace {
 
+    // Extract DateTimeOriginal from video metadata via exiftool.
+    // Used when profile.timestampSource == "exiftool_metadata".
+    // exiftool outputs the value as "YYYY:MM:DD HH:MM:SS" (UTC for QuickTime).
+    // Returns 0 on failure.
+    std::time_t exiftoolTimestamp(const std::string& filePath,
+                                   const std::string& exiftoolPath) {
+        std::string cmd = "\"" + exiftoolPath + "\""
+                        + " -DateTimeOriginal -s3"
+                        + " \"" + filePath + "\" " NULL_REDIRECT;
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) return 0;
+        char buf[64] = {};
+        fgets(buf, sizeof(buf), pipe);
+        pclose(pipe);
+
+        std::string ts(buf);
+        while (!ts.empty() && (ts.back() == '\n' || ts.back() == '\r' || ts.back() == ' '))
+            ts.pop_back();
+        if (ts.empty()) return 0;
+
+        // Parse "YYYY:MM:DD HH:MM:SS" and treat as UTC (QuickTime convention).
+        std::tm t = {};
+        std::istringstream ss(ts);
+        ss >> std::get_time(&t, "%Y:%m:%d %H:%M:%S");
+        if (ss.fail()) return 0;
+        return timegm(&t);
+    }
+
     std::time_t stringToTimestamp(const std::string& ts, const std::string& fmt) {
         std::tm t = {};
         std::istringstream ss(ts);
@@ -243,8 +271,12 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
                 if (match[2].str() != slot.filenameToken) continue;
             }
 
-            std::string tsStr = match[1].str();
-            std::time_t epoch = stringToTimestamp(tsStr, profile.timestampFormat);
+            std::time_t epoch;
+            if (profile.timestampSource == "exiftool_metadata") {
+                epoch = exiftoolTimestamp(entry.path().string(), exiftoolPath);
+            } else {
+                epoch = stringToTimestamp(match[1].str(), profile.timestampFormat);
+            }
             if (epoch <= 0) continue;
             targetMap[epoch] = entry.path().string();
         }
@@ -388,4 +420,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 }
 
 } // namespace Pathmux
-// SN: 00087
+// SN: 00088

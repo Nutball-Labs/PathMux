@@ -67,6 +67,9 @@ struct CameraProfile {
 
     std::string filenameRegex;
     std::string timestampFormat;
+    // "filename"          — parse group 1 of filenameRegex via timestampFormat (default)
+    // "exiftool_metadata" — read DateTimeOriginal from file metadata via exiftool (UTC)
+    std::string timestampSource  = "filename";
     std::string containerExt;
     std::string thumbnailMethod = "replace_ext";
     std::string gpsMethod       = "none";
@@ -94,4 +97,4 @@ struct CameraProfile {
 } // namespace Pathmux
 
 #endif
-// SN: 00087
+// SN: 00088

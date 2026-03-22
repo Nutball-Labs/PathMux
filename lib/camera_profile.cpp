@@ -22,7 +22,9 @@ const CameraSlot* CameraProfile::slotByName(const std::string& slotName) const {
 }
 
 bool CameraProfile::isValid() const {
-    if (slots.empty() || filenameRegex.empty() || timestampFormat.empty())
+    // timestampFormat is required only when timestamps come from filenames.
+    bool needsFmt = (timestampSource != "exiftool_metadata");
+    if (slots.empty() || filenameRegex.empty() || (needsFmt && timestampFormat.empty()))
         return false;
     for (const auto& s : slots)
         if (s.isPrimary) return true;
@@ -55,11 +57,12 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
     json j = json::parse(f);
 
     CameraProfile p;
-    p.name            = j.value("name",             "");
-    p.profileId       = j.value("profile_id",       "");
-    p.filenameRegex   = j.value("filename_regex",   "");
-    p.timestampFormat = j.value("timestamp_format", "");
-    p.containerExt    = j.value("container_ext",    "");
+    p.name            = j.value("name",              "");
+    p.profileId       = j.value("profile_id",        "");
+    p.filenameRegex   = j.value("filename_regex",    "");
+    p.timestampFormat = j.value("timestamp_format",  "");
+    p.timestampSource = j.value("timestamp_source",  "filename");
+    p.containerExt    = j.value("container_ext",     "");
     p.thumbnailMethod = j.value("thumbnail_method", "replace_ext");
     p.gpsMethod       = j.value("gps_method",       "none");
     p.defaultLayout   = j.value("default_layout",   "2x2");
@@ -79,11 +82,12 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
 // ---------------------------------------------------------------------------
 void CameraProfile::saveToFile(const std::string& path) const {
     json j;
-    j["name"]             = name;
-    j["profile_id"]       = profileId;
-    j["filename_regex"]   = filenameRegex;
-    j["timestamp_format"] = timestampFormat;
-    j["container_ext"]    = containerExt;
+    j["name"]              = name;
+    j["profile_id"]        = profileId;
+    j["filename_regex"]    = filenameRegex;
+    j["timestamp_format"]  = timestampFormat;
+    j["timestamp_source"]  = timestampSource;
+    j["container_ext"]     = containerExt;
     j["thumbnail_method"] = thumbnailMethod;
     j["gps_method"]       = gpsMethod;
     j["default_layout"]   = defaultLayout;
@@ -147,4 +151,4 @@ CameraProfile CameraProfile::d90Default() {
 }
 
 } // namespace Pathmux
-// SN: 00087
+// SN: 00088

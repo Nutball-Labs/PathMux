@@ -90,7 +90,28 @@ inline double haversineKm(double lat1, double lon1, double lat2, double lon2) {
     return R * 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
 }
 
+// ---------------------------------------------------------------------------
+// formatFrameRate — convert ffprobe r_frame_rate fraction to human-readable.
+// "30000/1001" → "29.97 fps"   "30/1" → "30 fps"   "25/1" → "25 fps"
+// ---------------------------------------------------------------------------
+inline std::string formatFrameRate(const std::string& raw) {
+    if (raw.empty()) return raw;
+    auto slash = raw.find('/');
+    if (slash == std::string::npos) return raw;
+    double num = std::stod(raw.substr(0, slash));
+    double den = std::stod(raw.substr(slash + 1));
+    if (den == 0.0) return raw;
+    double fps = num / den;
+    char buf[32];
+    // If fps is very close to an integer, display without decimals.
+    if (std::fabs(fps - std::round(fps)) < 0.01)
+        std::snprintf(buf, sizeof(buf), "%.0f fps", std::round(fps));
+    else
+        std::snprintf(buf, sizeof(buf), "%.2f fps", fps);
+    return buf;
+}
+
 } // namespace Pathmux
 
 #endif
-// SN: 00083
+// SN: 00088
