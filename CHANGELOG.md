@@ -24,6 +24,38 @@
   (i5-8210Y, Intel UHD 617, macOS, Homebrew ffmpeg). All three platforms now
   build and produce collages: Linux (QSV/NVENC), macOS (VideoToolbox), Windows (pending collage test).
 
+### Added (2026-03-21)
+- **CameraProfile abstraction layer** (`lib/camera_profile.hpp/.cpp`): `CameraSlot` and
+  `CameraProfile` structs — slot list, filename regex, timestamp format, container ext,
+  thumbnail method, GPS method, default layout. `d90Default()` factory, JSON load/save,
+  `primarySlot()` / `slotByName()` / `isValid()` helpers.
+- **Slot-based `TripSegment` / `Trip`**: named front/rear/left/right fields replaced with
+  `cameras` and `thumbs` maps keyed by slot name; `Trip::firstThumbs`/`lastThumbs` maps
+  replace 8 named thumbnail fields. `camPath()` / `camThumb()` inline helpers added.
+- **`detectTrips()` profile parameter**: `const CameraProfile&` added (default
+  `d90Default()`); all existing callers unchanged. Scanning now driven by profile slot
+  list — supports flat and subdir camera layouts; filename token verified from regex group 2
+  when present.
+- **Manifest migration**: `config_manager` detects old flat-key format on read and
+  reshapes to `cameras`/`thumbs`/`firstThumbs`/`lastThumbs` transparently.
+- **`ConfigManager::getCameraProfile()`**: loads
+  `~/.config/pathmux/profiles/<activeProfileId>.json`, validates, falls back to
+  `d90Default()` if absent or invalid. `activeProfileId` stored in `pathmux.json`
+  (default `"pruveeo_d90"`). All `detectTrips()` call sites updated — D90 hardcoding
+  fully removed.
+
+### Fixed (2026-03-21)
+- **Progress bar freeze during moov atom write** (`cli/video_build.cpp`): when ffmpeg
+  stops emitting progress events while finalizing (e.g. NFS seek-back for moov atom),
+  the bar now detects a 2-second stall and switches to a spinning `writing |` indicator
+  at the last-known percentage. Resumes normal bar if progress events resume.
+  Added `drawFinalizingLine()` static helper; `lastProgressTime` tracked via
+  `std::chrono::steady_clock`. `<chrono>` added to includes.
+- **`promptString()` and `promptInt()` hang on bare Enter** (`cli/ui_helpers.hpp`):
+  `std::getline(std::cin >> std::ws, input)` consumed the newline then blocked waiting
+  for additional input. Replaced with plain `std::getline(std::cin, input)` + manual
+  leading/trailing whitespace trim — consistent with `promptLine()`.
+
 ---
 
 ## [0.9.11a / SN: 00087] - 2026-03-19
@@ -1030,4 +1062,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00087 -->
+<!-- SN: 00088 -->
