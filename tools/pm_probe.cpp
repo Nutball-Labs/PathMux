@@ -1684,9 +1684,10 @@ static void wizardCard(const std::string& root,
         j["timestamp_source"] = "filename";
     }
 
-    j["container_ext"]    = primaryExt;
-    j["thumbnail_method"] = thumbnailMethodFrom(thumbSource, thumbPattern);
-    j["gps_method"]       = gpsMethod;
+    j["timestamp_timezone"] = tzLower;
+    j["container_ext"]      = primaryExt;
+    j["thumbnail_method"]   = thumbnailMethodFrom(thumbSource, thumbPattern);
+    j["gps_method"]         = gpsMethod;
 
     // default_layout from camera count
     int camCount = static_cast<int>(dirRoles.size());

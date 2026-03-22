@@ -69,7 +69,10 @@ struct CameraProfile {
     std::string timestampFormat;
     // "filename"          — parse group 1 of filenameRegex via timestampFormat (default)
     // "exiftool_metadata" — read DateTimeOriginal from file metadata via exiftool (UTC)
-    std::string timestampSource  = "filename";
+    std::string timestampSource   = "filename";
+    // "utc"   — filename timestamps are in UTC; use timegm() for epoch conversion
+    // "local" — filename timestamps are in local wall-clock time; use mktime()
+    std::string timestampTimezone = "utc";
     std::string containerExt;
     std::string thumbnailMethod = "replace_ext";
     std::string gpsMethod       = "none";

@@ -40,6 +40,7 @@ bool CameraProfile::isValid() const {
 //   "profile_id": "pruveeo_d90",
 //   "filename_regex": "(\\d{8}_\\d{6})_[A-Za-z]\\.[tT][sS]",
 //   "timestamp_format": "%Y%m%d_%H%M%S",
+//   "timestamp_timezone": "utc",
 //   "container_ext": ".ts",
 //   "thumbnail_method": "ths_sidecar",
 //   "gps_method": "exiftool_ligogps",
@@ -61,7 +62,8 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
     p.profileId       = j.value("profile_id",        "");
     p.filenameRegex   = j.value("filename_regex",    "");
     p.timestampFormat = j.value("timestamp_format",  "");
-    p.timestampSource = j.value("timestamp_source",  "filename");
+    p.timestampSource   = j.value("timestamp_source",    "filename");
+    p.timestampTimezone = j.value("timestamp_timezone",  "utc");
     p.containerExt    = j.value("container_ext",     "");
     p.thumbnailMethod = j.value("thumbnail_method", "replace_ext");
     p.gpsMethod       = j.value("gps_method",       "none");
@@ -86,7 +88,8 @@ void CameraProfile::saveToFile(const std::string& path) const {
     j["profile_id"]        = profileId;
     j["filename_regex"]    = filenameRegex;
     j["timestamp_format"]  = timestampFormat;
-    j["timestamp_source"]  = timestampSource;
+    j["timestamp_source"]   = timestampSource;
+    j["timestamp_timezone"] = timestampTimezone;
     j["container_ext"]     = containerExt;
     j["thumbnail_method"] = thumbnailMethod;
     j["gps_method"]       = gpsMethod;
@@ -123,8 +126,9 @@ CameraProfile CameraProfile::d90Default() {
     CameraProfile p;
     p.name            = "Pruveeo D90";
     p.profileId       = "pruveeo_d90";
-    p.filenameRegex   = R"((\d{8}_\d{6})[A-Za-z]\.[tT][sS])";
-    p.timestampFormat = "%Y%m%d_%H%M%S";
+    p.filenameRegex      = R"((\d{8}_\d{6})[A-Za-z]\.[tT][sS])";
+    p.timestampFormat    = "%Y%m%d_%H%M%S";
+    p.timestampTimezone  = "utc";
     p.containerExt    = ".ts";
     p.thumbnailMethod = "ths_sidecar";
     p.gpsMethod       = "exiftool_ligogps";

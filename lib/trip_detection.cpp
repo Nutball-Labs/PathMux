@@ -44,10 +44,12 @@ namespace {
         return timegm(&t);
     }
 
-    std::time_t stringToTimestamp(const std::string& ts, const std::string& fmt) {
+    std::time_t stringToTimestamp(const std::string& ts, const std::string& fmt,
+                                  bool utc = false) {
         std::tm t = {};
         std::istringstream ss(ts);
         ss >> std::get_time(&t, fmt.c_str());
+        if (utc) return timegm(&t);
         t.tm_isdst = -1;
         return std::mktime(&t);
     }
@@ -275,7 +277,8 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
             if (profile.timestampSource == "exiftool_metadata") {
                 epoch = exiftoolTimestamp(entry.path().string(), exiftoolPath);
             } else {
-                epoch = stringToTimestamp(match[1].str(), profile.timestampFormat);
+                epoch = stringToTimestamp(match[1].str(), profile.timestampFormat,
+                                         profile.timestampTimezone == "utc");
             }
             if (epoch <= 0) continue;
             targetMap[epoch] = entry.path().string();
