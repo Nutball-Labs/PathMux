@@ -267,7 +267,7 @@ Anthropic's AI, which handled the low-level C++ implementation.
 
 The architecture, feature decisions, hardware knowledge, and real-world dashcam testing
 are entirely human-driven.  Claude translated that domain expertise into C++17 code under
-continuous guidance and review.  No C++ experience was harmed in the making of this software.
+continuous guidance and review.  No C++ bits or bytes were harmed in the making of this software.
 
 This project is offered as a demonstration that deep systems knowledge and AI-assisted
 implementation can produce production-quality tooling — even when the human half has never
