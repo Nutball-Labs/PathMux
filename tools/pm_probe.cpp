@@ -474,7 +474,12 @@ static std::vector<std::string> findCameraDirs(std::string& root)
             }
         } catch (...) {}
     }
-    if (byParent.empty()) return dirs;
+    if (byParent.empty()) {
+        // Flat-layout fallback: video files are directly in root (no subdirs)
+        if (!listVideoFiles(root).empty())
+            dirs.push_back(root);
+        return dirs;
+    }
 
     // Prefer "video" parent; otherwise first alphabetically
     std::string chosen;
@@ -498,6 +503,15 @@ static std::vector<std::string> findCameraDirs(std::string& root)
     dirs = byParent[chosen];
     std::sort(dirs.begin(), dirs.end());
     return dirs;
+}
+
+// NOTE: if findCameraDirs returns empty, callers should check for flat layout
+// (video files directly in root) via listVideoFiles(root).
+static bool isFlatLayout(const std::vector<std::string>& cameraDirs,
+                          const std::string& scanRoot)
+{
+    return cameraDirs.size() == 1 &&
+           fs::path(cameraDirs[0]) == fs::path(scanRoot);
 }
 
 // Detect file extensions present across a set of files
@@ -754,6 +768,76 @@ static std::string guessCameraRole(const std::string& dirName)
     if (lower == "left"  || lower == "left_repeater")  return "left";
     if (lower == "right" || lower == "right_repeater") return "right";
     return "";
+}
+
+// Guess camera role from a filename token (flat layout).
+// Handles single-letter (F/R/L/B) and CAMn conventions.
+static std::string guessCameraRoleFromToken(const std::string& token)
+{
+    std::string up = token;
+    std::transform(up.begin(), up.end(), up.begin(),
+                   [](unsigned char c){ return std::toupper(c); });
+    if (up == "F" || up == "FRONT" || up == "CAM1") return "front";
+    if (up == "B" || up == "BACK"  || up == "REAR" || up == "CAM2") return "rear";
+    if (up == "L" || up == "LEFT")                   return "left";
+    if (up == "R" || up == "RIGHT")                  return "right";
+    return "";
+}
+
+static int timestampTokenLen(const std::string& fmt);  // defined below
+
+// Flat-layout multi-camera token analysis.
+// Inspects filenames in a single directory and detects whether multiple
+// cameras are present (distinguished by a suffix token after the timestamp).
+struct FlatTokenAnalysis {
+    bool                     isMultiCamera  = false;
+    std::vector<std::string> tokens;          // unique tokens, e.g. {"B","F","L","R"}
+    std::string              suffixGroup2;    // regex fragment with group 2 wrapping token
+};
+
+static FlatTokenAnalysis analyzeFlatCameraTokens(const std::string& dir,
+                                                   const std::string& tsFmt)
+{
+    FlatTokenAnalysis result;
+    int tsLen = timestampTokenLen(tsFmt);
+    if (tsLen <= 0) return result;
+
+    auto files = listVideoFiles(dir);
+    std::set<std::string> suffixes;
+    for (const auto& f : files) {
+        std::string base = pathBasename(f);
+        if ((int)base.size() <= tsLen) continue;
+        auto dot = base.rfind('.');
+        if (dot == std::string::npos || (int)dot <= tsLen) continue;
+        suffixes.insert(base.substr(tsLen, dot - tsLen));
+    }
+    if (suffixes.size() < 2) return result;
+
+    // Pattern A: bare single uppercase letter  e.g. F, R, L, B  (D90 flat)
+    bool allSingleUpper = true;
+    for (const auto& s : suffixes)
+        if (s.size() != 1 || !std::isupper((unsigned char)s[0]))
+            { allSingleUpper = false; break; }
+    if (allSingleUpper) {
+        result.isMultiCamera = true;
+        for (const auto& s : suffixes) result.tokens.push_back(s);
+        result.suffixGroup2 = "([A-Za-z])";
+        return result;
+    }
+
+    // Pattern B: _X where X is a single uppercase letter  e.g. _F, _R
+    bool allUnderscoreLetter = true;
+    for (const auto& s : suffixes)
+        if (s.size() != 2 || s[0] != '_' || !std::isupper((unsigned char)s[1]))
+            { allUnderscoreLetter = false; break; }
+    if (allUnderscoreLetter) {
+        result.isMultiCamera = true;
+        for (const auto& s : suffixes) result.tokens.push_back(s.substr(1));
+        result.suffixGroup2 = "_([A-Za-z])";
+        return result;
+    }
+
+    return result;  // unrecognised pattern — single-camera path handles it
 }
 
 // Guess the timestamp format string from a sample filename (path or basename).
@@ -1117,7 +1201,7 @@ static void wizardCard(const std::string& root,
         c.hasSidecar = detectSidecarJpg(d);
         c.sidecarOk  = c.hasSidecar && sidecarTimestampMatch(d, tsFmt);
         if (!files.empty()) {
-            std::cout << "  Probing " << c.dirName << "/ ...\n";
+            std::cout << "  Probing " << (c.dirName.empty() ? "." : c.dirName) << "/ ...\n";
             std::cout.flush();
             c.probe = probeFile(files[0], ffprobePath, exiftoolPath, exiftoolOptions);
         }
@@ -1132,13 +1216,27 @@ static void wizardCard(const std::string& root,
     // Suffix analysis (driven by all dirs)
     SuffixAnalysis suffix = analyzeSuffix(cameraDirs, tsFmt);
 
+    // Flat-layout detection
+    bool             flatLayout  = isFlatLayout(cameraDirs, scanRoot);
+    FlatTokenAnalysis flatAnalysis;
+    if (flatLayout) flatAnalysis = analyzeFlatCameraTokens(cameraDirs[0], tsFmt);
+    bool isFlatMulti = flatLayout && flatAnalysis.isMultiCamera;
+
     // ---- Summary of what was found ----
+    std::string layoutNote = isFlatMulti
+        ? " (flat layout, " + std::to_string(flatAnalysis.tokens.size()) + " camera tokens)"
+        : flatLayout ? " (flat layout)" : "";
     std::cout << "\nFound " << cams.size() << " camera director"
-              << (cams.size() == 1 ? "y" : "ies") << ":\n";
+              << (cams.size() == 1 ? "y" : "ies") << layoutNote << ":\n";
     for (const auto& c : cams) {
-        std::cout << "  " << c.dirName << "/  ("
+        std::string displayName = c.dirName.empty() ? "." : c.dirName;
+        std::cout << "  " << displayName << "/  ("
                   << c.fileCount << " video file" << (c.fileCount == 1 ? "" : "s");
         if (c.hasSidecar) std::cout << ", .jpg sidecars";
+        if (isFlatMulti) {
+            std::cout << "  tokens:";
+            for (const auto& t : flatAnalysis.tokens) std::cout << "  " << t;
+        }
         std::cout << ")\n";
         if (c.probe.video.width > 0)
             std::cout << "    video: " << c.probe.video.width << "x"
@@ -1170,16 +1268,27 @@ static void wizardCard(const std::string& root,
 
     // ---- Initialize state from detected data ----
 
-    // Camera role slots (empty = unassigned)
+    // Camera role slots (empty = unassigned).
+    // Subdir layout: hold dirName.  Flat multi-camera: hold filenameToken.
     std::string roleFront, roleRear, roleLeft, roleRight;
-    // Attention flags — set when a user-entered dir fails validation
+    // Attention flags — set when a user-entered value fails validation
     bool frontAttn = false, rearAttn = false, leftAttn = false, rightAttn = false;
-    for (const auto& c : cams) {
-        std::string r = guessCameraRole(c.dirName);
-        if      (r == "front") roleFront = c.dirName;
-        else if (r == "rear")  roleRear  = c.dirName;
-        else if (r == "left")  roleLeft  = c.dirName;
-        else if (r == "right") roleRight = c.dirName;
+    if (isFlatMulti) {
+        for (const auto& tok : flatAnalysis.tokens) {
+            std::string r = guessCameraRoleFromToken(tok);
+            if      (r == "front") roleFront = tok;
+            else if (r == "rear")  roleRear  = tok;
+            else if (r == "left")  roleLeft  = tok;
+            else if (r == "right") roleRight = tok;
+        }
+    } else {
+        for (const auto& c : cams) {
+            std::string r = guessCameraRole(c.dirName);
+            if      (r == "front") roleFront = c.dirName;
+            else if (r == "rear")  roleRear  = c.dirName;
+            else if (r == "left")  roleLeft  = c.dirName;
+            else if (r == "right") roleRight = c.dirName;
+        }
     }
 
     // Derived filename pattern
@@ -1259,25 +1368,36 @@ static void wizardCard(const std::string& root,
         std::cout << "\n" << wizSep('=') << "\n";
         std::cout << wizRow("  <path> = " + scanRoot) << "\n";
 
-        // [1] Camera mappings — one per line, displayed as <path>/DirName/
-        std::cout << wizRow("  [1]  Camera mappings") << "\n";
-        auto showCam = [](const std::string& label, const std::string& dir, bool attn) {
+        // [1] Camera mappings
+        std::string mappingLabel = isFlatMulti
+            ? "  [1]  Camera tokens      (flat layout)"
+            : "  [1]  Camera mappings";
+        std::cout << wizRow(mappingLabel) << "\n";
+        auto showCam = [&](const std::string& label, const std::string& val, bool attn) {
             std::string s = "         " + label;
             while ((int)s.size() < 16) s += ' ';
-            if (dir.empty()) s += "->  (unassigned)";
-            else             s += "->  <path>/" + dir + "/";
-            if (attn)        s += "  [!] needs attention";
+            if (val.empty())        s += "->  (unassigned)";
+            else if (isFlatMulti)   s += "->  token " + val;
+            else                    s += "->  <path>/" + val + "/";
+            if (attn)               s += "  [!] needs attention";
             return s;
         };
         std::cout << wizRow(showCam("front",  roleFront, frontAttn)) << "\n";
         std::cout << wizRow(showCam("rear",   roleRear,  rearAttn))  << "\n";
         std::cout << wizRow(showCam("left",   roleLeft,  leftAttn))  << "\n";
         std::cout << wizRow(showCam("right",  roleRight, rightAttn)) << "\n";
-        // Any dirs not yet assigned to a role
-        for (const auto& c : cams)
-            if (c.dirName != roleFront && c.dirName != roleRear &&
-                c.dirName != roleLeft  && c.dirName != roleRight)
-                std::cout << wizRow("         (unassigned)   ->  <path>/" + c.dirName + "/") << "\n";
+        // Any dirs/tokens not yet assigned to a role
+        if (isFlatMulti) {
+            for (const auto& tok : flatAnalysis.tokens)
+                if (tok != roleFront && tok != roleRear &&
+                    tok != roleLeft  && tok != roleRight)
+                    std::cout << wizRow("         (unassigned)   ->  token " + tok) << "\n";
+        } else {
+            for (const auto& c : cams)
+                if (c.dirName != roleFront && c.dirName != roleRear &&
+                    c.dirName != roleLeft  && c.dirName != roleRight)
+                    std::cout << wizRow("         (unassigned)   ->  <path>/" + c.dirName + "/") << "\n";
+        }
 
         std::cout << wizSep('-') << "\n";
 
@@ -1361,33 +1481,47 @@ static void wizardCard(const std::string& root,
         int sel = -1;
         try { sel = std::stoi(cmd); } catch (...) {}
 
-        // [1] Camera mappings — F/B/L/R sub-menu (redraws until CONFIRM)
+        // [1] Camera mappings — sub-menu (redraws until CONFIRM)
         if (sel == 1) {
             auto drawCams = [&]() {
                 std::cout << "\n" << wizSep('-') << "\n";
                 std::cout << "  <path> = " << scanRoot << "\n\n";
-                auto showRole = [](const std::string& label, const std::string& dir, bool attn) {
+                auto showRole = [&](const std::string& label, const std::string& val, bool attn) {
                     std::string row = "  " + label;
                     while ((int)row.size() < 8) row += ' ';
                     row += " ->  ";
-                    if (dir.empty()) row += "(unassigned)";
-                    else             row += "<path>/" + dir + "/";
-                    if (attn)        row += "  [!] needs attention";
+                    if (val.empty())       row += "(unassigned)";
+                    else if (isFlatMulti)  row += "token " + val;
+                    else                   row += "<path>/" + val + "/";
+                    if (attn)              row += "  [!] needs attention";
                     std::cout << row << "\n";
                 };
                 showRole("front", roleFront, frontAttn);
                 showRole("rear",  roleRear,  rearAttn);
                 showRole("left",  roleLeft,  leftAttn);
                 showRole("right", roleRight, rightAttn);
-                std::vector<std::string> ua;
-                for (const auto& c : cams)
-                    if (c.dirName != roleFront && c.dirName != roleRear &&
-                        c.dirName != roleLeft  && c.dirName != roleRight)
-                        ua.push_back(c.dirName);
-                if (!ua.empty()) {
-                    std::cout << "\n  Unassigned:";
-                    for (const auto& d : ua) std::cout << "  <path>/" << d << "/";
-                    std::cout << "\n";
+                if (isFlatMulti) {
+                    std::vector<std::string> ua;
+                    for (const auto& tok : flatAnalysis.tokens)
+                        if (tok != roleFront && tok != roleRear &&
+                            tok != roleLeft  && tok != roleRight)
+                            ua.push_back(tok);
+                    if (!ua.empty()) {
+                        std::cout << "\n  Unassigned tokens:";
+                        for (const auto& t : ua) std::cout << "  " << t;
+                        std::cout << "\n";
+                    }
+                } else {
+                    std::vector<std::string> ua;
+                    for (const auto& c : cams)
+                        if (c.dirName != roleFront && c.dirName != roleRear &&
+                            c.dirName != roleLeft  && c.dirName != roleRight)
+                            ua.push_back(c.dirName);
+                    if (!ua.empty()) {
+                        std::cout << "\n  Unassigned:";
+                        for (const auto& d : ua) std::cout << "  <path>/" << d << "/";
+                        std::cout << "\n";
+                    }
                 }
                 std::cout << "\n  CONFIRM to accept"
                           << "  |  [F]ront  [B]ack/rear  [L]eft  [R]ight  to remap\n> ";
@@ -1410,32 +1544,58 @@ static void wizardCard(const std::string& root,
                 else if (u == "L") { slot = &roleLeft;  attnFlag = &leftAttn;  slotLabel = "Left";      }
                 else if (u == "R") { slot = &roleRight; attnFlag = &rightAttn; slotLabel = "Right";     }
                 if (!slot) continue;
-                std::cout << "\nRemap " << slotLabel << " camera.\n"
-                          << "Type subdirectory name (blank to unassign):\n"
-                          << "  <path>/ ";
-                std::cout.flush();
-                std::string sub;
-                if (!std::getline(std::cin, sub)) continue;
-                sub = trimLine(sub);
-                // Strip any trailing slash the user may have typed
-                while (!sub.empty() && sub.back() == '/') sub.pop_back();
-                if (sub.empty()) {
-                    *slot     = "";
-                    *attnFlag = false;
-                } else if (validateCamDir(sub)) {
-                    // Release any other slot that already held this dirname
-                    if (roleFront == sub) { roleFront = ""; frontAttn = false; }
-                    if (roleRear  == sub) { roleRear  = ""; rearAttn  = false; }
-                    if (roleLeft  == sub) { roleLeft  = ""; leftAttn  = false; }
-                    if (roleRight == sub) { roleRight = ""; rightAttn = false; }
-                    *slot     = sub;
-                    *attnFlag = false;
-                    std::cout << "  OK -- <path>/" << sub << "/ validated.\n";
+
+                if (isFlatMulti) {
+                    // Flat layout: remap to a camera token
+                    std::cout << "\nRemap " << slotLabel << " camera.\n"
+                              << "Available tokens:";
+                    for (const auto& t : flatAnalysis.tokens) std::cout << "  " << t;
+                    std::cout << "\nType token (blank to unassign): ";
+                    std::cout.flush();
+                    std::string tok;
+                    if (!std::getline(std::cin, tok)) continue;
+                    tok = trimLine(tok);
+                    if (tok.empty()) {
+                        *slot = ""; *attnFlag = false;
+                    } else {
+                        bool valid = false;
+                        for (const auto& t : flatAnalysis.tokens) if (t == tok) { valid = true; break; }
+                        if (valid) {
+                            if (roleFront == tok) { roleFront = ""; frontAttn = false; }
+                            if (roleRear  == tok) { roleRear  = ""; rearAttn  = false; }
+                            if (roleLeft  == tok) { roleLeft  = ""; leftAttn  = false; }
+                            if (roleRight == tok) { roleRight = ""; rightAttn = false; }
+                            *slot = tok; *attnFlag = false;
+                            std::cout << "  OK -- token " << tok << " assigned.\n";
+                        } else {
+                            *slot = tok; *attnFlag = true;
+                            std::cout << "  Warning: token '" << tok << "' not found in detected tokens.\n";
+                        }
+                    }
                 } else {
-                    *slot     = sub;
-                    *attnFlag = true;
-                    std::cout << "  Warning: <path>/" << sub
-                              << "/ not found or has no video files.\n";
+                    // Subdir layout: remap to a subdirectory name
+                    std::cout << "\nRemap " << slotLabel << " camera.\n"
+                              << "Type subdirectory name (blank to unassign):\n"
+                              << "  <path>/ ";
+                    std::cout.flush();
+                    std::string sub;
+                    if (!std::getline(std::cin, sub)) continue;
+                    sub = trimLine(sub);
+                    while (!sub.empty() && sub.back() == '/') sub.pop_back();
+                    if (sub.empty()) {
+                        *slot = ""; *attnFlag = false;
+                    } else if (validateCamDir(sub)) {
+                        if (roleFront == sub) { roleFront = ""; frontAttn = false; }
+                        if (roleRear  == sub) { roleRear  = ""; rearAttn  = false; }
+                        if (roleLeft  == sub) { roleLeft  = ""; leftAttn  = false; }
+                        if (roleRight == sub) { roleRight = ""; rightAttn = false; }
+                        *slot = sub; *attnFlag = false;
+                        std::cout << "  OK -- <path>/" << sub << "/ validated.\n";
+                    } else {
+                        *slot = sub; *attnFlag = true;
+                        std::cout << "  Warning: <path>/" << sub
+                                  << "/ not found or has no video files.\n";
+                    }
                 }
             }
         }
@@ -1503,9 +1663,13 @@ static void wizardCard(const std::string& root,
     j["name"]        = profileName;
     j["profile_id"]  = sanitized;
 
-    // filename_regex: single capture group (group 1 = full timestamp string)
-    // For subdir layout, no group 2 needed — camera identity from scan_subdir.
-    j["filename_regex"] = timestampRegex(tsFmt) + suffix.pattern + extRegex(primaryExt);
+    // filename_regex:
+    //   subdir layout — group 1 = timestamp; camera identity from scan_subdir
+    //   flat multi-camera — group 1 = timestamp, group 2 = camera token
+    if (isFlatMulti)
+        j["filename_regex"] = timestampRegex(tsFmt) + flatAnalysis.suffixGroup2 + extRegex(primaryExt);
+    else
+        j["filename_regex"] = timestampRegex(tsFmt) + suffix.pattern + extRegex(primaryExt);
 
     // timestamp_format / timestamp_source
     std::string spFmt = strptimeFmt(tsFmt);
@@ -1531,32 +1695,56 @@ static void wizardCard(const std::string& root,
     // slots array — standard role order
     const std::vector<std::string> roleOrder = {"front", "rear", "left", "right"};
     json jSlots = json::array();
-    // Add in standard order first, then any non-standard
-    for (const auto& role : roleOrder) {
-        for (const auto& [dir, r] : dirRoles) {
-            if (r != role) continue;
+
+    auto capitalize = [](const std::string& s) -> std::string {
+        if (s.empty()) return s;
+        return std::string(1, static_cast<char>(std::toupper((unsigned char)s[0]))) + s.substr(1);
+    };
+
+    if (isFlatMulti) {
+        // Flat multi-camera: filenameToken discriminates cameras; scan_subdir is empty
+        // (all cameras share the same directory, which is the footage root itself)
+        for (const auto& role : roleOrder) {
+            const std::string& tok = (role == "front") ? roleFront
+                                   : (role == "rear")  ? roleRear
+                                   : (role == "left")  ? roleLeft
+                                   : roleRight;
+            if (tok.empty()) continue;
             json s;
             s["name"]           = role;
-            s["display"]        = std::string(1, static_cast<char>(std::toupper((unsigned char)role[0])))
-                                + role.substr(1);
-            s["filename_token"] = "";       // subdir layout — identity from scan_subdir
-            s["scan_subdir"]    = dir;
+            s["display"]        = capitalize(role);
+            s["filename_token"] = tok;
+            s["scan_subdir"]    = "";
             s["is_primary"]     = (role == "front");
             jSlots.push_back(s);
-            break;
         }
-    }
-    for (const auto& [dir, role] : dirRoles) {
-        bool standard = false;
-        for (const auto& r : roleOrder) if (r == role) { standard = true; break; }
-        if (!standard) {
-            json s;
-            s["name"]           = role;
-            s["display"]        = role;
-            s["filename_token"] = "";
-            s["scan_subdir"]    = dir;
-            s["is_primary"]     = false;
-            jSlots.push_back(s);
+    } else {
+        // Subdir layout: scan_subdir is the camera directory; filenameToken unused
+        for (const auto& role : roleOrder) {
+            for (const auto& [dir, r] : dirRoles) {
+                if (r != role) continue;
+                json s;
+                s["name"]           = role;
+                s["display"]        = capitalize(role);
+                s["filename_token"] = "";
+                s["scan_subdir"]    = dir;
+                s["is_primary"]     = (role == "front");
+                jSlots.push_back(s);
+                break;
+            }
+        }
+        for (const auto& [dir, role] : dirRoles) {
+            bool standard = false;
+            for (const auto& r : roleOrder) if (r == role) { standard = true; break; }
+            if (!standard) {
+                json s;
+                s["name"]           = role;
+                s["display"]        = role;
+                s["filename_token"] = "";
+                s["scan_subdir"]    = dir;
+                s["is_primary"]     = false;
+                jSlots.push_back(s);
+            }
         }
     }
     j["slots"] = jSlots;
