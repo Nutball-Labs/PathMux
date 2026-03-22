@@ -306,12 +306,14 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
     Trip currentTrip;
 
+    // seg.timestamp is always written by strftime with this fixed format regardless
+    // of camera profile — use it consistently for all epoch arithmetic in closeTrip.
+    static constexpr const char* kSegFmt = "%Y%m%d_%H%M%S";
+
     auto closeTrip = [&](Trip& trip) {
         const int segCount = (int)trip.segments.size();
-        time_t firstEpoch = stringToTimestamp(trip.segments.front().timestamp,
-                                              profile.timestampFormat);
-        time_t lastEpoch  = stringToTimestamp(trip.segments.back().timestamp,
-                                              profile.timestampFormat);
+        time_t firstEpoch = stringToTimestamp(trip.segments.front().timestamp, kSegFmt);
+        time_t lastEpoch  = stringToTimestamp(trip.segments.back().timestamp,  kSegFmt);
 
         // Trip-level thumbnail convenience fields.
         // firstThumbs: segments[1] to avoid cold-start frames; fall back to [0].
@@ -323,7 +325,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         // segDetectedDuration: pure timestamp arithmetic.
         int nominalSegdur = (segCount > 1)
             ? static_cast<int>(stringToTimestamp(trip.segments[1].timestamp,
-                                                 profile.timestampFormat) - firstEpoch)
+                                                 kSegFmt) - firstEpoch)
             : 0;
         trip.segDetectedDuration = static_cast<int>(lastEpoch - firstEpoch) + nominalSegdur;
 
@@ -345,11 +347,11 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
         if (segCount >= 3)
             trip.segdur = static_cast<int>(
-                stringToTimestamp(trip.segments[2].timestamp, profile.timestampFormat)
-              - stringToTimestamp(trip.segments[1].timestamp, profile.timestampFormat));
+                stringToTimestamp(trip.segments[2].timestamp, kSegFmt)
+              - stringToTimestamp(trip.segments[1].timestamp, kSegFmt));
         else if (segCount >= 2)
             trip.segdur = static_cast<int>(
-                stringToTimestamp(trip.segments[1].timestamp, profile.timestampFormat)
+                stringToTimestamp(trip.segments[1].timestamp, kSegFmt)
               - firstEpoch);
         else
             trip.segdur = lastDur;
@@ -409,12 +411,15 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     }
 
     // GPS extraction pass — find first lock and end coords for each trip.
-    std::cout << "  Extracting GPS start/end coords";
-    for (auto& trip : trips) {
-        extractStartEndGps(trip, primary, exiftoolPath, exiftoolOptions);
-        std::cout << "." << std::flush;
+    // Skip entirely if the profile has no GPS source.
+    if (profile.gpsMethod != "none") {
+        std::cout << "  Extracting GPS start/end coords";
+        for (auto& trip : trips) {
+            extractStartEndGps(trip, primary, exiftoolPath, exiftoolOptions);
+            std::cout << "." << std::flush;
+        }
+        std::cout << "\n";
     }
-    std::cout << "\n";
 
     return trips;
 }

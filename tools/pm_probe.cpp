@@ -761,7 +761,7 @@ static std::string guessTimestampFormat(const std::string& filename)
 {
     std::string base = pathBasename(filename);
 
-    // YYYYMMDD_HHMMSS — e.g. 20260225_044424F.ts
+    // YYYYMMDD_HHMMSS — e.g. 20260225_044424F.ts  (6-digit time field)
     if (base.size() >= 15
         && std::isdigit((unsigned char)base[0])
         && std::isdigit((unsigned char)base[7])
@@ -778,6 +778,17 @@ static std::string guessTimestampFormat(const std::string& filename)
         && base[13] == '-' && base[16] == '-')
         return "YYYY-MM-DD_HH-MM-SS";
 
+    // YYYYMMDD_NNNN — date + 4-digit sequential counter, no time-of-day
+    // e.g. 20260223_0005_CAM1_VID.MOV  (base[13] is not a digit → only 4 counter digits)
+    if (base.size() >= 13
+        && std::isdigit((unsigned char)base[0])
+        && std::isdigit((unsigned char)base[7])
+        && base[8] == '_'
+        && std::isdigit((unsigned char)base[9])
+        && std::isdigit((unsigned char)base[12])
+        && (base.size() <= 13 || !std::isdigit((unsigned char)base[13])))
+        return "YYYYMMDD_NNNN";
+
     return "";
 }
 
@@ -786,16 +797,19 @@ static int timestampTokenLen(const std::string& fmt)
 {
     if (fmt == "YYYYMMDD_HHMMSS")     return 15;
     if (fmt == "YYYY-MM-DD_HH-MM-SS") return 19;
+    if (fmt == "YYYYMMDD_NNNN")       return 13;
     return 0;
 }
 
-// Regex fragment for the timestamp portion.
+// Regex fragment for the timestamp portion (single capture group = full timestamp string).
 static std::string timestampRegex(const std::string& fmt)
 {
     if (fmt == "YYYYMMDD_HHMMSS")
-        return "(\\d{8})_(\\d{6})";
+        return "(\\d{8}_\\d{6})";
     if (fmt == "YYYY-MM-DD_HH-MM-SS")
-        return "(\\d{4})-(\\d{2})-(\\d{2})_(\\d{2})-(\\d{2})-(\\d{2})";
+        return "(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})";
+    if (fmt == "YYYYMMDD_NNNN")
+        return "(\\d{8}_\\d{4})";
     return "(.+)";
 }
 
@@ -809,6 +823,45 @@ static std::string escapeRegex(const std::string& s)
         out += c;
     }
     return out;
+}
+
+// Convert wizard tsFmt → strptime format string (empty for exiftool_metadata).
+static std::string strptimeFmt(const std::string& fmt)
+{
+    if (fmt == "YYYYMMDD_HHMMSS")     return "%Y%m%d_%H%M%S";
+    if (fmt == "YYYY-MM-DD_HH-MM-SS") return "%Y-%m-%d_%H-%M-%S";
+    return "";  // YYYYMMDD_NNNN and unknown → no strptime, use exiftool_metadata
+}
+
+// Convert a file extension (e.g. ".ts", ".MOV") → case-insensitive regex fragment.
+static std::string extRegex(const std::string& ext)
+{
+    if (ext.empty()) return "";
+    std::string out;
+    for (char c : ext) {
+        if (c == '.') { out += "\\."; continue; }
+        if (std::isalpha((unsigned char)c)) {
+            char lo = static_cast<char>(std::tolower((unsigned char)c));
+            char hi = static_cast<char>(std::toupper((unsigned char)c));
+            out += '[';
+            out += lo;
+            out += hi;
+            out += ']';
+        } else {
+            out += c;
+        }
+    }
+    return out;
+}
+
+// Convert wizard thumbSource + thumbPattern → CameraProfile thumbnail_method.
+static std::string thumbnailMethodFrom(const std::string& thumbSource,
+                                        const std::string& thumbPattern)
+{
+    if (thumbSource != "sidecar_jpg") return "none";
+    // _ths suffix in pattern → ths_sidecar
+    if (thumbPattern.find("_ths") != std::string::npos) return "ths_sidecar";
+    return "replace_ext";
 }
 
 // Characterize a set of observed suffix strings into a regex fragment.
@@ -1441,91 +1494,74 @@ static void wizardCard(const std::string& root,
     if (!roleLeft.empty())  dirRoles.push_back({roleLeft,  "left"});
     if (!roleRight.empty()) dirRoles.push_back({roleRight, "right"});
 
-    // ---- Build JSON ----
+    // ---- Build CameraProfile-format JSON ----
     json j;
-    j["profile_name"] = profileName;
-    j["version"]      = "1.0";
 
-    // detection block
-    {
-        json jDirNames = json::array();
-        for (const auto& [dir, role] : dirRoles) jDirNames.push_back(dir);
-        j["detection"] = {
-            {"directory_names",  jDirNames},
-            {"file_extension",   primaryExt},
-            {"filename_pattern", fnPattern}
-        };
-    }
-
-    // cameras block — standard order then any others
-    {
-        json jCams;
-        int priority = 1;
-        const std::vector<std::string> roleOrder = {"front", "rear", "left", "right"};
-
-        auto addCam = [&](const std::string& role, const std::string& dir) {
-            json cam;
-            cam["dir"]      = dir;
-            cam["priority"] = priority++;
-            for (const auto& c : cams) {
-                if (c.dirName != dir) continue;
-                if (c.probe.video.width > 0) {
-                    cam["video"] = {
-                        {"width",       c.probe.video.width},
-                        {"height",      c.probe.video.height},
-                        {"frame_rate",  c.probe.video.frameRate},
-                        {"pix_fmt",     c.probe.video.pixFmt},
-                        {"color_space", c.probe.video.colorSpace}
-                    };
-                }
-                for (const auto& s : c.probe.streams) {
-                    if (s.codecType != "audio") continue;
-                    json aud;
-                    aud["codec"] = s.codecName;
-                    if (!s.sampleRate.empty())
-                        try { aud["sample_rate_hz"] = std::stoi(s.sampleRate); }
-                        catch (...) {}
-                    if (s.channels > 0) aud["channels"] = s.channels;
-                    cam["audio"] = aud;
-                    break;
-                }
-                break;
-            }
-            jCams[role] = cam;
-        };
-
-        for (const auto& role : roleOrder)
-            for (const auto& [dir, r] : dirRoles)
-                if (r == role) { addCam(role, dir); break; }
-
-        for (const auto& [dir, role] : dirRoles) {
-            bool standard = false;
-            for (const auto& r : roleOrder) if (r == role) { standard = true; break; }
-            if (!standard) addCam(role, dir);
-        }
-
-        j["cameras"] = jCams;
-    }
-
-    j["timestamp"] = {{"format", tsFmt}, {"timezone", tzLower}};
-
-    // gps block
-    j["gps"] = {{"method", gpsMethod}, {"start_offset_seconds", gpsOffset}};
-
-    // thumbnails block
-    {
-        json jThumb;
-        jThumb["source"] = thumbSource;
-        if (!thumbPattern.empty()) jThumb["pattern"] = thumbPattern;
-        j["thumbnails"] = jThumb;
-    }
-
-    if (!durations.empty()) j["segment_duration_seconds"] = durations;
-
-    // ---- Save ----
     std::string sanitized = sanitizeProfileName(profileName);
     if (sanitized.empty()) sanitized = "custom_profile";
 
+    j["name"]        = profileName;
+    j["profile_id"]  = sanitized;
+
+    // filename_regex: single capture group (group 1 = full timestamp string)
+    // For subdir layout, no group 2 needed — camera identity from scan_subdir.
+    j["filename_regex"] = timestampRegex(tsFmt) + suffix.pattern + extRegex(primaryExt);
+
+    // timestamp_format / timestamp_source
+    std::string spFmt = strptimeFmt(tsFmt);
+    if (spFmt.empty()) {
+        // No time-of-day in filename (e.g. YYYYMMDD_NNNN) — read from metadata
+        j["timestamp_format"] = "";
+        j["timestamp_source"] = "exiftool_metadata";
+    } else {
+        j["timestamp_format"] = spFmt;
+        j["timestamp_source"] = "filename";
+    }
+
+    j["container_ext"]    = primaryExt;
+    j["thumbnail_method"] = thumbnailMethodFrom(thumbSource, thumbPattern);
+    j["gps_method"]       = gpsMethod;
+
+    // default_layout from camera count
+    int camCount = static_cast<int>(dirRoles.size());
+    j["default_layout"] = (camCount == 1) ? "single"
+                        : (camCount == 2) ? "side_by_side"
+                        : "2x2";
+
+    // slots array — standard role order
+    const std::vector<std::string> roleOrder = {"front", "rear", "left", "right"};
+    json jSlots = json::array();
+    // Add in standard order first, then any non-standard
+    for (const auto& role : roleOrder) {
+        for (const auto& [dir, r] : dirRoles) {
+            if (r != role) continue;
+            json s;
+            s["name"]           = role;
+            s["display"]        = std::string(1, static_cast<char>(std::toupper((unsigned char)role[0])))
+                                + role.substr(1);
+            s["filename_token"] = "";       // subdir layout — identity from scan_subdir
+            s["scan_subdir"]    = dir;
+            s["is_primary"]     = (role == "front");
+            jSlots.push_back(s);
+            break;
+        }
+    }
+    for (const auto& [dir, role] : dirRoles) {
+        bool standard = false;
+        for (const auto& r : roleOrder) if (r == role) { standard = true; break; }
+        if (!standard) {
+            json s;
+            s["name"]           = role;
+            s["display"]        = role;
+            s["filename_token"] = "";
+            s["scan_subdir"]    = dir;
+            s["is_primary"]     = false;
+            jSlots.push_back(s);
+        }
+    }
+    j["slots"] = jSlots;
+
+    // ---- Save ----
     std::string profilesDir = Pathmux::Platform::getConfigDir() + "profiles";
     std::error_code ec;
     fs::create_directories(profilesDir, ec);
@@ -1543,9 +1579,38 @@ static void wizardCard(const std::string& root,
     ofs << j.dump(2) << "\n";
     ofs.close();
 
-    std::cout << "Profile saved: " << outPath << "\n"
-              << "Note: trial scan requires the CameraProfile C++ layer"
-              << " (not yet implemented).\n";
+    std::cout << "Profile saved: " << outPath << "\n";
+
+    // ---- Trial scan ----
+    std::cout << "\nRunning trial scan on: " << scanRoot << "\n";
+    try {
+        CameraProfile cp = CameraProfile::loadFromFile(outPath);
+        if (!cp.isValid()) {
+            std::cerr << "Warning: saved profile failed validation check — skipping trial scan.\n";
+            return;
+        }
+        TripDetection td;
+        auto trips = td.detectTrips(
+            scanRoot,
+            cp,
+            900,    // default gap threshold
+            5,      // fuzzy window seconds
+            ffprobePath,
+            exiftoolPath,
+            exiftoolOptions
+        );
+        std::cout << "Trial scan complete: " << trips.size() << " trip(s) detected.\n";
+        for (size_t i = 0; i < trips.size() && i < 10; ++i) {
+            const auto& t = trips[i];
+            std::cout << "  Trip " << (i + 1) << ": " << t.date << " " << t.startTime
+                      << "  " << t.segments.size() << " segment(s)"
+                      << "  " << t.duration << "\n";
+        }
+        if (trips.size() > 10)
+            std::cout << "  ... (" << trips.size() - 10 << " more)\n";
+    } catch (const std::exception& e) {
+        std::cerr << "Trial scan error: " << e.what() << "\n";
+    }
 }
 
 // ---------------------------------------------------------------------------
