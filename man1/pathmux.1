@@ -11,23 +11,18 @@ timestamp gaps, and caches the results as JSON manifests.  Trips can be browsed
 interactively, exported as GPX or KML tracks, and assembled into per-camera MP4
 files or a synchronized 4K collage.
 .PP
-PathMux was developed and tested against the Pruveeo D90 360\[de] four-channel
-dashcam (Front, Rear, Left, Right cameras) — the only hardware available during
-initial development.  The architecture is designed to support other multi-camera
-dashcams; additional camera profiles will be added as hardware becomes available
-for testing.
+PathMux uses camera profiles to support different storage layouts.  The
+built-in profile targets the Pruveeo D90 360\[de] four-channel dashcam
+(Front, Rear, Left, Right subdirectories; MPEG-TS container; LIGO GPS stream).
+Additional profiles for other cameras can be created interactively with
+.BR "pm_probe \-\-wizard" .
 .PP
-Footage is expected in subdirectories named
-.BR Front ,
-.BR Rear ,
-.BR Left ,
-and
-.BR Right ,
-with segment filenames matching
-.IR YYYYMMDD_HHMMSS_X.ts .
-The Front camera is the primary anchor for trip detection; the other cameras are
-fuzzy-matched within a configurable time window.  All timestamp comparisons use
-Unix epoch arithmetic to handle midnight and year boundaries correctly.
+The primary camera is the anchor for trip detection; secondary cameras are
+fuzzy-matched within a configurable time window.  Segment timestamps come from
+the filename (cameras that encode date and time in the filename) or from file
+metadata via ExifTool (cameras that use a sequential counter instead of a
+timestamp in the filename).  All timestamp comparisons use Unix epoch arithmetic
+to handle midnight and year boundaries correctly.
 .PP
 Trip manifests are written to the scanned footage directory as
 .IR pm_manifest_<id>.json .
@@ -609,4 +604,4 @@ issue on GitHub \(em no reformatting needed.
 .BR pm_tripdebug (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-.\" SN: 00087
+.\" SN: 00088

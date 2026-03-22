@@ -1,4 +1,4 @@
-.TH PM_PROBE 1 "March 2026" "v0.9.10" "PathMux Suite - Camera Profiler"
+.TH PM_PROBE 1 "March 2026" "v0.9.11" "PathMux Suite - Camera Profiler"
 .SH NAME
 pm_probe \- camera compatibility profiler for the PathMux suite
 .SH SYNOPSIS
@@ -68,9 +68,12 @@ automated processing.
 Interactive camera profile builder.  Walks the dashcam storage root at
 .I PATH
 and guides the user through identifying camera directories, filename
-patterns, GPS method, and other characteristics needed to create a
-camera profile.  Profiles are saved to
-.IR ~/.config/pathmux/profiles/ .
+patterns, GPS method, thumbnail handling, and other characteristics
+needed to create a camera profile.  On completion the profile is saved
+in CameraProfile JSON format to
+.I ~/.config/pathmux/profiles/<name>.json
+and a trial scan is run immediately to confirm that the saved profile
+detects trips correctly.
 .TP
 .B \-v ", " \-\-version
 Print the PathMux version string and exit.
@@ -83,7 +86,7 @@ Print a usage summary and exit.
 File:         /z/srcdash/ex2/Front/20260209_043838F.ts
 Container:    MPEG-TS (.ts)
 Resolution:   1920x1080
-Frame rate:   25/1
+Frame rate:   25 fps
 Pixel format: yuvj420p  (full-range)
 Color space:  bt709
 Duration:     180s
@@ -103,10 +106,11 @@ Filename pattern (sample):
 Segment lengths observed: 180s 180s 180s (stub at end noted if present)
 Video profile (Front, first segment):
   Resolution:   1920x1080
-  Frame rate:   25/1
+  Frame rate:   25 fps
   Pixel format: yuvj420p (full-range)
   Color space:  bt709
-GPS method:   Standard GPS metadata
+Timestamp:    filename (YYYYMMDD_HHMMSS)
+GPS method:   LIGOGPSINFO  -- GPS in private LIGO stream
 GPS first fix: 2026:02:09 10:39:14  lat=30.419000  lon=-89.025191
 
 --- Submit this report to: https://github.com/Nutball-Labs/PathMux/issues ---
@@ -146,9 +150,18 @@ Fingerprint an entire SD card:
 .TP
 Machine-readable card fingerprint for a GitHub issue:
 .B pm_probe \-\-card /mnt/sdcard \-\-json
+.TP
+Create a camera profile interactively and verify with a trial scan:
+.B pm_probe \-\-wizard /mnt/sdcard
 .SH "REQUESTING CAMERA SUPPORT"
-If your dashcam is not a Pruveeo D90 and PathMux does not correctly scan
-its footage, run:
+If your dashcam is not supported, first try the wizard:
+.PP
+.RS
+.B pm_probe \-\-wizard \fIPATH
+.RE
+.PP
+If the wizard does not produce a working profile, collect a fingerprint
+and open a GitHub issue:
 .PP
 .RS
 .B pm_probe \-\-card \fIPATH\fB \-\-json > camera_report.json
@@ -165,6 +178,14 @@ Include the camera make and model in the issue title.
 Manifest index — used only when resolving
 .I MID:TID
 arguments.
+.TP
+.I ~/.config/pathmux/profiles/<name>.json
+Camera profile written by
+.BR \-\-wizard .
+Loaded by
+.B pathmux
+when the active profile ID matches
+.IR <name> .
 .SH "EXIT STATUS"
 .TP
 .B 0
@@ -182,4 +203,4 @@ not in the manifest index.
 .BR exiftool (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-.\" SN: 00080
+.\" SN: 00088
