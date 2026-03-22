@@ -646,7 +646,8 @@ static void probeCard(const std::string& root, bool jsonMode,
         // Timestamp source detection
         std::string tsFmtCard = sampleFiles.empty() ? ""
                               : guessTimestampFormat(sampleFiles[0]);
-        j["timestamp_source"] = tsFmtCard.empty() ? "exiftool_metadata" : "filename";
+        bool tsIsFilename = !tsFmtCard.empty() && tsFmtCard != "YYYYMMDD_NNNN";
+        j["timestamp_source"] = tsIsFilename ? "filename" : "exiftool_metadata";
         if (!tsFmtCard.empty()) j["timestamp_format_guess"] = tsFmtCard;
 
         j["submit_to"] = "https://github.com/Nutball-Labs/PathMux/issues";
@@ -696,7 +697,7 @@ static void probeCard(const std::string& root, bool jsonMode,
     {
         std::string tsFmtCard = sampleFiles.empty() ? ""
                               : guessTimestampFormat(sampleFiles[0]);
-        if (!tsFmtCard.empty())
+        if (!tsFmtCard.empty() && tsFmtCard != "YYYYMMDD_NNNN")
             std::cout << "Timestamp:    filename (" << tsFmtCard << ")\n";
         else
             std::cout << "Timestamp:    file metadata (no time-of-day in filename)\n";
