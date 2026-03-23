@@ -130,6 +130,13 @@ values on D90) — stored but ignored. Speed in km/h.
 - [x] **License decision** — MIT. Phil Harvey responded: ExifTool called as external
   process (no linking), GPL copyleft does not propagate. MIT suits target audience
   (gig workers, Windows/macOS ports). Apply headers + `LICENSE` file pre-public-release.
+- [ ] **Distribution packaging — TOP PRIORITY** — pre-compiled packages for users who
+  cannot or will not build from source:
+  - `.tar.gz` — Linux and macOS (binary + deps + man page)
+  - `.rpm` — RHEL/Alma/Fedora/CentOS
+  - `.deb` — Debian/Ubuntu
+  - `.msi` or `.zip` — Windows installer or portable package
+  See "Packaging Checklist" section below for audit items.
 - [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
 - [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
 
