@@ -175,17 +175,26 @@ install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(FILES
-    "${CMAKE_SOURCE_DIR}/man1/pathmux.1"
-    "${CMAKE_SOURCE_DIR}/man1/pm_gpsinfo.1"
-    "${CMAKE_SOURCE_DIR}/man1/pm_gpsexport.1"
-    "${CMAKE_SOURCE_DIR}/man1/pm_ls.1"
-    "${CMAKE_SOURCE_DIR}/man1/pm_audit.1"
-    "${CMAKE_SOURCE_DIR}/man1/pm_probe.1"
-    "${CMAKE_SOURCE_DIR}/man1/pm_tripdebug.1"
-    "${CMAKE_SOURCE_DIR}/man1/pm_findgpslock.1"
+# Compress man pages — both RPM and DEB ecosystems expect .gz man pages.
+# Generate .1.gz files in the build dir at build time; install those.
+set(MANPAGE_NAMES pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_probe pm_tripdebug pm_findgpslock)
+set(COMPRESSED_MANPAGES "")
+foreach(MP ${MANPAGE_NAMES})
+    set(SRC "${CMAKE_SOURCE_DIR}/man1/${MP}.1")
+    set(GZ  "${CMAKE_BINARY_DIR}/man1/${MP}.1.gz")
+    add_custom_command(
+        OUTPUT  "${GZ}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/man1"
+        COMMAND gzip -9 -c "${SRC}" > "${GZ}"
+        DEPENDS "${SRC}"
+        COMMENT "Compressing ${MP}.1"
+    )
+    list(APPEND COMPRESSED_MANPAGES "${GZ}")
+endforeach()
+add_custom_target(compress-manpages ALL DEPENDS ${COMPRESSED_MANPAGES})
+
+install(FILES ${COMPRESSED_MANPAGES}
     DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
-    OPTIONAL
 )
 
 install(FILES "${CMAKE_SOURCE_DIR}/LICENSE"
@@ -225,30 +234,41 @@ add_custom_target(archive
 # ---------------------------------------------------------------------------
 set(CPACK_PACKAGE_NAME "pathmux")
 set(CPACK_PACKAGE_VERSION "${PATHMUX_VERSION}")
+set(CPACK_PACKAGE_VENDOR "Nutball Labs")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
-set(CPACK_PACKAGE_CONTACT "Stephen Berg")
-set(CPACK_PACKAGE_LICENSE "GPL-3.0-or-later")
+set(CPACK_PACKAGE_CONTACT "Stephen Berg <pathmux@iceberg.email>")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Nutball-Labs/PathMux")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+
+# /usr is correct for RPM/DEB — the package manager owns this namespace.
+# /usr/local is for software installed outside a package manager.
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+
+# Use ecosystem-standard arch-suffixed filenames:
+#   pathmux-1.0.0-1.x86_64.rpm  /  pathmux_1.0.0_amd64.deb
+set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
+set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 
 # RPM specific
 set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
 set(CPACK_RPM_PACKAGE_LICENSE "GPL-3.0-or-later")
-set(CPACK_RPM_PACKAGE_SUGGESTS "exiftool")  # Soft dep: version req is camera-dependent
-# Note: ffmpeg is in RPM Fusion, not EPEL. Document as soft dependency.
-# Users must install ffmpeg from RPM Fusion separately.
-# Note: exiftool GPS support is camera-dependent. If GPS extraction fails,
-# users should contact the ExifTool maintainer at https://exiftool.org
+set(CPACK_RPM_PACKAGE_URL "https://github.com/Nutball-Labs/PathMux")
+set(CPACK_RPM_PACKAGE_RELEASE "1")
+# ffmpeg (RPM Fusion) and ExifTool are runtime deps not available as standard
+# RPM packages — document in README and man pages instead.
 set(CPACK_RPM_PACKAGE_DESCRIPTION
 "PathMux scans multi-camera dashcam storage, groups video segments into trips,
 caches results as JSON manifests, and builds per-camera MP4 files or
-synchronized 4K collages. Initial support targets the Pruveeo D90 four-channel
-dashcam. Requires ffmpeg (RPM Fusion) and ExifTool for full
-functionality.")
+synchronized 4K collages. Supports the Pruveeo D90 and Cobra CCDC4500
+dashcams. Requires ffmpeg (RPM Fusion) and ExifTool for full functionality.")
 
 # DEB specific
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Stephen Berg <pathmux@iceberg.email>")
 set(CPACK_DEBIAN_PACKAGE_SECTION "video")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libstdc++6, exiftool")
-# ffmpeg soft dependency — see RPM note above
-set(CPACK_DEBIAN_PACKAGE_SUGGESTS "ffmpeg")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/Nutball-Labs/PathMux")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libstdc++6")
+# ffmpeg and ExifTool are runtime deps not available as standard DEB packages —
+# document in README and man pages instead.
 
 include(CPack)
 
