@@ -192,16 +192,33 @@ automatically where possible.
 
 ### If the wizard doesn't produce a working profile
 
-Collect a structured fingerprint and open a GitHub issue:
+Open a GitHub issue so we can build a profile without needing the hardware
+in hand.  There are two ways to collect the diagnostic info we need:
+
+**Option A — Collection scripts (easiest, no PathMux required)**
+
+Download the [`Cam_Profile_Detection/`](https://github.com/Nutball-Labs/PathMux/tree/main/Cam_Profile_Detection)
+folder, run the script for your OS, and attach the generated `.txt` file to
+the issue:
+
+- **Linux / macOS:** `./collect_cam_profile.sh`
+- **Windows:** double-click `collect_cam_profile.bat`
+
+The script walks you through each step, runs `ffprobe` and `exiftool`
+automatically, and saves everything to a single file.
+
+**Option B — pm_probe (if PathMux is already installed)**
 
 ```bash
 ./pm_probe --card /path/to/sdcard --json > camera_report.json
 ```
 
-Open an issue at **https://github.com/Nutball-Labs/PathMux/issues**, attach
-`camera_report.json`, and include the camera make and model in the title.
-The `--card` output contains everything needed to build a profile without
-having the hardware in hand.
+Attach `camera_report.json` to the issue.
+
+---
+
+Open issues at **https://github.com/Nutball-Labs/PathMux/issues** and include
+the camera make and model in the title.
 
 ---
 
