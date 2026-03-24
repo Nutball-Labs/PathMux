@@ -10,8 +10,26 @@ body:
     attributes:
       value: |
         ## How to fill this out
-        Run each command block on the machine where your SD card is mounted.
-        Paste the full output — do **not** edit or trim it; missing lines break detection.
+
+        **Option A — automated (easiest):** Use the Camera Profile Collection scripts
+        in the [`Cam_Profile_Detection/`](https://github.com/Nutball-Labs/PathMux/tree/main/Cam_Profile_Detection)
+        folder. They walk you through each step, run all the commands automatically,
+        and save everything to a single text file you can attach below.
+        - **Linux / macOS:** run `collect_cam_profile.sh`
+        - **Windows:** double-click `collect_cam_profile.bat`
+
+        If you use the scripts, fill in the short fields at the top of this form,
+        attach the generated `.txt` file at the bottom, and you're done —
+        you can leave the command-output sections blank.
+
+        ---
+
+        **Option B — manual:** Run each command block below on the machine where
+        your SD card is mounted. Paste the full output — do **not** edit or trim it;
+        missing lines break detection.
+
+        ---
+
         Redact GPS coordinates if you prefer (replace lat/lon numbers with `XX.XXXXX`),
         but keep all field names and structure intact.
 
