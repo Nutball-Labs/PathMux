@@ -56,12 +56,13 @@ anyway — but the report will be incomplete without them.
 | Section | Content |
 |---|---|
 | Camera info | Make, model, firmware, channel count, GPS presence |
-| SD card layout | `ls -lR` / `Get-ChildItem -Recurse` from the card root (150 entries) |
+| Directory tree | Full-depth directory structure (`tree -d` / `tree /A`) — no depth cap |
+| SD card layout | `ls -l` / `dir` per folder, up to 25 files each, 3 levels deep |
 | ffprobe output | Full JSON — codec names, container format, data streams, duration |
 | exiftool output | First 80 lines with group tags — critical for GPS method detection |
 | GPS check | Two extraction attempts: format-string and tag-name scan |
 | Timestamp notes | UTC vs. local time zone (needed for trip detection accuracy) |
-| Thumbnail info | Sidecar image naming pattern |
+| Thumbnail info | Sidecar image naming pattern (auto-detected where possible) |
 | Extra notes | Anything else you want to add |
 
 The report is a plain text file. Nothing is sent anywhere automatically —

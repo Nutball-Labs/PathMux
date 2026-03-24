@@ -13,7 +13,7 @@
 #   macOS:   brew install ffmpeg exiftool
 # =============================================================================
 
-SCRIPT_VERSION="1.0"
+SCRIPT_VERSION="1.1"
 
 # ── Color helpers (degrade if not a tty) ─────────────────────────────────────
 if [ -t 1 ] && command -v tput &>/dev/null && tput colors &>/dev/null 2>&1; then
@@ -150,9 +150,35 @@ collect_sd_layout() {
         fi
     done
 
-    info "Running:  ls -lR \"$SD_PATH\" | head -150"
-    LS_OUTPUT=$(ls -lR "$SD_PATH" 2>&1 | head -150)
-    ok "Directory listing captured ($(echo "$LS_OUTPUT" | wc -l) lines)."
+    # Directory tree — full depth, directories only
+    if command -v tree &>/dev/null; then
+        info "Running:  tree -d \"$SD_PATH\""
+        TREE_OUTPUT=$(tree -d "$SD_PATH" 2>&1)
+        ok "Directory tree captured."
+    else
+        TREE_OUTPUT="[tree not installed — install with: sudo dnf install tree  OR  brew install tree]"
+        warn "tree not installed — directory tree will be absent from report."
+    fi
+
+    # Per-directory file listings, 3 levels deep, 25 files each
+    info "Building per-folder file listings (up to 25 files per folder, 3 levels deep)..."
+    local LS_TMPFILE
+    LS_TMPFILE=$(mktemp)
+
+    # Top-level directory
+    echo "$SD_PATH:" >> "$LS_TMPFILE"
+    ls -l "$SD_PATH" 2>&1 >> "$LS_TMPFILE"
+
+    # Each subdirectory, sorted, up to 3 levels deep
+    while IFS= read -r DIR; do
+        echo >> "$LS_TMPFILE"
+        echo "$DIR:" >> "$LS_TMPFILE"
+        ls -l "$DIR" 2>&1 | head -25 >> "$LS_TMPFILE"
+    done < <(find "$SD_PATH" -mindepth 1 -maxdepth 3 -type d 2>/dev/null | sort)
+
+    LS_OUTPUT=$(cat "$LS_TMPFILE")
+    rm -f "$LS_TMPFILE"
+    ok "File listings captured ($(echo "$LS_OUTPUT" | wc -l) lines)."
 }
 
 # ── Select a sample video file ────────────────────────────────────────────────
@@ -196,6 +222,38 @@ find_video_file() {
 
     if [ -n "$VIDEO_FILE" ]; then
         ok "Selected: $VIDEO_FILE"
+    fi
+}
+
+# ── Thumbnail auto-detection ──────────────────────────────────────────────────
+probe_thumbnails() {
+    THUMB_INFO=""   # empty = no confident result; collect_user_notes will ask
+
+    [ -z "$VIDEO_FILE" ] && return
+
+    step "Thumbnail auto-detection"
+
+    local vid_dir vid_stem jpg_ths jpg_same any_jpg
+    vid_dir=$(dirname "$VIDEO_FILE")
+    vid_stem=$(basename "${VIDEO_FILE%.*}")
+    jpg_ths="$vid_dir/${vid_stem}_ths.jpg"
+    jpg_same="$vid_dir/${vid_stem}.jpg"
+
+    if [ -f "$jpg_ths" ]; then
+        THUMB_INFO="Yes — _ths suffix (auto-detected)"
+        ok "Detected: _ths suffix  (${vid_stem}_ths.jpg)"
+    elif [ -f "$jpg_same" ]; then
+        THUMB_INFO="Yes — same base name, .jpg extension (auto-detected)"
+        ok "Detected: same base name  (${vid_stem}.jpg)"
+    else
+        any_jpg=$(find "$vid_dir" -maxdepth 1 -iname '*.jpg' 2>/dev/null | head -1)
+        if [ -n "$any_jpg" ]; then
+            THUMB_INFO="Yes — other pattern: $(basename "$any_jpg")"
+            info "JPG files found but no standard pattern matched."
+            info "  Example: $(basename "$any_jpg")"
+        else
+            info "No .jpg thumbnails found alongside the selected video."
+        fi
     fi
 }
 
@@ -269,20 +327,30 @@ collect_user_notes() {
     ask TIMESTAMP_TZ "Timestamp timezone" "unknown"
 
     step "Thumbnail / preview images"
-    info "Does the SD card contain .jpg preview images alongside the video files?"
-    info "  1) Yes — same base name, .jpg extension (e.g. clip001.jpg)"
-    info "  2) Yes — _ths suffix      (e.g. clip001_ths.jpg)"
-    info "  3) Yes — other pattern"
-    info "  4) No thumbnails"
-    info "  5) Unknown"
-    ask THUMB_CHOICE "Enter 1-5" "5"
-    case "$THUMB_CHOICE" in
-        1) THUMB_INFO="Yes — same name, .jpg extension" ;;
-        2) THUMB_INFO="Yes — _ths suffix" ;;
-        3) ask THUMB_INFO "Describe the thumbnail filename pattern" ;;
-        4) THUMB_INFO="No thumbnails" ;;
-        *) THUMB_INFO="Unknown" ;;
-    esac
+    if [ -n "$THUMB_INFO" ]; then
+        info "Auto-detected: $THUMB_INFO"
+        local THUMB_CONFIRM
+        ask THUMB_CONFIRM "Accept? [Y/n]" "Y"
+        case "$THUMB_CONFIRM" in
+            [nN]*) THUMB_INFO="" ;;
+        esac
+    fi
+    if [ -z "$THUMB_INFO" ]; then
+        info "Does the SD card contain .jpg preview images alongside the video files?"
+        info "  1) Yes — same base name, .jpg extension  (e.g. clip001.jpg)"
+        info "  2) Yes — _ths suffix                     (e.g. clip001_ths.jpg)"
+        info "  3) Yes — other pattern"
+        info "  4) No thumbnails"
+        info "  5) Unknown"
+        ask THUMB_CHOICE "Enter 1-5" "5"
+        case "$THUMB_CHOICE" in
+            1) THUMB_INFO="Yes — same base name, .jpg extension" ;;
+            2) THUMB_INFO="Yes — _ths suffix" ;;
+            3) ask THUMB_INFO "Describe the thumbnail filename pattern" ;;
+            4) THUMB_INFO="No thumbnails" ;;
+            *) THUMB_INFO="Unknown" ;;
+        esac
+    fi
 
     step "Segment / loop recording"
     ask SEG_MINUTES "Segment length in minutes (check camera settings)" "unknown"
@@ -326,7 +394,12 @@ write_report() {
         echo "Sample video file : ${VIDEO_FILE:-[none selected]}"
         echo
         divider
-        echo "SD CARD LAYOUT  (ls -lR, first 150 lines)"
+        echo "DIRECTORY TREE  (tree -d, full depth)"
+        divider
+        echo "$TREE_OUTPUT"
+        echo
+        divider
+        echo "SD CARD LAYOUT  (ls -l per folder, up to 25 files each, 3 levels deep)"
         divider
         echo "$LS_OUTPUT"
         echo
@@ -375,6 +448,7 @@ main() {
     collect_camera_info
     collect_sd_layout
     find_video_file
+    probe_thumbnails
     run_ffprobe
     run_exiftool
     collect_user_notes

@@ -14,7 +14,7 @@
 #   Add both to your PATH, or place them in the same folder as this script.
 # =============================================================================
 
-$ScriptVersion = "1.0"
+$ScriptVersion = "1.1"
 $ScriptDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # ── Color helpers ─────────────────────────────────────────────────────────────
@@ -158,16 +158,45 @@ function Collect-SdLayout {
         Write-Warn "'$($script:SdPath)' is not a valid directory. Try again."
     }
 
-    Write-Info "Running:  Get-ChildItem -Recurse (first 150 entries)"
+    # Directory tree — full depth, directories only
+    Write-Info "Running:  tree /A (directory structure)"
     try {
-        $items = Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue $script:SdPath |
-                 Select-Object -First 150 |
-                 ForEach-Object {
-                     $size = if ($_.PSIsContainer) { "<DIR>" } else { "{0,12} bytes" -f $_.Length }
-                     "{0,-12}  {1}" -f $size, $_.FullName
-                 }
-        $script:LsOutput = $items -join "`n"
-        Write-Ok "Directory listing captured ($($items.Count) entries)."
+        $treeLines = cmd /c ('tree /A "' + $script:SdPath + '"') 2>&1
+        $script:TreeOutput = $treeLines -join "`n"
+        Write-Ok "Directory tree captured."
+    } catch {
+        $script:TreeOutput = "[ERROR running tree: $_]"
+        Write-Warn "Directory tree failed: $_"
+    }
+
+    # Per-directory file listings, 3 levels deep, 25 files each
+    Write-Info "Building per-folder file listings (up to 25 files per folder, 3 levels deep)..."
+    try {
+        $lsLines = [System.Collections.Generic.List[string]]::new()
+
+        # Top-level
+        $lsLines.Add("$($script:SdPath):")
+        foreach ($item in (Get-ChildItem -Path $script:SdPath -ErrorAction SilentlyContinue)) {
+            $size = if ($item.PSIsContainer) { "<DIR>        " } else { "{0,12} bytes" -f $item.Length }
+            $lsLines.Add("  $size  $($item.Name)")
+        }
+
+        # Subdirectories, up to 3 levels deep (Depth 2 = 2 levels below SdPath)
+        $subDirs = Get-ChildItem -Path $script:SdPath -Recurse -Directory -Depth 2 `
+                       -ErrorAction SilentlyContinue | Sort-Object FullName
+        foreach ($dir in $subDirs) {
+            $lsLines.Add("")
+            $lsLines.Add("$($dir.FullName):")
+            $dirItems = Get-ChildItem -Path $dir.FullName -ErrorAction SilentlyContinue |
+                        Select-Object -First 25
+            foreach ($item in $dirItems) {
+                $size = if ($item.PSIsContainer) { "<DIR>        " } else { "{0,12} bytes" -f $item.Length }
+                $lsLines.Add("  $size  $($item.Name)")
+            }
+        }
+
+        $script:LsOutput = $lsLines -join "`n"
+        Write-Ok "File listings captured ($($lsLines.Count) lines)."
     } catch {
         $script:LsOutput = "[ERROR collecting directory listing: $_]"
         Write-Warn "Directory listing failed: $_"
@@ -221,6 +250,38 @@ function Find-VideoFile {
         $script:VideoFile = $null
     }
     if ($script:VideoFile) { Write-Ok "Selected: $($script:VideoFile)" }
+}
+
+# ── Thumbnail auto-detection ──────────────────────────────────────────────────
+function Probe-Thumbnails {
+    $script:ThumbInfo = ""   # empty = no confident result; Collect-UserNotes will ask
+
+    if (-not $script:VideoFile) { return }
+
+    Write-Step "Thumbnail auto-detection"
+
+    $vidDir  = Split-Path $script:VideoFile -Parent
+    $vidStem = [System.IO.Path]::GetFileNameWithoutExtension($script:VideoFile)
+    $thsPath = Join-Path $vidDir "${vidStem}_ths.jpg"
+    $samePath= Join-Path $vidDir "${vidStem}.jpg"
+
+    if (Test-Path $thsPath -PathType Leaf) {
+        $script:ThumbInfo = "Yes — _ths suffix (auto-detected)"
+        Write-Ok "Detected: _ths suffix  (${vidStem}_ths.jpg)"
+    } elseif (Test-Path $samePath -PathType Leaf) {
+        $script:ThumbInfo = "Yes — same base name, .jpg extension (auto-detected)"
+        Write-Ok "Detected: same base name  (${vidStem}.jpg)"
+    } else {
+        $anyJpg = Get-ChildItem -Path $vidDir -Filter "*.jpg" -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+        if ($anyJpg) {
+            $script:ThumbInfo = "Yes — other pattern: $($anyJpg.Name)"
+            Write-Info "JPG files found but no standard pattern matched."
+            Write-Info "  Example: $($anyJpg.Name)"
+        } else {
+            Write-Info "No .jpg thumbnails found alongside the selected video."
+        }
+    }
 }
 
 # ── ffprobe ───────────────────────────────────────────────────────────────────
@@ -291,19 +352,26 @@ function Collect-UserNotes {
     $script:TimestampTz = Ask "Timestamp timezone" "unknown"
 
     Write-Step "Thumbnail / preview images"
-    Write-Info "Does the SD card contain .jpg preview images alongside the video files?"
-    Write-Info "  1) Yes — same base name, .jpg extension (e.g. clip001.jpg)"
-    Write-Info "  2) Yes — _ths suffix      (e.g. clip001_ths.jpg)"
-    Write-Info "  3) Yes — other pattern"
-    Write-Info "  4) No thumbnails"
-    Write-Info "  5) Unknown"
-    $thumbChoice = Ask "Enter 1-5" "5"
-    $script:ThumbInfo = switch ($thumbChoice) {
-        "1" { "Yes — same name, .jpg extension" }
-        "2" { "Yes — _ths suffix" }
-        "3" { Ask "Describe the thumbnail filename pattern" }
-        "4" { "No thumbnails" }
-        default { "Unknown" }
+    if ($script:ThumbInfo) {
+        Write-Info "Auto-detected: $($script:ThumbInfo)"
+        $thumbConfirm = Ask "Accept? [Y/n]" "Y"
+        if ($thumbConfirm -match '^[nN]') { $script:ThumbInfo = "" }
+    }
+    if (-not $script:ThumbInfo) {
+        Write-Info "Does the SD card contain .jpg preview images alongside the video files?"
+        Write-Info "  1) Yes — same base name, .jpg extension  (e.g. clip001.jpg)"
+        Write-Info "  2) Yes — _ths suffix                     (e.g. clip001_ths.jpg)"
+        Write-Info "  3) Yes — other pattern"
+        Write-Info "  4) No thumbnails"
+        Write-Info "  5) Unknown"
+        $thumbChoice = Ask "Enter 1-5" "5"
+        $script:ThumbInfo = switch ($thumbChoice) {
+            "1" { "Yes — same base name, .jpg extension" }
+            "2" { "Yes — _ths suffix" }
+            "3" { Ask "Describe the thumbnail filename pattern" }
+            "4" { "No thumbnails" }
+            default { "Unknown" }
+        }
     }
 
     Write-Step "Segment / loop recording"
@@ -354,7 +422,12 @@ Segment length    : $($script:SegMinutes) min
 Sample video file : $(if ($script:VideoFile) { $script:VideoFile } else { "[none selected]" })
 
 $divider
-SD CARD LAYOUT  (Get-ChildItem -Recurse, first 150 entries)
+DIRECTORY TREE  (tree /A, full depth)
+$divider
+$($script:TreeOutput)
+
+$divider
+SD CARD LAYOUT  (dir per folder, up to 25 files each, 3 levels deep)
 $divider
 $($script:LsOutput)
 
@@ -405,9 +478,11 @@ Check-Tools
 Collect-CameraInfo
 Collect-SdLayout
 Find-VideoFile
+Probe-Thumbnails
 Run-Ffprobe
 Run-Exiftool
 Collect-UserNotes
 Write-Report
 
 # SN: 00089
+
