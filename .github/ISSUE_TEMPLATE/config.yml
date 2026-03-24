@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: PathMux Discussions
+    url: https://github.com/Nutball-Labs/PathMux/discussions
+    about: General questions, feature ideas, and community support

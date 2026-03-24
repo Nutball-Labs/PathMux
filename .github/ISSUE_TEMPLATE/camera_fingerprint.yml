@@ -1,0 +1,282 @@
+name: "Camera Fingerprint — New Dashcam Support"
+description: >
+  Submit the diagnostic output we need to add detection support for your dashcam.
+  You do NOT need to ship hardware — just paste the output from a few commands.
+labels: ["camera-support", "needs-triage"]
+title: "[Camera] <Make> <Model> — e.g. Vantrue N4 Pro"
+body:
+
+  - type: markdown
+    attributes:
+      value: |
+        ## How to fill this out
+        Run each command block on the machine where your SD card is mounted.
+        Paste the full output — do **not** edit or trim it; missing lines break detection.
+        Redact GPS coordinates if you prefer (replace lat/lon numbers with `XX.XXXXX`),
+        but keep all field names and structure intact.
+
+        **Privacy note:** PathMux is GPL v3 open-source software. Information
+        submitted here becomes part of the public issue tracker.
+
+  # ── Section 1 — Camera basics ───────────────────────────────────────────────
+
+  - type: input
+    id: make_model
+    attributes:
+      label: "Camera make and model"
+      description: "Exact brand + model name as printed on the box or device."
+      placeholder: "e.g. Vantrue N4 Pro"
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: "Firmware version (if shown in camera menus)"
+      placeholder: "e.g. V1.0.3 — or 'unknown' if not displayed"
+    validations:
+      required: true
+
+  - type: input
+    id: num_cameras
+    attributes:
+      label: "How many camera channels does this unit support?"
+      description: "Count physical lenses: front-only = 1, front+rear = 2, front+rear+left+right = 4, etc."
+      placeholder: "e.g. 3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: "What OS are you running these commands on?"
+      options:
+        - "Linux"
+        - "macOS"
+        - "Windows (WSL)"
+        - "Windows (PowerShell / CMD)"
+    validations:
+      required: true
+
+  # ── Section 2 — SD card directory layout ────────────────────────────────────
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### SD card layout
+
+        Mount the SD card and run the command below from its root (the top-level
+        directory — the one that contains folders like `DCIM/` or `Front/`).
+
+        **Linux / macOS:**
+        ```
+        ls -lR /path/to/sdcard | head -120
+        ```
+        **Windows PowerShell:**
+        ```
+        Get-ChildItem -Recurse D:\ | Select-Object FullName, Length | Select-Object -First 120
+        ```
+
+  - type: textarea
+    id: ls_output
+    attributes:
+      label: "Paste ls -lR (or Get-ChildItem) output"
+      description: "First 120 lines from the SD card root. We need to see the folder structure and sample filenames."
+      placeholder: |
+        /media/user/DASHCAM:
+        total 4
+        drwxr-xr-x 3 user user 4096 Mar 24 2026 DCIM
+
+        /media/user/DASHCAM/DCIM:
+        total 8
+        drwxr-xr-x 2 user user 4096 Mar 24 2026 100_DSC
+
+        /media/user/DASHCAM/DCIM/100_DSC:
+        total 819200
+        -rwxr-xr-x 1 user user 104857600 Mar 24 2026 20260324_0001_CAM1_VID.MOV
+        -rwxr-xr-x 1 user user 104857600 Mar 24 2026 20260324_0001_CAM2_VID.MOV
+        ...
+      render: shell
+    validations:
+      required: true
+
+  # ── Section 3 — ffprobe output ───────────────────────────────────────────────
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### ffprobe stream info
+
+        Pick **one video file from the primary (front-facing) camera** and run:
+
+        ```
+        ffprobe -v quiet -show_streams -show_format -of json /path/to/file.MOV
+        ```
+
+        Paste the complete JSON output. If you have `ffprobe` on Windows, use the
+        same command with a Windows path.
+
+  - type: textarea
+    id: ffprobe_output
+    attributes:
+      label: "Paste ffprobe -show_streams -show_format -of json output"
+      description: "Complete JSON — do not truncate. We need codec names, GPS/data stream info, container format, and duration."
+      placeholder: |
+        {
+            "streams": [ ... ],
+            "format": { ... }
+        }
+      render: json
+    validations:
+      required: true
+
+  # ── Section 4 — ExifTool metadata ───────────────────────────────────────────
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### ExifTool metadata
+
+        Run ExifTool on the **same file** you used for ffprobe:
+
+        ```
+        exiftool -G1 -s /path/to/file.MOV | head -80
+        ```
+
+        If ExifTool is not installed:
+        - **Linux:** `sudo dnf install perl-Image-ExifTool` (Alma/RHEL) or `sudo apt install libimage-exiftool-perl`
+        - **macOS:** `brew install exiftool`
+        - **Windows:** download from [exiftool.org](https://exiftool.org)
+
+  - type: textarea
+    id: exiftool_output
+    attributes:
+      label: "Paste exiftool -G1 -s output (first 80 lines)"
+      description: "Paste exactly as printed. Group tags like [QuickTime], [GPS], [LIGO] are critical."
+      placeholder: |
+        [File]          FileName                        : 20260324_0001_CAM1_VID.MOV
+        [File]          FileSize                        : 100 MB
+        [QuickTime]     CreateDate                      : 2026:03:24 14:22:11
+        [QuickTime]     GPSCoordinates                  : ...
+        ...
+      render: shell
+    validations:
+      required: true
+
+  # ── Section 5 — GPS check ───────────────────────────────────────────────────
+
+  - type: dropdown
+    id: has_gps
+    attributes:
+      label: "Does this dashcam record GPS data?"
+      options:
+        - "Yes — GPS module built in"
+        - "Yes — external GPS receiver plugged in"
+        - "No GPS"
+        - "Unknown"
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### GPS data extraction check (only if GPS = Yes above)
+
+        Try these two commands on the same file. Paste whichever one produces output.
+
+        **Option A — ExifTool format-string extraction:**
+        ```
+        exiftool -ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack#' /path/to/file.MOV | head -10
+        ```
+
+        **Option B — ExifTool group scan for GPS or proprietary streams:**
+        ```
+        exiftool -G1 -s /path/to/file.MOV | grep -i 'gps\|ligo\|nmea\|location'
+        ```
+
+  - type: textarea
+    id: gps_extraction
+    attributes:
+      label: "GPS extraction output (leave blank if no GPS)"
+      description: "Paste the output of whichever command produced results, or both."
+      placeholder: |
+        2026:03:24 14:22:12Z 47.6062 -122.3321 52.4 35.7 270.0
+        2026:03:24 14:22:13Z 47.6063 -122.3322 52.4 35.9 271.0
+        ...
+      render: shell
+    validations:
+      required: false
+
+  # ── Section 6 — Timestamp format ────────────────────────────────────────────
+
+  - type: textarea
+    id: timestamp_notes
+    attributes:
+      label: "Timestamp format notes"
+      description: |
+        Paste 3–5 sample filenames from your SD card. Then answer:
+        1. Are the timestamps in UTC or your local time zone?
+        2. Does the camera let you configure the time zone?
+        3. If local time: what time zone / UTC offset? (e.g. "US/Central, UTC-6 in winter")
+      placeholder: |
+        Sample filenames:
+          20260324_142211_CAM1_VID.MOV
+          20260324_142211_CAM2_VID.MOV
+          20260324_143800_CAM1_VID.MOV
+
+        Timestamps appear to be in UTC.
+        Time zone setting is available in camera menu under Setup > Time Zone.
+    validations:
+      required: true
+
+  # ── Section 7 — Thumbnail / sidecar files ───────────────────────────────────
+
+  - type: dropdown
+    id: thumbnail_method
+    attributes:
+      label: "Does the dashcam write thumbnail / preview images alongside video files?"
+      options:
+        - "Yes — same name, .jpg extension (e.g. 20260324_0001_CAM1_VID.jpg)"
+        - "Yes — _ths suffix (e.g. 20260324_0001_CAM1_ths.jpg)"
+        - "Yes — other pattern (describe in notes below)"
+        - "No thumbnails"
+        - "Unknown"
+    validations:
+      required: true
+
+  # ── Section 8 — Anything else ────────────────────────────────────────────────
+
+  - type: textarea
+    id: extra_notes
+    attributes:
+      label: "Anything else that might help?"
+      description: |
+        Optional. For example:
+        - Does the camera use loop recording (fixed-length segments)?
+        - What is the segment length in minutes?
+        - Any known quirks: dropped files, irregular naming, missing cameras in some modes?
+        - Have you already tried PathMux with this camera? What happened?
+    validations:
+      required: false
+
+  # ── Footer ──────────────────────────────────────────────────────────────────
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Submission checklist"
+      options:
+        - label: "I pasted the full `ls -lR` output (not trimmed)"
+          required: true
+        - label: "I pasted the full `ffprobe -of json` output (not trimmed)"
+          required: true
+        - label: "I pasted the `exiftool -G1 -s` output"
+          required: true
+        - label: "I described the timestamp format and time zone"
+          required: true
+        - label: "I understand this is a public issue tracker and have redacted any sensitive location data if needed"
+          required: true
