@@ -956,4 +956,48 @@ warning in pm_gpsinfo.cpp. No errors, no new warnings.
 
 ---
 
-<!-- SN: 00088 -->
+## 2026-03-25
+
+### Session 1
+**Focus:** Build phase timing in buildlog; buildlog fallback; brag board rework; v1.0.0
+
+**Code Changes (v1.0.0 / SN 00089):**
+
+**`cli/video_build.cpp`:**
+- Added `#include "platform.hpp"` and `#include <chrono>`.
+- `BuildTimings` struct: `concatSecs`, `collage4kSecs`, `collage1080Secs` (int, -1 = not run).
+- `appendBuildLog()` now accepts `const BuildTimings&`; writes `concat_seconds`,
+  `collage_4k_seconds`, `collage_1080p_seconds` as JSON fields (null if phase not run).
+- Buildlog path resolution extracted to top of `appendBuildLog()`: probes source path
+  writability via `std::ofstream` probe; falls back to `Platform::getConfigDir() +
+  "pm_buildlog.json"` with a console notice if source is not writable.  Previously
+  the entry was silently dropped on read-only source filesystems.
+- Both `buildTrip()` and `run()` now wrap each phase (per-camera concat, 4K collage,
+  1080p downscale) with `steady_clock` timers and pass a populated `BuildTimings` to
+  `appendBuildLog()`.
+- Slot-name API: `collectSegments` calls updated from member-pointer to slot-name
+  strings (`"front"`, `"rear"`, etc.) to match CameraProfile refactor.
+
+**Man Page (`man1/pathmux.1`):**
+- BRAG BOARD section rewritten: placeholder entries removed; submission requirements
+  locked in (daytime, ≥20 min, all four cameras, 4K collage); scoring formula defined
+  (`footage_minutes / collage_4k_minutes`, higher is better); first real entry added
+  (Nutball Labs, i7/RTX 4060/NVMe, 42m trip, 4m 15s concat, 6m 58s hevc_nvenc, score 6.04x).
+  Submission workflow updated to reference `pm_buildlog.json` (with Windows fallback path noted).
+
+**Decisions:**
+- Brag board score = `footage_minutes / collage_4k_minutes` only.  1080p downscale excluded
+  (it's a transcode of the already-built 4K file, not a measure of dashcam processing throughput).
+- Nighttime trips excluded from submissions — less frame complexity = unfair encode advantage.
+- All four camera slots required for a qualifying submission — eliminates camera-count variable.
+
+**Pending (carry forward):**
+- Buildlog incremental writes (in_progress → complete per phase) — see project memory
+- Per-build log file naming: `pm_buildlog_TIMESTAMP_BASENAME.json`
+- All JSON slots always present (null if not built)
+- GPS extraction to GeoJSON
+- pm_probe --wizard trial scan
+
+---
+
+<!-- SN: 00089 -->

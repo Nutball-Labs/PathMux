@@ -569,36 +569,31 @@ Failure (bad arguments, missing path, or ffmpeg/ExifTool error).
 .B \-\-validate
 exits 1 if any manifest problems are found.
 .SH "BRAG BOARD"
-Community-submitted encode timings for a standardized reference trip
-(47 minutes, 4 cameras, Front/Rear/Left/Right all present).
-Rankings are by 4K collage build time, shortest wins.
-Submit your numbers via the PathMux GitHub issue tracker.
+Community-submitted 4K collage encode timings.
+.PP
+.B Score\ =\ footage_minutes\ /\ collage_4k_minutes
+(higher is better).
+.PP
+.B "Submission requirements:"
+.br
+Daytime trip only \(em minimum 20 minutes of footage \(em all four cameras
+(Front/Rear/Left/Right) included \(em 4K collage build.
 .PP
 .B "1.  Nutball Labs"
 .br
 i7 / 16\ GB\ DDR5 / RTX\ 4060 / NVMe
 .br
-Concat:\ 58s\ \ \(em\ \ 4K\ collage\ (hevc_nvenc):\ 6m\ 22s\ \ \(em\ \ 1080p\ downscale:\ 52s
-.PP
-.B "2.  cpu_steve"
-.br
-Ryzen\ 5\ 5600 / 16\ GB\ DDR4 / GTX\ 1660\ Super / SSD
-.br
-Concat:\ 1m\ 04s\ \ \(em\ \ 4K\ collage\ (libx265\ medium):\ 31m\ 48s\ \ \(em\ \ 1080p\ downscale:\ 5m\ 17s
-.PP
-.B "3.  road_watcher"
-.br
-Core\ i5-11400 / 8\ GB\ DDR4 / no\ GPU / HDD
-.br
-Concat:\ 4m\ 12s\ \ \(em\ \ 4K\ collage\ (libx264\ medium):\ 24m\ 33s\ \ \(em\ \ 1080p\ downscale:\ 4m\ 58s
+42m\ trip\ \(em\ concat\ (4\ cameras):\ 4m\ 15s\ \(em\ 4K\ collage\ (hevc_nvenc):\ 6m\ 58s\ \(em\ score:\ \fB6.04x\fR
 .PP
 Want your name here?
-See the
-.B buildHistory
-JSON block in your trip manifest after a completed build.
-Copy and paste it into a
+After a qualifying build, find your timings in
+.I pm_buildlog.json
+in your footage source directory (or
+.I $APPDATA/pathmux/pm_buildlog.json
+on Windows if the source path was not writable).
+Submit via a
 .I "Brag Board submission"
-issue on GitHub \(em no reformatting needed.
+issue on the PathMux GitHub tracker.
 .SH "SEE ALSO"
 .BR ffmpeg (1),
 .BR ffprobe (1),

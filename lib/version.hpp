@@ -22,7 +22,11 @@
                     STRINGIFY(VERSION_PATCH) VERSION_SUFFIX
 
 // Embedded license canary — find with: strings pathmux | grep -A 15 "GNU General"
+#ifdef _MSC_VER
+static const char PATHMUX_LICENSE_NOTICE[] =
+#else
 static const char PATHMUX_LICENSE_NOTICE[] __attribute__((used)) =
+#endif
     "PathMux " APP_VERSION "\n"
     "| Copyright (C) 2026 Nutball Labs / Stephen Berg\n"
     "| GNU General Public License v3 or later\n"
