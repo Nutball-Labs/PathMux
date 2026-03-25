@@ -272,7 +272,7 @@ your footage source directory after a qualifying build.
 
 | | Machine | Encoder | 4K realtime | Encode time |
 |---|---|---|---|---|
-| 🥇 | i7 / RTX 4060 / NVMe | hevc_nvenc | **6.04x** | 6m 58s (42 min trip) |
+| 🥇 | i7 / RTX 5060 / NVMe | hevc_nvenc | **6.04x** | 6m 58s (42 min trip) |
 
 ---
 
