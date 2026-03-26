@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [1.0.0 / SN: 00089] - 2026-03-22
+## [1.0.0 / SN: 00089] - 2026-03-22 / 2026-03-25
 ### Changed
 - **License: MIT → GNU General Public License v3 or later** — prevents closed-source
   rebranded redistribution. `LICENSE` file replaced with canonical FSF GPL v3 text.
@@ -10,6 +10,28 @@
 - **License canary** embedded in binary via `PATHMUX_LICENSE_NOTICE[]` in `version.hpp`:
   copyright, license, URL, and Kali's editorial opinion. Survives strip;
   visible with `strings pathmux | grep -A 14 "GNU General"`.
+
+### Added
+- **Build phase timing** (`cli/video_build.cpp`): wall-clock seconds recorded for each
+  build phase — `concat_seconds`, `collage_4k_seconds`, `collage_1080p_seconds` — written
+  to `pm_buildlog.json` alongside existing provenance data.  Value is `null` for phases
+  not run in a given build.
+- **`BuildTimings` struct** (`cli/video_build.cpp`): carries per-phase elapsed seconds
+  from `buildTrip()` / `run()` to `appendBuildLog()`.  Uses `std::chrono::steady_clock`
+  — negligible overhead.
+
+### Fixed
+- **Buildlog fallback to config dir** (`cli/video_build.cpp`): `appendBuildLog()` now
+  probes writability of the source path before committing to it.  If not writable, falls
+  back to `getConfigDir()/pm_buildlog.json` and prints a notice.  Previously the log
+  entry was silently dropped when the source filesystem was read-only.
+
+### Documentation
+- **`man1/pathmux.1` BRAG BOARD section** reworked: placeholder entries removed; real
+  submission requirements documented (daytime, 20 min minimum, all four cameras, 4K
+  collage); scoring formula defined (`footage_minutes / collage_4k_minutes`); first real
+  entry added (Nutball Labs, i7/RTX 4060/NVMe, 42m trip, score 6.04x).  Submission
+  workflow updated to reference `pm_buildlog.json`.
 
 ---
 

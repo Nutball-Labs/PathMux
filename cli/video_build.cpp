@@ -10,6 +10,7 @@
 #  include <fcntl.h>
 #endif
 #include <functional>
+#include "platform.hpp"
 #include "ui_helpers.hpp"
 #include "version.hpp"
 #include "json.hpp"
@@ -31,15 +32,40 @@ using namespace Pathmux;
 using json = nlohmann::json;
 
 // ---------------------------------------------------------------------------
+// BuildTimings — wall-clock seconds for each build phase. -1 = not run.
+// ---------------------------------------------------------------------------
+struct BuildTimings {
+    int concatSecs     = -1;   // per-camera file concat (buildCameraFile calls)
+    int collage4kSecs  = -1;   // 4K collage encode
+    int collage1080Secs = -1;  // 1080p downscale
+};
+
+// ---------------------------------------------------------------------------
 // appendBuildLog — append one entry to pm_buildlog.json in sourcePath.
 // Records the build configuration, output location, trip duration, and the
 // full segment manifest for provenance.  New entries are appended; the file
 // grows over time and is never truncated by PathMux.
 // ---------------------------------------------------------------------------
-static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outputDuration) {
+static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outputDuration,
+                           const BuildTimings& timings) {
     if (opts.sourcePath.empty()) return;
 
-    std::string logFile = opts.sourcePath + "/pm_buildlog.json";
+    // Resolve log file path: prefer source path, fall back to config dir if
+    // the source path is not writable.
+    std::string primaryLog  = opts.sourcePath + "/pm_buildlog.json";
+    std::string fallbackLog = Platform::getConfigDir() + "pm_buildlog.json";
+
+    // Determine write target by probing writability of the source directory.
+    bool usesFallback = false;
+    {
+        std::ofstream probe(primaryLog, std::ios::app);
+        if (!probe.is_open()) {
+            usesFallback = true;
+            std::cerr << "Notice: Source path not writable; buildlog will be written to:\n"
+                      << "  " << fallbackLog << "\n";
+        }
+    }
+    std::string logFile = usesFallback ? fallbackLog : primaryLog;
 
     // Use ordered_json so keys appear in insertion order, not alphabetically.
     using ojson = nlohmann::ordered_json;
@@ -105,6 +131,14 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
     entry["collage_audio"]        = opts.buildCollage4K
                                     ? ojson(opts.audioSource) : ojson(nullptr);
 
+    // --- Build timings (wall-clock seconds; null = phase not run) ---
+    entry["concat_seconds"]       = timings.concatSecs    >= 0
+                                    ? ojson(timings.concatSecs)    : ojson(nullptr);
+    entry["collage_4k_seconds"]   = timings.collage4kSecs >= 0
+                                    ? ojson(timings.collage4kSecs) : ojson(nullptr);
+    entry["collage_1080p_seconds"]= timings.collage1080Secs >= 0
+                                    ? ojson(timings.collage1080Secs) : ojson(nullptr);
+
     // --- Audio extract ---
     entry["audio"]                = opts.buildAudio;
     entry["audio_format"]         = opts.audioExtractFormat.empty()
@@ -168,6 +202,9 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
         return;
     }
     ofs << log.dump(2) << "\n";
+    if (usesFallback)
+        std::cerr << "Notice: Buildlog entry written to fallback location:\n"
+                  << "  " << logFile << "\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -1991,6 +2028,12 @@ void VideoBuilder::validateTrip(const Trip& trip, const std::string& sourcePath)
 // ---------------------------------------------------------------------------
 void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     namespace fs = std::filesystem;
+    using clock  = std::chrono::steady_clock;
+
+    auto elapsedSecs = [](clock::time_point t0) -> int {
+        return static_cast<int>(
+            std::chrono::duration_cast<std::chrono::seconds>(clock::now() - t0).count());
+    };
 
     auto collectSegments = [&](const std::string& slot) -> std::vector<std::string> {
         std::vector<std::string> files;
@@ -2004,24 +2047,38 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     std::vector<std::pair<std::string,std::string>> renamedFiles;
     std::string outDir = opts.outputDir.empty() ? "." : opts.outputDir;
 
-    if (opts.buildFront)
-        buildCameraFile(trip, "Front", collectSegments("front"), opts);
-    if (opts.buildRear)
-        buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
-    if (opts.buildLeft)
-        buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
-    if (opts.buildRight)
-        buildCameraFile(trip, "Right", collectSegments("right"), opts);
+    BuildTimings timings;
 
+    // --- Per-camera file concat ---
+    bool anyCamera = opts.buildFront || opts.buildRear || opts.buildLeft || opts.buildRight;
+    if (anyCamera) {
+        auto t0 = clock::now();
+        if (opts.buildFront)
+            buildCameraFile(trip, "Front", collectSegments("front"), opts);
+        if (opts.buildRear)
+            buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
+        if (opts.buildLeft)
+            buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
+        if (opts.buildRight)
+            buildCameraFile(trip, "Right", collectSegments("right"), opts);
+        timings.concatSecs = elapsedSecs(t0);
+    }
+
+    // --- 4K collage ---
     std::string collage4KPath;
     bool collage4KOk = false;
     if (opts.buildCollage4K) {
         collage4KPath = (fs::path(outDir) /
                          makeOutputName(trip, "Collage_4K", "mp4",
                                         opts.basenameOverride)).string();
+        auto t0 = clock::now();
         collage4KOk = buildCollage4K(trip, opts);
+        timings.collage4kSecs = elapsedSecs(t0);
     }
+
+    // --- 1080p downscale ---
     if (opts.buildCollage1080) {
+        auto t0 = clock::now();
         if (opts.buildCollage4K && !collage4KOk) {
             std::cerr << "  Skipping 1080p — 4K collage failed.\n";
         } else if (!collage4KPath.empty() && collage4KOk) {
@@ -2033,7 +2090,9 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
         } else {
             buildCollage1080Direct(trip, opts);
         }
+        timings.collage1080Secs = elapsedSecs(t0);
     }
+
     if (opts.buildAudio) {
         std::vector<std::string> audioSegs;
         const std::string& ac = opts.audioExtractCamera;
@@ -2049,7 +2108,7 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     // Append build provenance to pm_buildlog.json in the footage source path.
     int outDur = (trip.durationFFProbed >= 0)
                  ? trip.durationFFProbed : trip.segDetectedDuration;
-    appendBuildLog(trip, opts, outDur);
+    appendBuildLog(trip, opts, outDur, timings);
 }
 
 // ---------------------------------------------------------------------------
@@ -2165,14 +2224,28 @@ void VideoBuilder::run(ConfigManager& config) {
             return files;
         };
 
-        if (opts.buildFront)
-            buildCameraFile(trip, "Front", collectSegments("front"), opts);
-        if (opts.buildRear)
-            buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
-        if (opts.buildLeft)
-            buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
-        if (opts.buildRight)
-            buildCameraFile(trip, "Right", collectSegments("right"), opts);
+        using clock = std::chrono::steady_clock;
+        auto elapsedSecs = [](clock::time_point t0) -> int {
+            return static_cast<int>(
+                std::chrono::duration_cast<std::chrono::seconds>(clock::now() - t0).count());
+        };
+
+        BuildTimings timings;
+
+        // --- Per-camera file concat ---
+        bool anyCamera = opts.buildFront || opts.buildRear || opts.buildLeft || opts.buildRight;
+        if (anyCamera) {
+            auto t0 = clock::now();
+            if (opts.buildFront)
+                buildCameraFile(trip, "Front", collectSegments("front"), opts);
+            if (opts.buildRear)
+                buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
+            if (opts.buildLeft)
+                buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
+            if (opts.buildRight)
+                buildCameraFile(trip, "Right", collectSegments("right"), opts);
+            timings.concatSecs = elapsedSecs(t0);
+        }
 
         // -----------------------------------------------------------------------
         // Collage
@@ -2182,10 +2255,13 @@ void VideoBuilder::run(ConfigManager& config) {
             collage4KPath = (fs::path(outDir) /
                              makeOutputName(trip, "Collage_4K", "mp4",
                                             opts.basenameOverride)).string();
+            auto t0 = clock::now();
             buildCollage4K(trip, opts);
+            timings.collage4kSecs = elapsedSecs(t0);
         }
 
         if (opts.buildCollage1080) {
+            auto t0 = clock::now();
             if (!collage4KPath.empty()) {
                 // Fast path: downscale from 4K master already built this session
                 std::string proposed1080 = (fs::path(outDir) /
@@ -2198,6 +2274,7 @@ void VideoBuilder::run(ConfigManager& config) {
                 // Direct path: encode 1080p from source segments (no 4K master needed)
                 buildCollage1080Direct(trip, opts);
             }
+            timings.collage1080Secs = elapsedSecs(t0);
         }
 
         // -----------------------------------------------------------------------
@@ -2220,7 +2297,7 @@ void VideoBuilder::run(ConfigManager& config) {
         config.saveTripCache(selManifest, selectedTrips);
         int outDur = (trip.durationFFProbed >= 0)
                      ? trip.durationFFProbed : trip.segDetectedDuration;
-        appendBuildLog(trip, opts, outDur);
+        appendBuildLog(trip, opts, outDur, timings);
 
         if (!renamedFiles.empty()) {
             std::cout << "\n  NOTE: The following files were renamed to avoid overwriting existing files:\n";

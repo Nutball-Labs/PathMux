@@ -262,17 +262,17 @@ Available fields: `manifest_id`, `trip_id`, `date`, `start_time`,
 
 Fastest 4K collage builds, ranked by realtime multiplier
 (footage duration ÷ encode time — higher is faster).
-Minimum qualifying trip: **20 minutes, 4 cameras**.
+
+**Qualifying requirements:** daytime trip, minimum 20 minutes, all four cameras
+(Front/Rear/Left/Right), 4K collage build.
 
 To submit: open a GitHub issue with your machine specs, footage duration,
-encode time, and encoder used.  Copy the `buildHistory` JSON block from
-your manifest and paste it in.
+encode time, and encoder used.  Find your timings in `pm_buildlog.json` in
+your footage source directory after a qualifying build.
 
-| | Machine | Encoder | 4K realtime | Encode time |
-|---|---|---|---|---|
-| 🥇 | i7 / RTX 4060 / NVMe | hevc_nvenc | 7.4x | 6m 22s (47 min trip) |
-| 🥈 | Core i5-11400 / no GPU / HDD | libx264 | 1.9x | 24m 33s (47 min trip) |
-| 🥉 | Ryzen 5 5600 / GTX 1660 Super / SSD | libx265 | 1.5x | 31m 48s (47 min trip) |
+| | Machine | Encoder | 4K realtime | Encode time | User |
+|---|---|---|---|---|---|
+| 🥇 | i7 / RTX 5060 / NVMe | hevc_nvenc | **6.04x** | 6m 58s (42 min trip) | Nutball-Labs |
 
 ---
 
