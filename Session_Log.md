@@ -5,567 +5,6 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
-## 2026-03-19
-
-### Session 1
-**Focus:** ffmpeg build progress tracking — live progress bar with ETA; Qt callback hook
-
-**Code Changes (v0.9.11a):**
-
-**`cli/video_build.cpp` / `cli/video_build.hpp`:**
-- `runFfmpegWithProgress(cmd, label, totalDurationSecs)` — new method.  Uses a
-  POSIX named pipe (`mkfifo`) and ffmpeg's `-progress <pipe>` to get machine-readable
-  `out_time_us=` / `speed=` key-value updates. Parses these into a `\r`-overwritten
-  progress bar: `  concat:Front      [=======>     ] 34%  ETA: 0:08`
-- `drawProgressLine()` static helper — renders the bar; label padded to 16 chars,
-  30-char fill bar, `NNN%  ETA: M:SS`.
-- `ffprobeFromFfmpeg()` static helper — derives `ffprobe` path from `ffmpegPath` by
-  replacing trailing `"ffmpeg"` with `"ffprobe"`. Used in `buildCollage1080`.
-- `progressCallback` public member (`std::function<void(label, pct, etaSecs)>`) —
-  Phase 2 Qt hook. When set, called instead of printing to terminal. Qt sets this to
-  route updates to per-stage progress bar widgets.
-- Four callers upgraded: `buildCameraFile` (`concat:<camera>`), `buildCollage4K`
-  (`collage:4K`), `buildCollage1080` (`collage:1080p`), `buildCollage1080Direct`
-  (`collage:1080p`). Internal steps (`buildPaddedInput`, audio extract) keep
-  `runFfmpeg`.
-- Falls back to `runFfmpeg` for: unknown duration, debug mode, Windows, pipe
-  creation failure.
-- Trip duration source: `durationFFProbed` if available, else `segDetectedDuration`.
-  For 1080p-from-4K: `getFileDuration(source4K)` called before encode.
-
-**Design notes:**
-- Stage labels (`concat:Front`, `collage:4K`, `collage:1080p`) are the Phase 2
-  blocker resolved: Qt can bind one progress bar per label.
-- Concat bars zip fast (stream copy); collage bars move slowly (encode) — exactly
-  the visual behaviour envisioned.
-- Windows support deferred; named pipes work differently on Win32.
-
----
-
-## 2026-03-20
-
-### Session 1
-**Focus:** macOS first run — compile verified, collage build debugged and confirmed working.
-All three platforms (Linux, macOS, Windows) now build and produce collages.
-
-**Platform news:**
-- macOS compile confirmed clean (Apple Clang, Homebrew ffmpeg/cmake). First collage
-  build on "Patsy's Air" (MacBook Air i5-8210Y, Intel UHD 617) succeeded.
-- TV upgrade: office 32" Roku 1080p TV plays 4K collages correctly. Green screen on
-  the previous TV was a display compatibility issue, not a PathMux codec problem.
-
-**Code Changes (SN 00088):**
-
-**`lib/config_manager.hpp` / `lib/config_manager.cpp`:**
-- `reloadHostSettings()` added as public method — calls `loadHostOverlay()`.
-  Allows interactive sessions to pick up `--encoderprefs` changes made in a
-  separate invocation without requiring a restart.
-
-**`cli/find_trips.cpp`:**
-- `config.reloadHostSettings()` called before `videoBuilder.configureOptions()` in
-  the interactive browser build path — host overlay always fresh at build time.
-
-**`cli/video_build.hpp`:**
-- `CollageOptions` struct gains `EncodeSettings encode` field.
-
-**`cli/video_build.cpp`:**
-- `config.reloadHostSettings()` called before `configureOptions()` in the
-  `VideoBuilder` interactive build loop.
-- `CollageOptions.encode` populated from `config.getEncodeSettings()` in
-  `runCollageFromFiles()`.
-- `vopts.encode = opts.encode` propagated in both 1080p-from-4K branches
-  (`buildCollageFromSlots` path and direct path). Previously `vopts` was
-  constructed with only `ffmpegPath`, causing 1080p downscale to fall back
-  to default (QSV) encode settings regardless of host config.
-- 4K collage failure now skips 1080p: both `buildCollageFromSlots` and
-  `buildTrip` paths check return value of 4K build before attempting 1080p.
-  Prints "Skipping 1080p — 4K collage failed." instead of attempting the
-  downscale on a 0-byte or missing file.
-- VideoToolbox `-q` fix: `h264_videotoolbox` and `hevc_videotoolbox` do not
-  support `-q` (quality scale); replaced with `-b:v <quality>M` when encoder
-  name contains `videotoolbox`. Applied in `buildCollage4K`,
-  `buildCollage1080`, and `buildCollage1080Direct`.
-
-**Diagnosed (not fixed this session):**
-- Progress bar freezes at ~57-58% during per-camera concat on macOS/NFS.
-  Root cause: ffmpeg stops emitting progress events while the moov atom is
-  written via NFS seek-back (~97-98 KB for these files). Linux NFS client
-  is faster; macOS NFS client holds write-back longer. Fix: animated
-  "finalizing..." indicator when no progress arrives for >2 seconds. Deferred.
-- `promptString()` hangs on bare Enter input — `std::cin >> std::ws` consumes
-  the newline. Also: bare Enter returns the existing value, preventing field
-  clear. Deferred.
-
-**Decisions:**
-- VideoToolbox quality values (collageQuality, downQuality) are now treated as
-  Mbps bitrates when encoder is `*_videotoolbox`. Current values: 4K=20Mbps,
-  1080p=22Mbps. 1080p is too high — adjust downQuality to 8–10 next session.
-- macOS host profile "Patsy's Air": `h264_videotoolbox` (4K collage),
-  `h264_videotoolbox` (1080p), `h264_videotoolbox` (norm); `yuv420p`.
-
----
-
-## 2026-03-15
-
-### Session 1
-**Focus:** Host-specific config overlay; Linux/NVENC collage quality confirmation;
-structured output (`--format`/`--fields`); GCC 14 build time; v0.9.11
-
-**Code Changes (v0.9.11):**
-
-**Host config overlay (`lib/config_manager.cpp/.hpp`, `lib/compat.hpp`):**
-- `getShortHostname()` added to `lib/compat.hpp` — cross-platform, no Winsock init
-  required (Windows: `GetComputerNameA`; POSIX: `gethostname` + strip domain)
-- `ConfigManager` loads `pathmux_<hostname>.json` as an overlay on top of
-  `pathmux.json`. Host fields applied after base load, before cfgState/logger eval.
-  Host-specific: `encode.*`, `ffmpegPath`, `exiftoolPath`, `exiftoolOptions`,
-  `defaultExportDir`, `tmpDir`, `logLevel`. Base-only: all trip/GPS/display prefs.
-- `saveHostSettings()` writes only host-specific fields to host file
-- `EncoderPrefsEditor` redirected to save via `saveHostSettings()` — encoder settings
-  are now always host-specific
-
-**`--hostprefs` menu (`cli/host_prefs.cpp/.hpp`):**
-- New `HostPrefsEditor` class; interactive menu titled "Host Preferences (<hostname>)"
-- Items: [A] FFmpeg path, [B] ExifTool path, [C] ExifTool options, [D] Default output
-  dir, [E] Temp dir, [F] Log level, [G] Encoder settings (launches EncoderPrefsEditor)
-- [S] saves via `config.applySettings(working); config.saveHostSettings()`
-
-**Structured output (`lib/trip_format.hpp`, `cli/find_trips.cpp`, `tools/pm_ls.cpp`):**
-- New `lib/trip_format.hpp` (header-only): `tripFieldVal`, `csvQuote`, `writeTripsCSV`,
-  `writeTripsXML`, `defaultTripFields` — shared by both pathmux and pm_ls
-- `pathmux -T --format=csv` / `--format=xml` / `--format=json` — `--format` is a
-  modifier to `-T`, not standalone (pathmux alone does nothing)
-- `pm_ls --format=csv` / `--format=xml` / `--format=json [MID] [MID:TID]` — scoped
-  output; `--format=json` aliased to `--json`
-- `--fields=<f1,f2,...>` selects output columns for csv/xml
-
-**Video build fix (`cli/video_build.cpp`):**
-- `buildCollage1080()` downscale: replaced `scale_cuda=1920:1080` (not universally
-  compiled into ffmpeg) with CPU `scale=1920:1080,format=...,hwupload=extra_hw_frames=64`
-
-**Build system (`CMakeLists.txt`):**
-- ccache auto-detected via `find_program`, wired as `CMAKE_CXX_COMPILER_LAUNCHER`
-- `json.hpp` added as PCH for `pathmuxlib` — GCC 14 template analysis amortized
-
-**Discovery:**
-- GCC 14 (Alma 10, nutball1) is 5–10× slower than GCC 11 (Alma 9.7, penny) on
-  nlohmann/json template instantiation — not a code issue, compiler regression.
-  ccache + PCH reduces subsequent builds to seconds.
-- ccache is keyed on source content + compiler binary hash — GCC 11 and GCC 14 cache
-  entries never collide. Each machine primes its own entries on first build.
-
-**Linux/NVENC Collage Test (nutball1 / RTX5060 / Alma 10):**
-- 4K collage confirmed clean — direct Roku Ultra play, no transcode trigger
-- Visual quality confirmed via frame grab at 3:36 (Gulfport MS, Handsboro area,
-  Magnolia St & Lorraine-Cowan Rd). 4-camera layout, GPS overlay visible.
-- constqp QP 24: ~44 Mbps — chosen as default. QP 20/22/24 visually indistinguishable
-  on 85" 4K display; QP 15 (~111 Mbps) triggered Plex transcode (Roku limit).
-- Collage encode speed: ~1.89× realtime on 12-minute trip (4K output, GPU encode)
-- concat stage ran at ~80× (fast copy) as expected
-
-**Design Decisions:**
-- `--format` in `pathmux` is a modifier, not standalone — pathmux does nothing without
-  a mode flag; user correctly caught this during review
-- `useImperial` removed from `formatDump()` signature — users choose `distance_km` or
-  `distance_mi` explicitly; no ambiguity
-- Host overlay "base-only" list is intentional — trip detection params, display units,
-  and GPS settings should be consistent across machines working the same manifests
-
-**Files Changed:**
-`lib/compat.hpp`, `lib/config_manager.hpp`, `lib/config_manager.cpp`,
-`lib/trip_format.hpp` (new), `lib/version.hpp`,
-`cli/host_prefs.hpp` (new), `cli/host_prefs.cpp` (new),
-`cli/find_trips.hpp`, `cli/find_trips.cpp`,
-`cli/main.cpp`, `cli/prefs.cpp`, `cli/video_build.cpp`,
-`tools/pm_ls.cpp`, `CMakeLists.txt`
-
-**Pending (carry forward):**
-- CameraProfile/StorageFormat extraction from `trip_detection.cpp` — next gate item
-- `pm_probe --wizard` — trial scan deferred until CameraProfile layer exists
-- Default encoder + HW profile system (CPU-safe default; community contribution model)
-- README public-audience rewrite + LICENSE file + packaging audit
-- Man page update for v0.9.11 (`--hostprefs`, `--format`, `--fields`)
-- USB stick field test kit
-
----
-
-## 2026-03-07
-
-### Session 1
-**Focus:** `pm_probe --wizard` UX polish; `<path>` display design; ROADMAP hardware-agnostic principle; v0.9.10g
-
-**Code Changes (v0.9.10g — `tools/pm_probe.cpp`):**
-- **`<path>` legend row** — `drawTable` now opens with `| <path> = <root> |` so the
-  user knows what the placeholder resolves to for this run. All camera mapping lines
-  display as `<path>/DirName/` rather than absolute or dirname-only values. Keeps
-  profile data root-relative — portable if the mount point changes.
-- **Camera remap UX redesign** — replaced numbered dir list with a typed subdirectory
-  prompt. After picking F/B/L/R, user sees `<path>/ ` and types just the subdir name.
-  Wizard validates: directory must exist under root and contain video files. On failure:
-  stores the entry and sets a `[!] needs attention` attention flag visible in both the
-  sub-menu and the main table. On success: clears any previous assignment for that
-  dirname, clears the flag.
-- **Pipe alignment fix** — `(not set — required)` em dash (3 UTF-8 bytes, 1-2 display
-  columns) caused `wizRow()` byte-count padding to shift the right border 2 columns
-  left. Replaced with `--`.
-- **Attention flags** — `bool frontAttn/rearAttn/leftAttn/rightAttn` added to wizard
-  state; `validateCamDir()` lambda checks existence + video content under root.
-
-**Discovery:**
-- D90 rear camera has no audio stream — confirmed in wizard output. Makes sense for
-  an exterior-mounted camera. Per-camera audio blocks in the profile will correctly
-  capture this absence for the collage layer.
-
-**Design Decisions (ROADMAP):**
-- **Hardware-agnostic defaults**: app ships with no active profile. On first run (no
-  profile configured), both CLI and GUI display a visible warning directing the user
-  to `pm_probe --wizard`. Default detection is a best-effort starting point, not a
-  guarantee. Documented in ROADMAP.
-- **`--prefs` profile item deferred**: adding a half-wired pref that silently does
-  nothing would be a footgun. Held until CameraProfile C++ consumption layer exists.
-- **Next critical step identified**: strip Pruveeo D90 hardcoding from
-  `trip_detection.cpp`, replace with sane agnostic defaults, load active profile at
-  scan time. This is the gate item that makes the wizard output actually useful.
-
-**Files Changed:** `tools/pm_probe.cpp`, `ROADMAP.md`, `CHANGELOG.md`, `Session_Log.md`
-
-**Pending (carry forward):**
-- CameraProfile/StorageFormat extraction from `trip_detection.cpp` — next priority
-- `pm_probe --wizard` live test on non-D90 hardware (Cobra CCDC4500 expected ~2026-03-08)
-- GPS lock corpus scan results — analyze when complete
-- License decision: GPL vs MIT — waiting on Phil Harvey response
-
----
-
-## 2026-03-06
-
-### Session 1
-**Focus:** GPS lock diagnostic tooling; pm_findgpslock; gps_export quiet-mode fix; v0.9.10f
-
-**Code Changes (v0.9.10f):**
-- **`tools/pm_findgpslock.cpp`** — new standalone tool. Scans one or more `.ts` files
-  via ExifTool; prints header + GPS samples up to the first fully-locked record
-  (valid lat/lon AND year ≥ 2000). Pre-lock rows labelled `NO_POS`, `NO_TIME`,
-  `NO_POS+NO_TIME`. Normal output is two lines per file. `--verbose` passes ExifTool
-  stderr to terminal. Added to CMake build and install.
-- **`lib/gps_export.cpp`** — ExifTool now called with `-q` in non-verbose mode,
-  suppressing `[Minor] Tag 'Main:GPSDateTime' not defined` ANSI warnings that were
-  polluting the terminal. Remaining stderr redirected to `/dev/null`.
-  Added year < 2000 clock check: cold-start records with unsynchronized GPS clock
-  (`1900:01:00`, `1970:01:01`) are now skipped in addition to zero lat/lon records.
-  New manifest fields: `pre_position_lock_samples`, `pre_time_lock_samples` — count
-  of skipped records before lock, stored per-trip after extraction.
-- **`tools/pm_gpsexport.cpp`** — added `--dump` flag: prints all track points to
-  stdout in a tabular format for quick diagnostic inspection. Progress dots moved
-  from stdout to stderr so file paths remain cleanly on stdout for pipeline use.
-- **`lib/version.hpp`** — bumped VERSION_SUFFIX to `"f"` (v0.9.10f).
-
-**GPS Lock Research:**
-- Ran `pm_findgpslock` against all February `.ts` files in `/z/srcdash/ex*/Front/`
-  with filenames starting `0` (03:xx–09:xx range, early morning).
-- Result: essentially universal GPS lock on sample 0 for that time range.
-  Single exception: `20260225_035430F.ts` — 0 samples extracted (stub/corrupt file,
-  present in both ex9 and ex10 from a duplicated SD card copy, not a real exception).
-- **Conclusion withheld**: early-morning result is a narrow slice. 1900-date records
-  previously observed while browsing suggest cold-start is real in the broader dataset.
-  Full corpus scan launched via `nohup /z/srcdash/find_lock/run_findgpslock.sh`.
-  Results to be analyzed in a follow-up session.
-- `run_findgpslock.sh` written to `/z/srcdash/find_lock/` — iterates all
-  `*/Front/*.ts` files, writes per-file output to `<stem>.findgpslock.txt`,
-  skips already-processed files (safe to restart).
-
-**Shower Thought Recorded (ROADMAP):**
-- **Combo Compass/Speedometer Gauge Widget** — unified round gauge: compass rose
-  center, speed on semicircular bar around perimeter; color bands (blue 0–25, green
-  25–70, yellow 71–79, red 80–100 mph). Applies to Qt6 playback overlay and any
-  CLI ASCII equivalent. Source: GitHub issue #4.
-
-**Files Changed:** `tools/pm_findgpslock.cpp` (new), `lib/gps_export.cpp`,
-`tools/pm_gpsexport.cpp`, `CMakeLists.txt`, `lib/version.hpp`, `ROADMAP.md`,
-`CHANGELOG.md`, `Session_Log.md`
-
-**Pending (carry forward):**
-- GPS lock corpus scan in progress — analyze results when complete
-- License decision: GPL vs MIT — waiting on Phil Harvey response
-- Named locations: SSC Bldg 1007 (30.3679, -89.6117), 11 Oxford Dr Gulfport (30.4189, -89.0252)
-- GPS extraction to GeoJSON (architecture decided, code pending)
-- CameraProfile/StorageFormat implementation (architecture decided, code pending)
-- Cobra CCDC4500 SD card expected ~2026-03-08 — GPS source TBD
-
----
-
-## 2026-03-05
-
-### Session 1
-**Focus:** Shower thoughts / planning; bug triage; man page; project infrastructure; Nutball-Labs org setup
-
-**Shower Thoughts Recorded (ROADMAP):**
-- **Smart Collage / Points of Interest:** When camera streams and moving map are
-  ready, user assigns streams to collage quadrants, marks POI timestamps with
-  captions and attached media. Collage opens at real-time then ramps up to timelapse
-  between POIs; ramps down approaching each POI; normal/slo-mo during POI; ramps
-  back up after. End-of-trip slows naturally.
-- **Target-duration mode:** User specifies desired output length; system calculates
-  required timelapse speed from `(total_source - POIs - ramps) / time_budget`.
-  Warns if speed is infeasible.
-- **Speed map preview:** Before rendering, present a plain-text timeline
-  (`1x for 15s → 8x for 90s → 1x for 3m during incident → ...`) with total
-  duration. User accepts or requests adjustments in a confirm/edit loop (CLI) or
-  drag-and-drop timeline (GUI).
-- **New dev machine incoming:** i7, 16 GB DDR5, RTX 4060, 1 TB NVMe. RTX 4060
-  supports NVENC — ffmpeg `-c:v h264_nvenc` / `-hwaccel cuda`. Relevant to collage
-  pipeline architecture. README will include real-world hardware benchmark section.
-- **Community brag board:** GitHub issue template structured around a self-contained
-  `buildHistory` JSON block (copy-paste from manifest, no reformatting). `userName`
-  field included. BENCHMARKS.md maintained as leaderboard. Top 3 encode times
-  published in the man page with each release.
-- **Build timing telemetry:** `buildHistory` section in trip manifest JSON records
-  per-camera concat time, collage build time, timelapse encode time. Supports
-  multiple build records per trip. JSON block isolated for copy-paste submission.
-
-**Bug Triage:**
-- **GPX/KML default output path** — investigated; found already fixed in v0.9.6a
-  (commit `417e901` message: "fix GPS output default path"). `runInteractive()` has
-  writable-check logic: defaults to footage source dir if writable; offers three-
-  option prompt otherwise. Cleared from CLAUDE.md known issues.
-- **ROADMAP housekeeping noted but deferred:** duplicate `**What's done:**` header
-  in GPS Data Extraction section; ExifTool runtime-check note contradicts current
-  no-version-check policy. Carry forward.
-
-**Man Page (`man1/pathmux.1`):**
-- Expanded `-G` section from one line to a full interactive flow reference:
-  trip picker commands (TripID, A, E, M, Q); action menu (G, X, K, J, Q);
-  output directory logic (source-dir default, writable check, three-choice fallback).
-- Added **BRAG BOARD** section — community encode timing leaderboard seeded with
-  three fake-but-plausible entries (Nutball Labs #1: i7/RTX 4060/NVMe, 47-min trip,
-  6m 22s 4K collage; two CPU-only entries for comparison). Points to `buildHistory`
-  JSON block for submission workflow.
-
-**Infrastructure:**
-- `cmake/sn_audit.cmake` updated: glob now includes `*.md` files; regex updated
-  from `^(//|#)` to `^(//|#|<!--)` to match HTML comment SN format.
-- `<!-- SN: 00081 -->` added to all PathMux `.md` files (CHANGELOG, CLAUDE,
-  ROADMAP, README, Session_Log, PROPOSED_UTILS, pathmux_project_brief,
-  ROADMAP_MacOS, ROADMAP_WINDOWS). HTML comment — invisible when rendered.
-- CLAUDE.md SN convention updated to document all three formats.
-- Git remote updated: `git@github.com:BiloxiGeek/PathMux.git` →
-  `git@github.com:Nutball-Labs/PathMux.git`.
-- `~/.claude/settings.json`: `Read` added to permissions allow list —
-  file reads auto-approve without user prompt.
-- Session Rules section established in both project CLAUDE.md files.
-
-**SRoute Project Setup** *(recorded here; full detail in SRoute Session_Log)*
-- Nutball-Labs GitHub org confirmed (`Nutball-Labs`); both PathMux and SRoute
-  repos live there.
-- SRoute git repo initialized at `/z/sroute`; initial commit pushed.
-- SRoute ROADMAP cleaned of PathMux dashcam content that had leaked in.
-
-**Files Changed:** `man1/pathmux.1`, `cmake/sn_audit.cmake`, `CLAUDE.md`,
-`CHANGELOG.md`, `ROADMAP.md`, `README.md`, `Session_Log.md`, `PROPOSED_UTILS.md`,
-`pathmux_project_brief.md`, `ROADMAP_MacOS.md`, `ROADMAP_WINDOWS.md`
-
-**Pending (carry forward):**
-- License decision: GPL vs MIT — waiting on Phil Harvey response
-- GPS extraction to GeoJSON (architecture decided, code pending)
-- CameraProfile/StorageFormat implementation (architecture decided, code pending)
-- ROADMAP housekeeping: duplicate `What's done:` header; stale ExifTool policy note
-- CHANGELOG not yet updated for this session's changes
-- CLI polish: `--format=[json,csv,xml]`, `--fields` filtering, `recordingProfile`,
-  `extra_hw_frames`
-- Man page header still says v0.9.10 — update when v0.9.11 is cut
-
----
-
-## 2026-03-04
-
-### Session 1
-**Focus:** Housekeeping — backfill docs, rename trip_debug, record CameraProfile architecture
-
-**Work Done:**
-- **CHANGELOG.md backfilled:** Entries for v0.9.10 through v0.9.10d were missing;
-  all added from git log and Session_Log.
-- **ROADMAP.md:** Corrected utility suite checkboxes (pm_gpsexport, pm_ls, pm_audit,
-  pm_probe, pm_tripdebug all marked done). Added CameraProfile extraction TODO under
-  Phase 1 Active Work. Added `Optional Camera Handling` and `User Support Model`
-  sections to Multi-Brand Dashcam Support.
-- **`trip_debug` → `pm_tripdebug` (v0.9.10e, SN 00081):**
-  - `git mv tools/debug_main.cpp tools/pm_tripdebug.cpp`
-  - All "trip_debug" strings in source updated to "pm_tripdebug"
-  - CMake target and install target renamed; `pm_tripdebug` added to packaging install
-  - `man1/pm_tripdebug.1` created — "PathMux Suite - Trip Detection Debugger"
-  - `pathmux.1` SEE ALSO updated; `lib/version.hpp` suffix bumped to "e"
-- **CameraProfile/StorageFormat architecture decision recorded** (from 2026-03-04
-  planning session on claude.ai):
-  - Camera format detection to be extracted from `trip_detection.cpp` into a
-    separate library layer; TripDetection consumes it; rest of pipeline sees
-    normalized output
-  - Goal: field bug reports only require updating detection layer, not trip logic
-  - `pm_probe --card` is the natural entry point; output formatted for GitHub issues
-  - Optional cameras: must handle both empty-dir and absent-dir gracefully
-  - Simulation plan: Front/Left/Right populated, Rear empty/absent
-  - Cobra Drive HD dual-view card incoming as first non-D90 test case
-  - Added to CLAUDE.md architecture section and ROADMAP Multi-Brand section
-
-**Files changed:** `tools/pm_tripdebug.cpp` (renamed from debug_main.cpp),
-`man1/pm_tripdebug.1` (new), `CMakeLists.txt`, `lib/version.hpp`, `man1/pathmux.1`,
-`ROADMAP.md`, `CHANGELOG.md`, `CLAUDE.md`
-
-**Pending (carry forward):**
-- License decision: GPL vs MIT — waiting on Phil Harvey response
-- Man page updates (-G interactive flow, `--validate`, `-t` flags)
-- GPS extraction to GeoJSON (architecture decided, code pending)
-- Open bug: GPX/KML default output path should follow manifest dir, not global defaultExportDir
-- CameraProfile/StorageFormat layer implementation (architecture decided, code pending)
-
----
-
-## 2026-03-02
-
-### Session 1 (Afternoon)
-**Focus:** pm_probe; exiftool version policy; GitHub collaborator permissions
-
-**Work Done:**
-- **pm_probe (v0.9.10c, SN 00080):** New `tools/pm_probe.cpp` — camera compatibility profiler.
-  - Single-file mode: `pm_probe <file.ts>` or `pm_probe MID:TID` — reports container,
-    resolution, frame rate, pixel format, color space, duration, stream list, GPS method,
-    first GPS fix (timestamp, lat, lon).
-  - Card mode: `pm_probe --card <path>` — fingerprints full dashcam storage root; finds
-    camera dirs, samples up to 5 segment durations, probes first segment of primary camera.
-    Output formatted for pasting into a GitHub issue.
-  - `--json` flag for all modes.
-  - GPS first fix fields renamed `sample_*` → `first_*` (`first_lat`, `first_lon`,
-    `first_timestamp`, `has_fix`) — clearer naming, not a statistical sample.
-  - Man page: `man1/pm_probe.1` — "PathMux Suite - Camera Profiler".
-  - Added to CMakeLists targets and install list; pathmux.1 SEE ALSO updated.
-
-- **ExifTool version policy (all files):** Dropped all "13.51+" version requirements.
-  PathMux no longer validates exiftool versions. If GPS extraction returns no data or
-  corrupted/garbled data, user is directed to the exiftool maintainer. RPM Requires
-  changed from `exiftool >= 13.51` to `exiftool`. Preemptive: user emailed Phil Harvey
-  and invited him as GitHub collaborator.
-
-- **Man page URL cleanup:** Removed inline `https://exiftool.org` URLs from man page
-  prose (not standard practice). Replaced with "contact the ExifTool maintainer directly"
-  and `SEE ALSO exiftool(1)`.
-
-- **GitHub permissions:** Reviewed collaborator access. Personal repos only support
-  Write or nothing for collaborators (no read-only option). Current collaborators:
-  BiloxiGeek (admin), xplatform12/Chad (write), Phil Harvey invite pending.
-  Decision: leave as-is, both are trusted.
-
-**Files changed:** `tools/pm_probe.cpp` (new), `man1/pm_probe.1` (new),
-`CMakeLists.txt`, `man1/pathmux.1`, `man1/pm_gpsinfo.1`, `man1/pm_gpsexport.1`,
-`lib/gps_export.cpp`, `cli/gpx_export.cpp`, `tools/pm_gpsinfo.cpp`, `README.md`
-
-**Pending (carry forward):**
-- License decision: GPL vs MIT — next session; waiting on Phil Harvey response
-- Man page updates (-G interactive flow, `--validate`, `-t` flags)
-- GPS extraction to GeoJSON (architecture decided, code pending)
-- Open bug: GPX/KML default output path should follow manifest dir, not global defaultExportDir
-- CHANGELOG.md and CLAUDE.md not yet updated for v0.9.10 series
-
----
-
-## 2026-03-01
-
-### Session 3 (Afternoon) — continued
-**Focus:** `--clear-cache` / `--clear-stale` UX rework; stale manifest archive
-
-**Work Done:**
-- **v0.9.8 (SN 00079):** Full manifest management UX pass.
-  - `manifests_stale.json` archive: stale entries pruned from live index are now
-    appended to `~/.config/pathmux/manifests_stale.json` (write-only at runtime).
-    Preserves id, path, manifestFile, lastScan, tripCount, note, and a `pruned` timestamp.
-  - `--show-stale`: displays stale archive in a formatted table.
-  - `--clear-stale [--force]`: wipes stale archive with confirmation; `--force` skips prompt.
-  - New `Manifest management:` section in usage output; `--validate` moved there.
-  - `--force` after `--clear-cache` is now order-independent (scanned from remaining argv).
-  - Fixed two `std::cin >>` calls in `clearCache()` → `std::getline(std::cin >> std::ws, ...)`.
-  - `validateManifestIndex()` stale message updated to say "archived" and cite `--show-stale`.
-
-**Files changed:** `lib/config_manager.cpp`, `lib/config_manager.hpp`, `cli/main.cpp`
-
-**v0.9.9 (same session, SN 00079):** Thumbnail detection complete.
-- `TripSegment` gains `frontThumb`, `rearThumb`, `leftThumb`, `rightThumb`
-  (absolute .jpg path or "" if absent; populated by `thumbFor()` helper at scan time)
-- `Trip` gains 8 trip-level convenience fields: `firstFront/Rear/Left/RightThumb`
-  and `lastFront/Rear/Left/RightThumb`
-- `first*` uses segments[1] (cold-start avoidance); falls back to segments[0]
-- All fields serialized in manifest JSON; backward-compatible on load
-- ffprobe duration confirmed already implemented; ROADMAP updated
-- Completes all Phase 1 Trip Detection & Caching roadmap items
-
-**Pending (carry forward):**
-- Man page updates (-G interactive flow, `--validate`, `-t` flags, new stale flags)
-- GPS extraction to GeoJSON (architecture decided, code pending)
-- `trip_debug` → `pm_tripdebug` rename (low priority)
-- License decision: GPL vs MIT — required before repo goes public
-
----
-
-### Session 2 (Morning)
-**Focus:** ID-based manifest filenames; scan-prompt; validation UX fix
-
-**Work Done:**
-- **v0.9.6c (SN 00077):** Added scan-prompt when `-s/--scan` targets a path that
-  already has a manifest. Options: overwrite, delete-and-rescan, or quit.
-- **v0.9.7a (SN 00078):** Switched manifest filenames from `pm_manifest_<sanitized_path>.json`
-  to `pm_manifest_<id>.json`. The 2-char base36 ID is now immediately visible in a
-  directory listing and consistent with MID:TID addressing.
-  - `ensureManifestId()` — write-side: ensures an ID exists before constructing filename
-  - `lookupManifestFilePath()` — read-only: resolves path from index; transparently
-    migrates old sanitized-path filenames via `fs::rename()` on first access
-  - `getManifestFilePath()`, `isCached()`, `loadTripCache()`, `updateManifestIndex()`
-    all updated to use the new helpers
-- **v0.9.7b (SN 00079):** Fixed `validateManifestIndex()` blocking an explicit
-  `-s/--scan` with interactive prompts for every stale entry in the entire index.
-  - Missing manifest entries now silently auto-pruned (one-line note, no prompt)
-  - Interactive prompt reserved for md5-mismatch case only (file exists but externally modified)
-  - `[R]` re-scan option removed (was a no-op)
-  - Both validate functions now use `lookupManifestFilePath()` for accurate file resolution
-
-**Decisions Made:**
-- Stale manifest entries: move to `~/.config/pathmux/manifests_stale.json` (separate file,
-  never read during normal operations) rather than silently discarding. Logged in ROADMAP.
-- `--clear-cache` / `--clear-stale` UX rework scheduled as next session's first task
-  before resuming the main bug/ToDo list.
-
-**Pending (carry forward):**
-- `--clear-cache` / `--clear-stale` UX rework (next session, first item)
-- Implement `manifests_stale.json` archive for pruned entries
-- Man page updates (-G interactive flow, `--validate`, `-t` flags)
-- GPS extraction to GeoJSON (architecture decided, code pending)
-- ffprobe integration for accurate trip duration (high priority)
-- `trip_debug` → `pm_tripdebug` rename (low priority)
-- License decision: GPL vs MIT — required before repo goes public
-
----
-
-### Session 1
-**Focus:** Bug list triage — items 1–3; v0.9.5a release
-
-**Work Done:**
-- **v0.9.5a (HWM 00072):** Three items from bug queue resolved.
-  - `selectTrip()` unused `mode` parameter silenced with `ExportMode /*mode*/`
-    in both declaration and definition. Retained in signature for future use.
-  - Duplicate `// SN:` removed from top of `pm_gpsinfo.cpp` header block.
-    Canonical SN location is bottom-of-file only; duplicate caused `sn-audit`
-    to emit two rows for `pm_gpsinfo.cpp`.
-  - `promptLine()` bare-Enter at "Output directory" prompt: verified correct —
-    no `cin >>` mixing in the interactive GPS export path; `promptLine()` returns
-    default on bare Enter as intended. No code change needed.
-- CHANGELOG, Session_Log, CLAUDE.md updated; known issues list pruned.
-
-**Pending (carry forward):**
-- Man page updates (-G interactive flow, `--validate`, `-t` flags)
-- GPS extraction to GeoJSON (architecture decided, code pending)
-- ffprobe integration for accurate trip duration (high priority)
-- `trip_debug` → `pm_tripdebug` rename (low priority)
-- pm_ls, pm_audit, pm_gpsexport, pm_probe — proposed, not yet implemented
-- License decision: GPL vs MIT — required before repo goes public
-
----
-
 ## 2026-02-25
 
 ### Session 1
@@ -758,6 +197,383 @@ v1.0 planning; utility suite scoping
 
 ---
 
+## 2026-03-01
+
+### Session 1
+**Focus:** Bug list triage — items 1–3; v0.9.5a release
+
+**Work Done:**
+- **v0.9.5a (HWM 00072):** Three items from bug queue resolved.
+  - `selectTrip()` unused `mode` parameter silenced with `ExportMode /*mode*/`
+    in both declaration and definition. Retained in signature for future use.
+  - Duplicate `// SN:` removed from top of `pm_gpsinfo.cpp` header block.
+    Canonical SN location is bottom-of-file only; duplicate caused `sn-audit`
+    to emit two rows for `pm_gpsinfo.cpp`.
+  - `promptLine()` bare-Enter at "Output directory" prompt: verified correct —
+    no `cin >>` mixing in the interactive GPS export path; `promptLine()` returns
+    default on bare Enter as intended. No code change needed.
+- CHANGELOG, Session_Log, CLAUDE.md updated; known issues list pruned.
+
+**Pending (carry forward):**
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- ffprobe integration for accurate trip duration (high priority)
+- `trip_debug` → `pm_tripdebug` rename (low priority)
+- pm_ls, pm_audit, pm_gpsexport, pm_probe — proposed, not yet implemented
+- License decision: GPL vs MIT — required before repo goes public
+
+---
+
+### Session 2 (Morning)
+**Focus:** ID-based manifest filenames; scan-prompt; validation UX fix
+
+**Work Done:**
+- **v0.9.6c (SN 00077):** Added scan-prompt when `-s/--scan` targets a path that
+  already has a manifest. Options: overwrite, delete-and-rescan, or quit.
+- **v0.9.7a (SN 00078):** Switched manifest filenames from `pm_manifest_<sanitized_path>.json`
+  to `pm_manifest_<id>.json`. The 2-char base36 ID is now immediately visible in a
+  directory listing and consistent with MID:TID addressing.
+  - `ensureManifestId()` — write-side: ensures an ID exists before constructing filename
+  - `lookupManifestFilePath()` — read-only: resolves path from index; transparently
+    migrates old sanitized-path filenames via `fs::rename()` on first access
+  - `getManifestFilePath()`, `isCached()`, `loadTripCache()`, `updateManifestIndex()`
+    all updated to use the new helpers
+- **v0.9.7b (SN 00079):** Fixed `validateManifestIndex()` blocking an explicit
+  `-s/--scan` with interactive prompts for every stale entry in the entire index.
+  - Missing manifest entries now silently auto-pruned (one-line note, no prompt)
+  - Interactive prompt reserved for md5-mismatch case only (file exists but externally modified)
+  - `[R]` re-scan option removed (was a no-op)
+  - Both validate functions now use `lookupManifestFilePath()` for accurate file resolution
+
+**Decisions Made:**
+- Stale manifest entries: move to `~/.config/pathmux/manifests_stale.json` (separate file,
+  never read during normal operations) rather than silently discarding. Logged in ROADMAP.
+- `--clear-cache` / `--clear-stale` UX rework scheduled as next session's first task
+  before resuming the main bug/ToDo list.
+
+**Pending (carry forward):**
+- `--clear-cache` / `--clear-stale` UX rework (next session, first item)
+- Implement `manifests_stale.json` archive for pruned entries
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- ffprobe integration for accurate trip duration (high priority)
+- `trip_debug` → `pm_tripdebug` rename (low priority)
+- License decision: GPL vs MIT — required before repo goes public
+
+---
+
+### Session 3 (Afternoon) — continued
+**Focus:** `--clear-cache` / `--clear-stale` UX rework; stale manifest archive
+
+**Work Done:**
+- **v0.9.8 (SN 00079):** Full manifest management UX pass.
+  - `manifests_stale.json` archive: stale entries pruned from live index are now
+    appended to `~/.config/pathmux/manifests_stale.json` (write-only at runtime).
+    Preserves id, path, manifestFile, lastScan, tripCount, note, and a `pruned` timestamp.
+  - `--show-stale`: displays stale archive in a formatted table.
+  - `--clear-stale [--force]`: wipes stale archive with confirmation; `--force` skips prompt.
+  - New `Manifest management:` section in usage output; `--validate` moved there.
+  - `--force` after `--clear-cache` is now order-independent (scanned from remaining argv).
+  - Fixed two `std::cin >>` calls in `clearCache()` → `std::getline(std::cin >> std::ws, ...)`.
+  - `validateManifestIndex()` stale message updated to say "archived" and cite `--show-stale`.
+
+**Files changed:** `lib/config_manager.cpp`, `lib/config_manager.hpp`, `cli/main.cpp`
+
+**v0.9.9 (same session, SN 00079):** Thumbnail detection complete.
+- `TripSegment` gains `frontThumb`, `rearThumb`, `leftThumb`, `rightThumb`
+  (absolute .jpg path or "" if absent; populated by `thumbFor()` helper at scan time)
+- `Trip` gains 8 trip-level convenience fields: `firstFront/Rear/Left/RightThumb`
+  and `lastFront/Rear/Left/RightThumb`
+- `first*` uses segments[1] (cold-start avoidance); falls back to segments[0]
+- All fields serialized in manifest JSON; backward-compatible on load
+- ffprobe duration confirmed already implemented; ROADMAP updated
+- Completes all Phase 1 Trip Detection & Caching roadmap items
+
+**Pending (carry forward):**
+- Man page updates (-G interactive flow, `--validate`, `-t` flags, new stale flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- `trip_debug` → `pm_tripdebug` rename (low priority)
+- License decision: GPL vs MIT — required before repo goes public
+
+---
+
+## 2026-03-02
+
+### Session 1 (Afternoon)
+**Focus:** pm_probe; exiftool version policy; GitHub collaborator permissions
+
+**Work Done:**
+- **pm_probe (v0.9.10c, SN 00080):** New `tools/pm_probe.cpp` — camera compatibility profiler.
+  - Single-file mode: `pm_probe <file.ts>` or `pm_probe MID:TID` — reports container,
+    resolution, frame rate, pixel format, color space, duration, stream list, GPS method,
+    first GPS fix (timestamp, lat, lon).
+  - Card mode: `pm_probe --card <path>` — fingerprints full dashcam storage root; finds
+    camera dirs, samples up to 5 segment durations, probes first segment of primary camera.
+    Output formatted for pasting into a GitHub issue.
+  - `--json` flag for all modes.
+  - GPS first fix fields renamed `sample_*` → `first_*` (`first_lat`, `first_lon`,
+    `first_timestamp`, `has_fix`) — clearer naming, not a statistical sample.
+  - Man page: `man1/pm_probe.1` — "PathMux Suite - Camera Profiler".
+  - Added to CMakeLists targets and install list; pathmux.1 SEE ALSO updated.
+
+- **ExifTool version policy (all files):** Dropped all "13.51+" version requirements.
+  PathMux no longer validates exiftool versions. If GPS extraction returns no data or
+  corrupted/garbled data, user is directed to the exiftool maintainer. RPM Requires
+  changed from `exiftool >= 13.51` to `exiftool`. Preemptive: user emailed Phil Harvey
+  and invited him as GitHub collaborator.
+
+- **Man page URL cleanup:** Removed inline `https://exiftool.org` URLs from man page
+  prose (not standard practice). Replaced with "contact the ExifTool maintainer directly"
+  and `SEE ALSO exiftool(1)`.
+
+- **GitHub permissions:** Reviewed collaborator access. Personal repos only support
+  Write or nothing for collaborators (no read-only option). Current collaborators:
+  BiloxiGeek (admin), xplatform12/Chad (write), Phil Harvey invite pending.
+  Decision: leave as-is, both are trusted.
+
+**Files changed:** `tools/pm_probe.cpp` (new), `man1/pm_probe.1` (new),
+`CMakeLists.txt`, `man1/pathmux.1`, `man1/pm_gpsinfo.1`, `man1/pm_gpsexport.1`,
+`lib/gps_export.cpp`, `cli/gpx_export.cpp`, `tools/pm_gpsinfo.cpp`, `README.md`
+
+**Pending (carry forward):**
+- License decision: GPL vs MIT — next session; waiting on Phil Harvey response
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- Open bug: GPX/KML default output path should follow manifest dir, not global defaultExportDir
+- CHANGELOG.md and CLAUDE.md not yet updated for v0.9.10 series
+
+---
+
+## 2026-03-04
+
+### Session 1
+**Focus:** Housekeeping — backfill docs, rename trip_debug, record CameraProfile architecture
+
+**Work Done:**
+- **CHANGELOG.md backfilled:** Entries for v0.9.10 through v0.9.10d were missing;
+  all added from git log and Session_Log.
+- **ROADMAP.md:** Corrected utility suite checkboxes (pm_gpsexport, pm_ls, pm_audit,
+  pm_probe, pm_tripdebug all marked done). Added CameraProfile extraction TODO under
+  Phase 1 Active Work. Added `Optional Camera Handling` and `User Support Model`
+  sections to Multi-Brand Dashcam Support.
+- **`trip_debug` → `pm_tripdebug` (v0.9.10e, SN 00081):**
+  - `git mv tools/debug_main.cpp tools/pm_tripdebug.cpp`
+  - All "trip_debug" strings in source updated to "pm_tripdebug"
+  - CMake target and install target renamed; `pm_tripdebug` added to packaging install
+  - `man1/pm_tripdebug.1` created — "PathMux Suite - Trip Detection Debugger"
+  - `pathmux.1` SEE ALSO updated; `lib/version.hpp` suffix bumped to "e"
+- **CameraProfile/StorageFormat architecture decision recorded** (from 2026-03-04
+  planning session on claude.ai):
+  - Camera format detection to be extracted from `trip_detection.cpp` into a
+    separate library layer; TripDetection consumes it; rest of pipeline sees
+    normalized output
+  - Goal: field bug reports only require updating detection layer, not trip logic
+  - `pm_probe --card` is the natural entry point; output formatted for GitHub issues
+  - Optional cameras: must handle both empty-dir and absent-dir gracefully
+  - Simulation plan: Front/Left/Right populated, Rear empty/absent
+  - Cobra Drive HD dual-view card incoming as first non-D90 test case
+  - Added to CLAUDE.md architecture section and ROADMAP Multi-Brand section
+
+**Files changed:** `tools/pm_tripdebug.cpp` (renamed from debug_main.cpp),
+`man1/pm_tripdebug.1` (new), `CMakeLists.txt`, `lib/version.hpp`, `man1/pathmux.1`,
+`ROADMAP.md`, `CHANGELOG.md`, `CLAUDE.md`
+
+**Pending (carry forward):**
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+- Man page updates (-G interactive flow, `--validate`, `-t` flags)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- Open bug: GPX/KML default output path should follow manifest dir, not global defaultExportDir
+- CameraProfile/StorageFormat layer implementation (architecture decided, code pending)
+
+---
+
+## 2026-03-05
+
+### Session 1
+**Focus:** Shower thoughts / planning; bug triage; man page; project infrastructure; Nutball-Labs org setup
+
+**Shower Thoughts Recorded (ROADMAP):**
+- **Smart Collage / Points of Interest:** When camera streams and moving map are
+  ready, user assigns streams to collage quadrants, marks POI timestamps with
+  captions and attached media. Collage opens at real-time then ramps up to timelapse
+  between POIs; ramps down approaching each POI; normal/slo-mo during POI; ramps
+  back up after. End-of-trip slows naturally.
+- **Target-duration mode:** User specifies desired output length; system calculates
+  required timelapse speed from `(total_source - POIs - ramps) / time_budget`.
+  Warns if speed is infeasible.
+- **Speed map preview:** Before rendering, present a plain-text timeline
+  (`1x for 15s → 8x for 90s → 1x for 3m during incident → ...`) with total
+  duration. User accepts or requests adjustments in a confirm/edit loop (CLI) or
+  drag-and-drop timeline (GUI).
+- **New dev machine incoming:** i7, 16 GB DDR5, RTX 4060, 1 TB NVMe. RTX 4060
+  supports NVENC — ffmpeg `-c:v h264_nvenc` / `-hwaccel cuda`. Relevant to collage
+  pipeline architecture. README will include real-world hardware benchmark section.
+- **Community brag board:** GitHub issue template structured around a self-contained
+  `buildHistory` JSON block (copy-paste from manifest, no reformatting). `userName`
+  field included. BENCHMARKS.md maintained as leaderboard. Top 3 encode times
+  published in the man page with each release.
+- **Build timing telemetry:** `buildHistory` section in trip manifest JSON records
+  per-camera concat time, collage build time, timelapse encode time. Supports
+  multiple build records per trip. JSON block isolated for copy-paste submission.
+
+**Bug Triage:**
+- **GPX/KML default output path** — investigated; found already fixed in v0.9.6a
+  (commit `417e901` message: "fix GPS output default path"). `runInteractive()` has
+  writable-check logic: defaults to footage source dir if writable; offers three-
+  option prompt otherwise. Cleared from CLAUDE.md known issues.
+- **ROADMAP housekeeping noted but deferred:** duplicate `**What's done:**` header
+  in GPS Data Extraction section; ExifTool runtime-check note contradicts current
+  no-version-check policy. Carry forward.
+
+**Man Page (`man1/pathmux.1`):**
+- Expanded `-G` section from one line to a full interactive flow reference:
+  trip picker commands (TripID, A, E, M, Q); action menu (G, X, K, J, Q);
+  output directory logic (source-dir default, writable check, three-choice fallback).
+- Added **BRAG BOARD** section — community encode timing leaderboard seeded with
+  three fake-but-plausible entries (Nutball Labs #1: i7/RTX 4060/NVMe, 47-min trip,
+  6m 22s 4K collage; two CPU-only entries for comparison). Points to `buildHistory`
+  JSON block for submission workflow.
+
+**Infrastructure:**
+- `cmake/sn_audit.cmake` updated: glob now includes `*.md` files; regex updated
+  from `^(//|#)` to `^(//|#|<!--)` to match HTML comment SN format.
+- `<!-- SN: 00081 -->` added to all PathMux `.md` files (CHANGELOG, CLAUDE,
+  ROADMAP, README, Session_Log, PROPOSED_UTILS, pathmux_project_brief,
+  ROADMAP_MacOS, ROADMAP_WINDOWS). HTML comment — invisible when rendered.
+- CLAUDE.md SN convention updated to document all three formats.
+- Git remote updated: `git@github.com:BiloxiGeek/PathMux.git` →
+  `git@github.com:Nutball-Labs/PathMux.git`.
+- `~/.claude/settings.json`: `Read` added to permissions allow list —
+  file reads auto-approve without user prompt.
+- Session Rules section established in both project CLAUDE.md files.
+
+**SRoute Project Setup** *(recorded here; full detail in SRoute Session_Log)*
+- Nutball-Labs GitHub org confirmed (`Nutball-Labs`); both PathMux and SRoute
+  repos live there.
+- SRoute git repo initialized at `/z/sroute`; initial commit pushed.
+- SRoute ROADMAP cleaned of PathMux dashcam content that had leaked in.
+
+**Files Changed:** `man1/pathmux.1`, `cmake/sn_audit.cmake`, `CLAUDE.md`,
+`CHANGELOG.md`, `ROADMAP.md`, `README.md`, `Session_Log.md`, `PROPOSED_UTILS.md`,
+`pathmux_project_brief.md`, `ROADMAP_MacOS.md`, `ROADMAP_WINDOWS.md`
+
+**Pending (carry forward):**
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- CameraProfile/StorageFormat implementation (architecture decided, code pending)
+- ROADMAP housekeeping: duplicate `What's done:` header; stale ExifTool policy note
+- CHANGELOG not yet updated for this session's changes
+- CLI polish: `--format=[json,csv,xml]`, `--fields` filtering, `recordingProfile`,
+  `extra_hw_frames`
+- Man page header still says v0.9.10 — update when v0.9.11 is cut
+
+---
+
+## 2026-03-06
+
+### Session 1
+**Focus:** GPS lock diagnostic tooling; pm_findgpslock; gps_export quiet-mode fix; v0.9.10f
+
+**Code Changes (v0.9.10f):**
+- **`tools/pm_findgpslock.cpp`** — new standalone tool. Scans one or more `.ts` files
+  via ExifTool; prints header + GPS samples up to the first fully-locked record
+  (valid lat/lon AND year ≥ 2000). Pre-lock rows labelled `NO_POS`, `NO_TIME`,
+  `NO_POS+NO_TIME`. Normal output is two lines per file. `--verbose` passes ExifTool
+  stderr to terminal. Added to CMake build and install.
+- **`lib/gps_export.cpp`** — ExifTool now called with `-q` in non-verbose mode,
+  suppressing `[Minor] Tag 'Main:GPSDateTime' not defined` ANSI warnings that were
+  polluting the terminal. Remaining stderr redirected to `/dev/null`.
+  Added year < 2000 clock check: cold-start records with unsynchronized GPS clock
+  (`1900:01:00`, `1970:01:01`) are now skipped in addition to zero lat/lon records.
+  New manifest fields: `pre_position_lock_samples`, `pre_time_lock_samples` — count
+  of skipped records before lock, stored per-trip after extraction.
+- **`tools/pm_gpsexport.cpp`** — added `--dump` flag: prints all track points to
+  stdout in a tabular format for quick diagnostic inspection. Progress dots moved
+  from stdout to stderr so file paths remain cleanly on stdout for pipeline use.
+- **`lib/version.hpp`** — bumped VERSION_SUFFIX to `"f"` (v0.9.10f).
+
+**GPS Lock Research:**
+- Ran `pm_findgpslock` against all February `.ts` files in `/z/srcdash/ex*/Front/`
+  with filenames starting `0` (03:xx–09:xx range, early morning).
+- Result: essentially universal GPS lock on sample 0 for that time range.
+  Single exception: `20260225_035430F.ts` — 0 samples extracted (stub/corrupt file,
+  present in both ex9 and ex10 from a duplicated SD card copy, not a real exception).
+- **Conclusion withheld**: early-morning result is a narrow slice. 1900-date records
+  previously observed while browsing suggest cold-start is real in the broader dataset.
+  Full corpus scan launched via `nohup /z/srcdash/find_lock/run_findgpslock.sh`.
+  Results to be analyzed in a follow-up session.
+- `run_findgpslock.sh` written to `/z/srcdash/find_lock/` — iterates all
+  `*/Front/*.ts` files, writes per-file output to `<stem>.findgpslock.txt`,
+  skips already-processed files (safe to restart).
+
+**Shower Thought Recorded (ROADMAP):**
+- **Combo Compass/Speedometer Gauge Widget** — unified round gauge: compass rose
+  center, speed on semicircular bar around perimeter; color bands (blue 0–25, green
+  25–70, yellow 71–79, red 80–100 mph). Applies to Qt6 playback overlay and any
+  CLI ASCII equivalent. Source: GitHub issue #4.
+
+**Files Changed:** `tools/pm_findgpslock.cpp` (new), `lib/gps_export.cpp`,
+`tools/pm_gpsexport.cpp`, `CMakeLists.txt`, `lib/version.hpp`, `ROADMAP.md`,
+`CHANGELOG.md`, `Session_Log.md`
+
+**Pending (carry forward):**
+- GPS lock corpus scan in progress — analyze results when complete
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+- Named locations: SSC Bldg 1007 (30.3679, -89.6117), 11 Oxford Dr Gulfport (30.4189, -89.0252)
+- GPS extraction to GeoJSON (architecture decided, code pending)
+- CameraProfile/StorageFormat implementation (architecture decided, code pending)
+- Cobra CCDC4500 SD card expected ~2026-03-08 — GPS source TBD
+
+---
+
+## 2026-03-07
+
+### Session 1
+**Focus:** `pm_probe --wizard` UX polish; `<path>` display design; ROADMAP hardware-agnostic principle; v0.9.10g
+
+**Code Changes (v0.9.10g — `tools/pm_probe.cpp`):**
+- **`<path>` legend row** — `drawTable` now opens with `| <path> = <root> |` so the
+  user knows what the placeholder resolves to for this run. All camera mapping lines
+  display as `<path>/DirName/` rather than absolute or dirname-only values. Keeps
+  profile data root-relative — portable if the mount point changes.
+- **Camera remap UX redesign** — replaced numbered dir list with a typed subdirectory
+  prompt. After picking F/B/L/R, user sees `<path>/ ` and types just the subdir name.
+  Wizard validates: directory must exist under root and contain video files. On failure:
+  stores the entry and sets a `[!] needs attention` attention flag visible in both the
+  sub-menu and the main table. On success: clears any previous assignment for that
+  dirname, clears the flag.
+- **Pipe alignment fix** — `(not set — required)` em dash (3 UTF-8 bytes, 1-2 display
+  columns) caused `wizRow()` byte-count padding to shift the right border 2 columns
+  left. Replaced with `--`.
+- **Attention flags** — `bool frontAttn/rearAttn/leftAttn/rightAttn` added to wizard
+  state; `validateCamDir()` lambda checks existence + video content under root.
+
+**Discovery:**
+- D90 rear camera has no audio stream — confirmed in wizard output. Makes sense for
+  an exterior-mounted camera. Per-camera audio blocks in the profile will correctly
+  capture this absence for the collage layer.
+
+**Design Decisions (ROADMAP):**
+- **Hardware-agnostic defaults**: app ships with no active profile. On first run (no
+  profile configured), both CLI and GUI display a visible warning directing the user
+  to `pm_probe --wizard`. Default detection is a best-effort starting point, not a
+  guarantee. Documented in ROADMAP.
+- **`--prefs` profile item deferred**: adding a half-wired pref that silently does
+  nothing would be a footgun. Held until CameraProfile C++ consumption layer exists.
+- **Next critical step identified**: strip Pruveeo D90 hardcoding from
+  `trip_detection.cpp`, replace with sane agnostic defaults, load active profile at
+  scan time. This is the gate item that makes the wizard output actually useful.
+
+**Files Changed:** `tools/pm_probe.cpp`, `ROADMAP.md`, `CHANGELOG.md`, `Session_Log.md`
+
+**Pending (carry forward):**
+- CameraProfile/StorageFormat extraction from `trip_detection.cpp` — next priority
+- `pm_probe --wizard` live test on non-D90 hardware (Cobra CCDC4500 expected ~2026-03-08)
+- GPS lock corpus scan results — analyze when complete
+- License decision: GPL vs MIT — waiting on Phil Harvey response
+
+---
+
 ## 2026-03-08
 
 ### Session 1 (Morning)
@@ -827,6 +643,190 @@ the SRoute app mockup build on the Windows machine.
 - CameraProfile/StorageFormat extraction from `trip_detection.cpp`
 - GPS lock corpus scan results — analyze when complete
 - License decision: GPL vs MIT — waiting on Phil Harvey response
+
+---
+
+## 2026-03-15
+
+### Session 1
+**Focus:** Host-specific config overlay; Linux/NVENC collage quality confirmation;
+structured output (`--format`/`--fields`); GCC 14 build time; v0.9.11
+
+**Code Changes (v0.9.11):**
+
+**Host config overlay (`lib/config_manager.cpp/.hpp`, `lib/compat.hpp`):**
+- `getShortHostname()` added to `lib/compat.hpp` — cross-platform, no Winsock init
+  required (Windows: `GetComputerNameA`; POSIX: `gethostname` + strip domain)
+- `ConfigManager` loads `pathmux_<hostname>.json` as an overlay on top of
+  `pathmux.json`. Host fields applied after base load, before cfgState/logger eval.
+  Host-specific: `encode.*`, `ffmpegPath`, `exiftoolPath`, `exiftoolOptions`,
+  `defaultExportDir`, `tmpDir`, `logLevel`. Base-only: all trip/GPS/display prefs.
+- `saveHostSettings()` writes only host-specific fields to host file
+- `EncoderPrefsEditor` redirected to save via `saveHostSettings()` — encoder settings
+  are now always host-specific
+
+**`--hostprefs` menu (`cli/host_prefs.cpp/.hpp`):**
+- New `HostPrefsEditor` class; interactive menu titled "Host Preferences (<hostname>)"
+- Items: [A] FFmpeg path, [B] ExifTool path, [C] ExifTool options, [D] Default output
+  dir, [E] Temp dir, [F] Log level, [G] Encoder settings (launches EncoderPrefsEditor)
+- [S] saves via `config.applySettings(working); config.saveHostSettings()`
+
+**Structured output (`lib/trip_format.hpp`, `cli/find_trips.cpp`, `tools/pm_ls.cpp`):**
+- New `lib/trip_format.hpp` (header-only): `tripFieldVal`, `csvQuote`, `writeTripsCSV`,
+  `writeTripsXML`, `defaultTripFields` — shared by both pathmux and pm_ls
+- `pathmux -T --format=csv` / `--format=xml` / `--format=json` — `--format` is a
+  modifier to `-T`, not standalone (pathmux alone does nothing)
+- `pm_ls --format=csv` / `--format=xml` / `--format=json [MID] [MID:TID]` — scoped
+  output; `--format=json` aliased to `--json`
+- `--fields=<f1,f2,...>` selects output columns for csv/xml
+
+**Video build fix (`cli/video_build.cpp`):**
+- `buildCollage1080()` downscale: replaced `scale_cuda=1920:1080` (not universally
+  compiled into ffmpeg) with CPU `scale=1920:1080,format=...,hwupload=extra_hw_frames=64`
+
+**Build system (`CMakeLists.txt`):**
+- ccache auto-detected via `find_program`, wired as `CMAKE_CXX_COMPILER_LAUNCHER`
+- `json.hpp` added as PCH for `pathmuxlib` — GCC 14 template analysis amortized
+
+**Discovery:**
+- GCC 14 (Alma 10, nutball1) is 5–10× slower than GCC 11 (Alma 9.7, penny) on
+  nlohmann/json template instantiation — not a code issue, compiler regression.
+  ccache + PCH reduces subsequent builds to seconds.
+- ccache is keyed on source content + compiler binary hash — GCC 11 and GCC 14 cache
+  entries never collide. Each machine primes its own entries on first build.
+
+**Linux/NVENC Collage Test (nutball1 / RTX5060 / Alma 10):**
+- 4K collage confirmed clean — direct Roku Ultra play, no transcode trigger
+- Visual quality confirmed via frame grab at 3:36 (Gulfport MS, Handsboro area,
+  Magnolia St & Lorraine-Cowan Rd). 4-camera layout, GPS overlay visible.
+- constqp QP 24: ~44 Mbps — chosen as default. QP 20/22/24 visually indistinguishable
+  on 85" 4K display; QP 15 (~111 Mbps) triggered Plex transcode (Roku limit).
+- Collage encode speed: ~1.89× realtime on 12-minute trip (4K output, GPU encode)
+- concat stage ran at ~80× (fast copy) as expected
+
+**Design Decisions:**
+- `--format` in `pathmux` is a modifier, not standalone — pathmux does nothing without
+  a mode flag; user correctly caught this during review
+- `useImperial` removed from `formatDump()` signature — users choose `distance_km` or
+  `distance_mi` explicitly; no ambiguity
+- Host overlay "base-only" list is intentional — trip detection params, display units,
+  and GPS settings should be consistent across machines working the same manifests
+
+**Files Changed:**
+`lib/compat.hpp`, `lib/config_manager.hpp`, `lib/config_manager.cpp`,
+`lib/trip_format.hpp` (new), `lib/version.hpp`,
+`cli/host_prefs.hpp` (new), `cli/host_prefs.cpp` (new),
+`cli/find_trips.hpp`, `cli/find_trips.cpp`,
+`cli/main.cpp`, `cli/prefs.cpp`, `cli/video_build.cpp`,
+`tools/pm_ls.cpp`, `CMakeLists.txt`
+
+**Pending (carry forward):**
+- CameraProfile/StorageFormat extraction from `trip_detection.cpp` — next gate item
+- `pm_probe --wizard` — trial scan deferred until CameraProfile layer exists
+- Default encoder + HW profile system (CPU-safe default; community contribution model)
+- README public-audience rewrite + LICENSE file + packaging audit
+- Man page update for v0.9.11 (`--hostprefs`, `--format`, `--fields`)
+- USB stick field test kit
+
+---
+
+## 2026-03-19
+
+### Session 1
+**Focus:** ffmpeg build progress tracking — live progress bar with ETA; Qt callback hook
+
+**Code Changes (v0.9.11a):**
+
+**`cli/video_build.cpp` / `cli/video_build.hpp`:**
+- `runFfmpegWithProgress(cmd, label, totalDurationSecs)` — new method.  Uses a
+  POSIX named pipe (`mkfifo`) and ffmpeg's `-progress <pipe>` to get machine-readable
+  `out_time_us=` / `speed=` key-value updates. Parses these into a `\r`-overwritten
+  progress bar: `  concat:Front      [=======>     ] 34%  ETA: 0:08`
+- `drawProgressLine()` static helper — renders the bar; label padded to 16 chars,
+  30-char fill bar, `NNN%  ETA: M:SS`.
+- `ffprobeFromFfmpeg()` static helper — derives `ffprobe` path from `ffmpegPath` by
+  replacing trailing `"ffmpeg"` with `"ffprobe"`. Used in `buildCollage1080`.
+- `progressCallback` public member (`std::function<void(label, pct, etaSecs)>`) —
+  Phase 2 Qt hook. When set, called instead of printing to terminal. Qt sets this to
+  route updates to per-stage progress bar widgets.
+- Four callers upgraded: `buildCameraFile` (`concat:<camera>`), `buildCollage4K`
+  (`collage:4K`), `buildCollage1080` (`collage:1080p`), `buildCollage1080Direct`
+  (`collage:1080p`). Internal steps (`buildPaddedInput`, audio extract) keep
+  `runFfmpeg`.
+- Falls back to `runFfmpeg` for: unknown duration, debug mode, Windows, pipe
+  creation failure.
+- Trip duration source: `durationFFProbed` if available, else `segDetectedDuration`.
+  For 1080p-from-4K: `getFileDuration(source4K)` called before encode.
+
+**Design notes:**
+- Stage labels (`concat:Front`, `collage:4K`, `collage:1080p`) are the Phase 2
+  blocker resolved: Qt can bind one progress bar per label.
+- Concat bars zip fast (stream copy); collage bars move slowly (encode) — exactly
+  the visual behaviour envisioned.
+- Windows support deferred; named pipes work differently on Win32.
+
+---
+
+## 2026-03-20
+
+### Session 1
+**Focus:** macOS first run — compile verified, collage build debugged and confirmed working.
+All three platforms (Linux, macOS, Windows) now build and produce collages.
+
+**Platform news:**
+- macOS compile confirmed clean (Apple Clang, Homebrew ffmpeg/cmake). First collage
+  build on "Patsy's Air" (MacBook Air i5-8210Y, Intel UHD 617) succeeded.
+- TV upgrade: office 32" Roku 1080p TV plays 4K collages correctly. Green screen on
+  the previous TV was a display compatibility issue, not a PathMux codec problem.
+
+**Code Changes (SN 00088):**
+
+**`lib/config_manager.hpp` / `lib/config_manager.cpp`:**
+- `reloadHostSettings()` added as public method — calls `loadHostOverlay()`.
+  Allows interactive sessions to pick up `--encoderprefs` changes made in a
+  separate invocation without requiring a restart.
+
+**`cli/find_trips.cpp`:**
+- `config.reloadHostSettings()` called before `videoBuilder.configureOptions()` in
+  the interactive browser build path — host overlay always fresh at build time.
+
+**`cli/video_build.hpp`:**
+- `CollageOptions` struct gains `EncodeSettings encode` field.
+
+**`cli/video_build.cpp`:**
+- `config.reloadHostSettings()` called before `configureOptions()` in the
+  `VideoBuilder` interactive build loop.
+- `CollageOptions.encode` populated from `config.getEncodeSettings()` in
+  `runCollageFromFiles()`.
+- `vopts.encode = opts.encode` propagated in both 1080p-from-4K branches
+  (`buildCollageFromSlots` path and direct path). Previously `vopts` was
+  constructed with only `ffmpegPath`, causing 1080p downscale to fall back
+  to default (QSV) encode settings regardless of host config.
+- 4K collage failure now skips 1080p: both `buildCollageFromSlots` and
+  `buildTrip` paths check return value of 4K build before attempting 1080p.
+  Prints "Skipping 1080p — 4K collage failed." instead of attempting the
+  downscale on a 0-byte or missing file.
+- VideoToolbox `-q` fix: `h264_videotoolbox` and `hevc_videotoolbox` do not
+  support `-q` (quality scale); replaced with `-b:v <quality>M` when encoder
+  name contains `videotoolbox`. Applied in `buildCollage4K`,
+  `buildCollage1080`, and `buildCollage1080Direct`.
+
+**Diagnosed (not fixed this session):**
+- Progress bar freezes at ~57-58% during per-camera concat on macOS/NFS.
+  Root cause: ffmpeg stops emitting progress events while the moov atom is
+  written via NFS seek-back (~97-98 KB for these files). Linux NFS client
+  is faster; macOS NFS client holds write-back longer. Fix: animated
+  "finalizing..." indicator when no progress arrives for >2 seconds. Deferred.
+- `promptString()` hangs on bare Enter input — `std::cin >> std::ws` consumes
+  the newline. Also: bare Enter returns the existing value, preventing field
+  clear. Deferred.
+
+**Decisions:**
+- VideoToolbox quality values (collageQuality, downQuality) are now treated as
+  Mbps bitrates when encoder is `*_videotoolbox`. Current values: 4K=20Mbps,
+  1080p=22Mbps. 1080p is too high — adjust downQuality to 8–10 next session.
+- macOS host profile "Patsy's Air": `h264_videotoolbox` (4K collage),
+  `h264_videotoolbox` (1080p), `h264_videotoolbox` (norm); `yuv420p`.
 
 ---
 
@@ -953,6 +953,10 @@ warning in pm_gpsinfo.cpp. No errors, no new warnings.
 
 **Next session:**
 - `pm_probe --wizard` trial scan for D90 and Cobra (both cameras in hand)
+
+---
+
+<!-- SN: 00088 -->
 
 ---
 
