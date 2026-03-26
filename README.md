@@ -270,9 +270,9 @@ To submit: open a GitHub issue with your machine specs, footage duration,
 encode time, and encoder used.  Find your timings in `pm_buildlog.json` in
 your footage source directory after a qualifying build.
 
-| | Machine | Encoder | 4K realtime | Encode time |
-|---|---|---|---|---|
-| 🥇 | i7 / RTX 5060 / NVMe | hevc_nvenc | **6.04x** | 6m 58s (42 min trip) |
+| | Machine | Encoder | 4K realtime | Encode time | User |
+|---|---|---|---|---|---|
+| 🥇 | i7 / RTX 5060 / NVMe | hevc_nvenc | **6.04x** | 6m 58s (42 min trip) | Nutball-Labs |
 
 ---
 
