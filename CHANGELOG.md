@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## [1.0.1a / SN: 00090] - 2026-03-28
+### Fixed
+- **pm_tmp fallback to config dir** (`cli/video_build.cpp`): `buildCollage4K()` and
+  `buildCollage1080Direct()` now fall back to `getConfigDir()/pm_tmp` when the primary
+  `outDir/pm_tmp` cannot be created (e.g. source footage on a read-only or network drive).
+  Previously failed with "Access is denied" and aborted the collage. Affects all platforms.
+
+### Added
+- **WiX 6 MSI packaging** (`wix/pathmux.wxs.in`, `CMakeLists.txt`): Windows MSI installer
+  targeting `C:\Program Files\PathMux` (x64). Adds all `pm_*` tools to system PATH via
+  `Environment` component. `MajorUpgrade` element handles in-place upgrades; downgrades
+  blocked. Single embedded cabinet; `perMachine` scope.
+- **4-part MSI version** (`lib/version.hpp`, `CMakeLists.txt`): `VERSION_BUILD` macro
+  provides the 4th numeric component required by Windows Installer (`1.0.1.1` for `1.0.1a`).
+  Allows lettered patch releases to trigger upgrade detection. Display version and filenames
+  retain the human-readable suffix (`1.0.1a`).
+- **`run-build.ps1`**: PowerShell build script — configures, builds, packages ZIP (CPack)
+  and MSI (WiX) in one shot. `-NoPack` flag skips packaging for fast build-only runs.
+- **`-arch x64` flag** (`CMakeLists.txt`): passed to `wix build` to ensure install lands
+  in `C:\Program Files` rather than `C:\Program Files (x86)`.
+- **`.gitignore`**: MSI, wixpdb, and `build_out.txt` added to exclusions.
+
+---
+
 ## [1.0.1 / SN: 00090] - 2026-03-28
 ### Added
 - **Default CPU encoder** (`lib/config_manager.hpp`, `cli/video_build.cpp`): Out-of-box
