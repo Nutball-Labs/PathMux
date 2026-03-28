@@ -230,7 +230,9 @@ add_custom_target(archive
 )
 
 # ---------------------------------------------------------------------------
-# CPack — for RPM and DEB package generation
+# CPack — RPM, DEB, and TGZ package generation
+# Run: cmake --build build-linux --target package
+# Output lands in packages/ at the project root.
 # ---------------------------------------------------------------------------
 set(CPACK_PACKAGE_NAME "pathmux")
 set(CPACK_PACKAGE_VERSION "${PATHMUX_VERSION}")
@@ -240,12 +242,18 @@ set(CPACK_PACKAGE_CONTACT "Stephen Berg <pathmux@iceberg.email>")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Nutball-Labs/PathMux")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 
+# Direct all package output to packages/ at the project root.
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_SOURCE_DIR}/packages")
+
+# Generators: RPM (Alma/RHEL), DEB (Ubuntu/Debian), TGZ (generic binary tarball)
+set(CPACK_GENERATOR "RPM;DEB;TGZ")
+
 # /usr is correct for RPM/DEB — the package manager owns this namespace.
 # /usr/local is for software installed outside a package manager.
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 
 # Use ecosystem-standard arch-suffixed filenames:
-#   pathmux-1.0.0-1.x86_64.rpm  /  pathmux_1.0.0_amd64.deb
+#   pathmux-1.0.1-1.x86_64.rpm  /  pathmux_1.0.1_amd64.deb
 set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 
@@ -254,22 +262,23 @@ set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
 set(CPACK_RPM_PACKAGE_LICENSE "GPL-3.0-or-later")
 set(CPACK_RPM_PACKAGE_URL "https://github.com/Nutball-Labs/PathMux")
 set(CPACK_RPM_PACKAGE_RELEASE "1")
-# ffmpeg (RPM Fusion) and ExifTool are runtime deps not available as standard
-# RPM packages — document in README and man pages instead.
+# ffmpeg (RPM Fusion) and ExifTool are runtime deps not in standard RPM repos —
+# documented in README and man pages.
 set(CPACK_RPM_PACKAGE_DESCRIPTION
 "PathMux scans multi-camera dashcam storage, groups video segments into trips,
 caches results as JSON manifests, and builds per-camera MP4 files or
-synchronized 4K collages. Supports the Pruveeo D90 and Cobra CCDC4500
-dashcams. Requires ffmpeg (RPM Fusion) and ExifTool for full functionality.")
+synchronized 4K collages. The pm_probe --wizard command profiles any dashcam
+layout automatically. Requires ffmpeg (RPM Fusion) and ExifTool for full
+functionality.")
 
 # DEB specific
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Stephen Berg <pathmux@iceberg.email>")
 set(CPACK_DEBIAN_PACKAGE_SECTION "video")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/Nutball-Labs/PathMux")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "libstdc++6")
-# ffmpeg and ExifTool are runtime deps not available as standard DEB packages —
-# document in README and man pages instead.
+# ffmpeg and ExifTool are runtime deps not in standard DEB repos —
+# documented in README and man pages.
 
 include(CPack)
 
-# SN: 00089
+# SN: 00090

@@ -13,21 +13,18 @@ per-camera MP4 files and 4K collages.
 
 ## Who it's for
 
-- **Rideshare and delivery drivers** (Uber, Lyft, DoorDash, Amazon Flex, etc.)
-  who need organized trip records, GPS mileage logs, and incident footage for
-  tax or reimbursement purposes.
 - **Anyone with a multi-camera dashcam** who wants more than a phone app.
 - Power users who prefer local tools over cloud upload services.
+- **Drivers who want organized trip records and GPS tracks** — whether for
+  personal reference, incident documentation, or route review.
 
-> **GPS lock warning — read this if you use PathMux for mileage or tax records**
+> **GPS lock warning**
 >
 > Most dashcams need 30–120 seconds (sometimes longer) to acquire a GPS fix
 > after startup.  The GPS track for each trip's first minute or two may be
 > incomplete or missing entirely.  PathMux reports the lock time per trip
 > (`gpsLockSeconds`) so you can see how much data was lost, but it cannot
-> recover GPS data the camera never recorded.  If you use GPS tracks for
-> tax deductions, mileage reimbursement, or legal documentation, be aware
-> of this gap and account for it appropriately.
+> recover GPS data the camera never recorded.
 
 ---
 
@@ -65,9 +62,7 @@ per-camera MP4 files and 4K collages.
 
 ## Requirements
 
-**Platform:** Linux (x86_64) — this is a Linux application.  Nutball Labs
-believes in cross-platform portability, so Windows and macOS ports are a
-stated goal, but they are not yet available.  All current development and
+**Platform:** Linux (x86_64), macOS, and Windows.  Primary development and
 testing is on Linux (Alma 9.x / RHEL 9).
 
 **Build dependencies:**
@@ -301,10 +296,9 @@ Copyright (C) 2026 Nutball Labs / Stephen Berg
 
 ## Project Status
 
-Phase 1 (CLI) is under active development on Linux.  Phase 2 (Qt6 GUI) is
-planned.  Windows and macOS ports are a portability goal — Nutball Labs
-ships Linux-first but targets all three platforms.
+Phase 1 (CLI) is under active development.  Runs on Linux, macOS, and
+Windows.  Phase 2 (Qt6 GUI) is planned.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
-<!-- SN: 00089 -->
+<!-- SN: 00090 -->
