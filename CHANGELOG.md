@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## [1.0.1 / SN: 00090] - 2026-03-28
+### Added
+- **Default CPU encoder** (`lib/config_manager.hpp`, `cli/video_build.cpp`): Out-of-box
+  encoder preset is now `cpu` (`libx265 -crf 18 -preset fast`) — works on any machine
+  without hardware configuration.  `applyEncodePreset()` now sets `extraDownArgs` for
+  all preset branches (cpu/qsv/vaapi).
+- **`buildCollageFromSlots` encoder wiring** (`cli/video_build.cpp`): Collage builder
+  now uses `opts.encode` settings (hwDevice init, pixFmt, collageEncoder, quality flags,
+  extraCollageArgs) instead of the hardcoded `libx265 -crf 18 -preset slow` that was
+  left in from early development.
+- **`[M] Extra downscale args`** menu entry added to `EncoderPrefsEditor` (`cli/prefs.cpp`).
+- **CPack packaging** (`CMakeLists.txt`): RPM, DEB, and TGZ packages generated via
+  `cmake --build build-linux --target package`.  Output lands in `packages/` at project
+  root.  RPM uses ecosystem arch-suffix filenames; DEB uses DEB-DEFAULT naming.
+- **`packages/` directory** tracked in git via `.gitkeep`; built packages excluded via
+  `.gitignore`.
+- **Dotfile filtering** (`tools/pm_probe.cpp`): All six `directory_iterator` loops now
+  skip entries whose filename begins with `.` (covers `._` resource forks, `.DS_Store`,
+  etc.) via new `isDotFile()` helper.
+
+### Changed
+- **Platform support** (`README.md`): Linux (x86_64), macOS, and Windows CLI all working
+  (was "Linux only; macOS/Windows planned").
+- **Man page `--encoderprefs`** (`man1/pathmux.1`): Rewritten with cpu-default guidance
+  and full 13-field reference list.
+- **Man page GPS cold-start warning** (`man1/pathmux.1`): Prominent warning block added
+  covering 30–120+ second GPS acquisition delay and implications for mileage/documentation use.
+- **Man page `pm_probe.1`** (`man1/pm_probe.1`): Flat-layout token description expanded;
+  hidden file filtering noted; wizard camera assignment UI description updated.
+- **RTX 5060 Brag Board entry corrected** (`man1/pathmux.1`, `README.md`): Hardware was
+  listed as RTX 4060; corrected to RTX 5060.
+
+---
+
 ## [1.0.0 / SN: 00089] - 2026-03-22 / 2026-03-25
 ### Changed
 - **License: MIT → GNU General Public License v3 or later** — prevents closed-source
@@ -1097,4 +1131,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00089 -->
+<!-- SN: 00090 -->
