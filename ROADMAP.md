@@ -130,12 +130,20 @@ values on D90) — stored but ignored. Speed in km/h.
 - [x] **License decision** — MIT. Phil Harvey responded: ExifTool called as external
   process (no linking), GPL copyleft does not propagate. MIT suits target audience
   (gig workers, Windows/macOS ports). Apply headers + `LICENSE` file pre-public-release.
-- [ ] **Distribution packaging — TOP PRIORITY** — pre-compiled packages for users who
-  cannot or will not build from source:
-  - `.tar.gz` — Linux and macOS (binary + deps + man page)
-  - `.rpm` — RHEL/Alma/Fedora/CentOS
-  - `.deb` — Debian/Ubuntu
-  - `.msi` or `.zip` — Windows installer or portable package
+- [ ] **Publish v1.0.1 GitHub Release — NEXT ACTION** — packages built, need to go live:
+  - Install `gh` CLI: `winget install GitHub.cli`, then `gh auth login`
+  - Create release + upload Windows assets from this machine:
+    `gh release create v1.0.1 --title "PathMux v1.0.1" --generate-notes packages/pathmux-1.0.1-win64.zip packages/pathmux-1.0.1-win64.msi`
+  - Build Linux packages on Alma box: `cmake --build build-linux --target package`
+  - Upload Linux assets from Alma box:
+    `gh release upload v1.0.1 packages/pathmux-1.0.1-1.x86_64.rpm packages/pathmux_1.0.1_amd64.deb packages/pathmux-1.0.1-Linux.tar.gz`
+  - Script the release upload into `run-build.ps1` (-Publish flag) for future releases
+- [x] **Distribution packaging** — pre-compiled packages for users who cannot or will not build from source:
+  - [x] `.zip` — Windows portable package (`pathmux-1.0.1-win64.zip`) — v1.0.1
+  - [x] `.msi` — Windows installer (`pathmux-1.0.1-win64.msi`) — v1.0.1
+  - [x] `.rpm` — RHEL/Alma/Fedora/CentOS — v1.0.1
+  - [x] `.deb` — Debian/Ubuntu — v1.0.1
+  - [x] `.tgz` — generic Linux binary tarball — v1.0.1
   See "Packaging Checklist" section below for audit items.
 - [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
 - [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)

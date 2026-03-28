@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PathMux Windows MSI package definition — WiX 6
+  Do NOT use WiX 3 (candle/light) with this file; it uses the v4/v6 schema.
+
+  CMake configure_file(@ONLY) substitutes @VER_*@ tokens at configure time.
+  BinDir and SrcDir are passed at build time:
+      wix build -d BinDir=<build-win dir> -d SrcDir=<source root>
+
+  UPGRADE GUID: A7F93C1E-2B47-4D8F-9A12-6BE89B540D75
+  This GUID must never change — it ties all PathMux MSI versions together
+  so Windows Installer can detect and upgrade previous installations.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+      Name="PathMux @VER_MAJOR@.@VER_MINOR@.@VER_PATCH@"
+      Version="@VER_MAJOR@.@VER_MINOR@.@VER_PATCH@.@VER_BUILD@"
+      Manufacturer="Nutball Labs"
+      UpgradeCode="A7F93C1E-2B47-4D8F-9A12-6BE89B540D75"
+      Scope="perMachine">
+
+    <SummaryInformation
+        Description="PathMux Dashcam Explorer — multi-camera footage manager"
+        Manufacturer="Nutball Labs" />
+
+    <!-- Remove older versions on upgrade; block downgrades. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of PathMux is already installed." />
+
+    <!-- Single embedded cabinet — no loose files alongside the MSI. -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="PathMux">
+
+        <!-- One component per file — required for Guid="*" auto-generation -->
+        <Component Id="C_pathmux"        Guid="*"><File Source="$(var.BinDir)\pathmux.exe"        KeyPath="yes" /></Component>
+        <Component Id="C_pm_gpsinfo"     Guid="*"><File Source="$(var.BinDir)\pm_gpsinfo.exe"     KeyPath="yes" /></Component>
+        <Component Id="C_pm_gpsexport"   Guid="*"><File Source="$(var.BinDir)\pm_gpsexport.exe"   KeyPath="yes" /></Component>
+        <Component Id="C_pm_ls"          Guid="*"><File Source="$(var.BinDir)\pm_ls.exe"          KeyPath="yes" /></Component>
+        <Component Id="C_pm_audit"       Guid="*"><File Source="$(var.BinDir)\pm_audit.exe"       KeyPath="yes" /></Component>
+        <Component Id="C_pm_findgpslock" Guid="*"><File Source="$(var.BinDir)\pm_findgpslock.exe" KeyPath="yes" /></Component>
+        <Component Id="C_pm_probe"       Guid="*"><File Source="$(var.BinDir)\pm_probe.exe"       KeyPath="yes" /></Component>
+        <Component Id="C_pm_tripdebug"   Guid="*"><File Source="$(var.BinDir)\pm_tripdebug.exe"   KeyPath="yes" /></Component>
+        <Component Id="C_LICENSE"        Guid="*"><File Source="$(var.SrcDir)\LICENSE"            KeyPath="yes" /></Component>
+        <Component Id="C_README"         Guid="*"><File Source="$(var.SrcDir)\README.md"          KeyPath="yes" /></Component>
+
+        <!-- Add install dir to system PATH so all pm_* tools are reachable from any prompt -->
+        <Component Id="C_PATH" Guid="*">
+          <RegistryValue Root="HKLM" Key="Software\NutballLabs\PathMux" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+          <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" System="yes" />
+        </Component>
+
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Complete" Title="PathMux" Level="1">
+      <ComponentRef Id="C_pathmux" />
+      <ComponentRef Id="C_pm_gpsinfo" />
+      <ComponentRef Id="C_pm_gpsexport" />
+      <ComponentRef Id="C_pm_ls" />
+      <ComponentRef Id="C_pm_audit" />
+      <ComponentRef Id="C_pm_findgpslock" />
+      <ComponentRef Id="C_pm_probe" />
+      <ComponentRef Id="C_pm_tripdebug" />
+      <ComponentRef Id="C_LICENSE" />
+      <ComponentRef Id="C_README" />
+      <ComponentRef Id="C_PATH" />
+    </Feature>
+
+  </Package>
+</Wix>
+<!-- SN: 00090 -->
