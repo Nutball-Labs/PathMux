@@ -232,8 +232,27 @@ default output directory, temp directory, log level, and encoder
 settings.
 .TP
 .B \-\-encoderprefs
-Launch the interactive encoder preferences editor.  Configure hardware
-acceleration (VAAPI, NVENC, etc.) or fall back to software encoding.
+Launch the interactive encoder preferences editor.  The default out-of-box
+preset is
+.B cpu
+(libx264 for normalization and downscaling, libx265 for collage), which works
+on any machine without GPU configuration.  To upgrade to hardware acceleration,
+select a preset with
+.BR [A] :
+.BR qsv ,
+.BR nvenc ,
+or
+.BR vaapi .
+Individual fields can be customized after applying a preset.
+Available fields: HW device string, HW device type, norm encoder,
+collage encoder, downscale encoder, pixel format, norm quality, collage
+quality, downscale quality, extra norm args, extra collage args, and extra
+downscale args.
+Encoder settings are host-specific and are saved to the host overlay file,
+not the base
+.I pathmux.json
+(see
+.BR \-\-hostprefs ).
 .TP
 .B \-\-kmlprefs
 Launch the interactive KML visual preferences editor (track colors, line
@@ -392,6 +411,19 @@ a non-zero latitude and longitude, avoiding the cold-start window without
 wasting a fixed offset on trips where the GPS receiver achieves a hot start
 immediately.  The same pass stores the last valid fix from the final segment
 as the trip end coordinate.
+.PP
+.B GPS cold-start data gap warning:
+Dashcam GPS receivers typically require 30\(en120 seconds to acquire a
+satellite fix after power-on.  No GPS data is recorded during this period.
+The
+.B gps_lock_seconds
+field in the manifest records how long the gap was for each trip.
+.B If you use GPS track data for mileage logs, tax records, or legal
+.B documentation, be aware that the first portion of every trip may be
+.B missing from the GPS track.
+The distance reported by PathMux is the great-circle distance between the
+first and last recorded fix, not the total odometer distance, and will
+undercount any mileage driven before GPS lock was achieved.
 .PP
 Altitude values from the D90 are systematically incorrect (negative) and are
 ignored.  Speed is recorded in km/h; the dashcam OSD converts to mph for
@@ -606,4 +638,4 @@ issue on the PathMux GitHub tracker.
 .BR pm_tripdebug (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-.\" SN: 00089
+." SN: 00090

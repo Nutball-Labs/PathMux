@@ -34,12 +34,13 @@ struct CameraSlot {
 // ---------------------------------------------------------------------------
 // CameraProfile — complete description of a dashcam's storage organisation.
 //
-// filenameRegex   — ECMAScript regex matched against the bare filename (no
-//                   directory part).  Capture group 1 = full timestamp
-//                   string (fed to strptime via timestampFormat).  Capture
-//                   group 2 (optional) = camera token; used to distinguish
-//                   cameras when the layout is flat.  If group 2 is absent,
-//                   camera identity is derived from scanSubdir alone.
+// filenameRegex         — ECMAScript regex matched against the bare filename
+//                         (no directory part).  By default group 1 = full
+//                         timestamp string; group 2 (optional) = camera token.
+//                         For prefix-token layouts (token precedes timestamp)
+//                         the groups are reversed; see timestampCaptureGroup /
+//                         tokenCaptureGroup.  If no token group is captured,
+//                         camera identity is derived from scanSubdir alone.
 //
 // timestampFormat — strptime format applied to group 1.
 //                   D90 example: "%Y%m%d_%H%M%S"
@@ -75,6 +76,11 @@ struct CameraProfile {
     // "utc"   — filename timestamps are in UTC; use timegm() for epoch conversion
     // "local" — filename timestamps are in local wall-clock time; use mktime()
     std::string timestampTimezone = "utc";
+    // Capture group indices in filenameRegex.  Default: group 1 = timestamp,
+    // group 2 = camera token.  Prefix-token layouts reverse these (1 = token,
+    // 2 = timestamp); set both fields accordingly in those profiles.
+    int         timestampCaptureGroup = 1;
+    int         tokenCaptureGroup     = 2;
     std::string containerExt;
     std::string thumbnailMethod = "replace_ext";
     std::string gpsMethod       = "none";
@@ -102,4 +108,4 @@ struct CameraProfile {
 } // namespace Pathmux
 
 #endif
-// SN: 00089
+// SN: 00090

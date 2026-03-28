@@ -220,7 +220,7 @@ public:
             e.normEncoder = "h264_qsv"; e.collageEncoder = "hevc_qsv";
             e.downEncoder = "h264_qsv"; e.pixFmt = "nv12";
             e.normQuality = "24"; e.collageQuality = "20"; e.downQuality = "22";
-            e.extraNormArgs = ""; e.extraCollageArgs = "";
+            e.extraNormArgs = ""; e.extraCollageArgs = ""; e.extraDownArgs = "";
         } else if (preset == "nvenc") {
             e.hwDevice = "cuda"; e.hwDeviceType = "cuda";
             e.normEncoder = "h264_nvenc"; e.collageEncoder = "hevc_nvenc";
@@ -241,13 +241,14 @@ public:
             e.normEncoder = "h264_vaapi"; e.collageEncoder = "hevc_vaapi";
             e.downEncoder = "h264_vaapi"; e.pixFmt = "nv12";
             e.normQuality = "24"; e.collageQuality = "20"; e.downQuality = "22";
-            e.extraNormArgs = ""; e.extraCollageArgs = "";
+            e.extraNormArgs = ""; e.extraCollageArgs = ""; e.extraDownArgs = "";
         } else if (preset == "cpu") {
             e.hwDevice = ""; e.hwDeviceType = "none";
             e.normEncoder = "libx264"; e.collageEncoder = "libx265";
             e.downEncoder = "libx264"; e.pixFmt = "yuv420p";
             e.normQuality = "23"; e.collageQuality = "18"; e.downQuality = "20";
             e.extraNormArgs = "-preset fast"; e.extraCollageArgs = "-preset slow";
+            e.extraDownArgs = "-preset fast";
         }
     }
 
@@ -352,4 +353,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00089
+// SN: 00090

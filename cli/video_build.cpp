@@ -1267,20 +1267,31 @@ bool VideoBuilder::buildCollageFromSlots(const CollageOptions& opts,
     std::ostringstream cmd;
     cmd << opts.ffmpegPath
         << " -y";
+    if (!opts.encode.hwDevice.empty())
+        cmd << " -init_hw_device " << opts.encode.hwDeviceType
+            << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
 
     for (int i = 0; i < 4; ++i)
         cmd << " -i \"" << inputs[i] << "\"";
 
     cmd << " -filter_complex \""
-        <<   "[0:v]scale=1920:1080[v0];"
-        <<   "[1:v]scale=1920:1080[v1];"
-        <<   "[2:v]scale=1920:1080[v2];"
-        <<   "[3:v]scale=1920:1080[v3];"
+        <<   "[0:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v0];"
+        <<   "[1:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v1];"
+        <<   "[2:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v2];"
+        <<   "[3:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v3];"
         <<   "[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[vout]\""
         << " -map \"[vout]\""
         << " -map " << opts.audioSlot << ":a:0"
-        << " -c:v libx265 -crf 18 -preset slow"
-        << " -c:a aac -b:a 192k"
+        << " -c:v " << opts.encode.collageEncoder;
+    if (opts.encode.collageEncoder.find("nvenc") != std::string::npos)
+        ; // no -q; quality handled via extraCollageArgs
+    else if (opts.encode.collageEncoder.find("videotoolbox") != std::string::npos)
+        cmd << " -b:v " << opts.encode.collageQuality << "M";
+    else
+        cmd << " -q " << opts.encode.collageQuality;
+    if (!opts.encode.extraCollageArgs.empty())
+        cmd << " " << opts.encode.extraCollageArgs;
+    cmd << " -c:a aac -b:a 192k"
         << " -movflags +faststart"
         << " \"" << outputPath << "\"";
 
@@ -2313,4 +2324,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00089
+// SN: 00090

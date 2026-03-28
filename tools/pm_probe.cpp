@@ -29,6 +29,8 @@
 #include <cstdio>
 #include <cmath>
 #include <set>
+#include <map>
+#include <regex>
 #include <cstdlib>
 
 using json = nlohmann::json;
@@ -419,6 +421,14 @@ static void printFileProbe(const FileProbe& p)
 // Card mode helpers
 // ---------------------------------------------------------------------------
 
+// Returns true for hidden/system dotfiles (names starting with '.').
+// Covers macOS resource forks (._foo), .DS_Store, .Spotlight-V100, etc.
+// These must be skipped in every file-enumeration loop.
+static bool isDotFile(const fs::path& p) {
+    const std::string n = p.filename().string();
+    return !n.empty() && n[0] == '.';
+}
+
 // List video files in a directory, sorted by name
 static std::vector<std::string> listVideoFiles(const std::string& dir)
 {
@@ -427,6 +437,7 @@ static std::vector<std::string> listVideoFiles(const std::string& dir)
     if (!fs::is_directory(dir)) return files;
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
+        if (isDotFile(entry.path())) continue;
         std::string ext = entry.path().extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(),
                        [](unsigned char c){ return std::tolower(c); });
@@ -523,6 +534,7 @@ static std::vector<std::string> detectExtensions(const std::string& dir)
     if (!fs::is_directory(dir)) return {};
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
+        if (isDotFile(entry.path())) continue;
         std::string ext = entry.path().extension().string();
         if (!ext.empty()) exts.insert(ext);
     }
@@ -787,25 +799,38 @@ static std::string guessCameraRoleFromToken(const std::string& token)
     return "";
 }
 
-static int timestampTokenLen(const std::string& fmt);  // defined below
+static int         timestampTokenLen(const std::string& fmt);   // defined below
+static std::string timestampRegex(const std::string& fmt);      // defined below
+static std::string escapeRegex(const std::string& s);           // defined below
 
-// Flat-layout multi-camera token analysis.
-// Inspects filenames in a single directory and detects whether multiple
-// cameras are present (distinguished by a suffix token after the timestamp).
+// Camera-token analysis for a single directory.
+// Detects multi-camera layouts where cameras are distinguished by a token
+// embedded in each filename — as a suffix, embedded field, or prefix.
 struct FlatTokenAnalysis {
-    bool                     isMultiCamera  = false;
-    std::vector<std::string> tokens;          // unique tokens, e.g. {"B","F","L","R"}
-    std::string              suffixGroup2;    // regex fragment with group 2 wrapping token
+    bool                     isMultiCamera    = false;
+    std::vector<std::string> tokens;          // unique camera identifiers
+    std::string              suffixGroup2;    // regex fragment APPENDED after timestamp (suffix/embedded)
+    std::string              prefixGroup1;    // regex fragment PREPENDED before timestamp (prefix)
+    bool                     isPrefix        = false;  // true when token precedes the timestamp
+    std::string              tokenDesc;       // human-readable description (e.g. "filename suffix")
+    int                      tokenCaptureGroup = 2;    // 1 for prefix layouts
+    int                      tsCaptureGroup    = 1;    // 2 for prefix layouts
 };
 
-static FlatTokenAnalysis analyzeFlatCameraTokens(const std::string& dir,
-                                                   const std::string& tsFmt)
+static FlatTokenAnalysis analyzeCameraTokens(const std::string& dir,
+                                              const std::string& tsFmt)
 {
     FlatTokenAnalysis result;
     int tsLen = timestampTokenLen(tsFmt);
     if (tsLen <= 0) return result;
 
     auto files = listVideoFiles(dir);
+    if (files.size() < 2) return result;
+
+    // -----------------------------------------------------------------------
+    // Suffix analysis: collect portion between timestamp end and extension.
+    // Assumes timestamp starts at position 0 of the filename.
+    // -----------------------------------------------------------------------
     std::set<std::string> suffixes;
     for (const auto& f : files) {
         std::string base = pathBasename(f);
@@ -814,33 +839,150 @@ static FlatTokenAnalysis analyzeFlatCameraTokens(const std::string& dir,
         if (dot == std::string::npos || (int)dot <= tsLen) continue;
         suffixes.insert(base.substr(tsLen, dot - tsLen));
     }
-    if (suffixes.size() < 2) return result;
 
-    // Pattern A: bare single uppercase letter  e.g. F, R, L, B  (D90 flat)
-    bool allSingleUpper = true;
-    for (const auto& s : suffixes)
-        if (s.size() != 1 || !std::isupper((unsigned char)s[0]))
-            { allSingleUpper = false; break; }
-    if (allSingleUpper) {
-        result.isMultiCamera = true;
-        for (const auto& s : suffixes) result.tokens.push_back(s);
-        result.suffixGroup2 = "([A-Za-z])";
-        return result;
+    if (suffixes.size() >= 2) {
+        // Pattern A: bare single uppercase letter  e.g. F, R, L, B  (D90 flat)
+        bool allSingleUpper = true;
+        for (const auto& s : suffixes)
+            if (s.size() != 1 || !std::isupper((unsigned char)s[0]))
+                { allSingleUpper = false; break; }
+        if (allSingleUpper) {
+            result.isMultiCamera     = true;
+            result.suffixGroup2      = "([A-Za-z])";
+            result.tokenDesc         = "filename suffix";
+            result.tokenCaptureGroup = 2;
+            result.tsCaptureGroup    = 1;
+            for (const auto& s : suffixes) result.tokens.push_back(s);
+            return result;
+        }
+
+        // Pattern B: _X where X is a single uppercase letter  e.g. _F, _R
+        bool allUnderscoreLetter = true;
+        for (const auto& s : suffixes)
+            if (s.size() != 2 || s[0] != '_' || !std::isupper((unsigned char)s[1]))
+                { allUnderscoreLetter = false; break; }
+        if (allUnderscoreLetter) {
+            result.isMultiCamera     = true;
+            result.suffixGroup2      = "_([A-Za-z])";
+            result.tokenDesc         = "filename suffix";
+            result.tokenCaptureGroup = 2;
+            result.tsCaptureGroup    = 1;
+            for (const auto& s : suffixes) result.tokens.push_back(s.substr(1));
+            return result;
+        }
+
+        // Pattern C: underscore-delimited fields with exactly one varying segment.
+        // e.g. _CAM1_VID / _CAM2_VID → tokens CAM1, CAM2
+        {
+            std::vector<std::vector<std::string>> splits;
+            for (const auto& sfx : suffixes) {
+                std::vector<std::string> parts;
+                std::string seg;
+                for (char ch : sfx) {
+                    if (ch == '_') { parts.push_back(seg); seg.clear(); }
+                    else           seg += ch;
+                }
+                parts.push_back(seg);
+                splits.push_back(parts);
+            }
+            size_t nParts = splits[0].size();
+            bool allSameLen = true;
+            for (const auto& sp : splits)
+                if (sp.size() != nParts) { allSameLen = false; break; }
+            if (allSameLen && nParts >= 1) {
+                std::vector<int> varyPos;
+                for (int i = 0; i < (int)nParts; ++i) {
+                    std::set<std::string> vals;
+                    for (const auto& sp : splits) vals.insert(sp[i]);
+                    if (vals.size() > 1) varyPos.push_back(i);
+                }
+                if (varyPos.size() == 1) {
+                    int vi = varyPos[0];
+                    std::set<std::string> tokSet;
+                    for (const auto& sp : splits) tokSet.insert(sp[vi]);
+                    // Build regex: fixed_prefix + (tok1|tok2|...) + fixed_suffix
+                    std::string sg2;
+                    for (int i = 0; i < vi; ++i) {
+                        if (i > 0) sg2 += "_";
+                        sg2 += escapeRegex(splits[0][i]);
+                    }
+                    if (vi > 0) sg2 += "_";
+                    sg2 += "(";
+                    bool first = true;
+                    for (const auto& t : tokSet) {
+                        if (!first) sg2 += "|";
+                        sg2 += escapeRegex(t);
+                        first = false;
+                    }
+                    sg2 += ")";
+                    for (int i = vi + 1; i < (int)nParts; ++i) {
+                        sg2 += "_";
+                        sg2 += escapeRegex(splits[0][i]);
+                    }
+                    result.isMultiCamera     = true;
+                    result.suffixGroup2      = sg2;
+                    result.tokenDesc         = "embedded filename token";
+                    result.tokenCaptureGroup = 2;
+                    result.tsCaptureGroup    = 1;
+                    for (const auto& t : tokSet) result.tokens.push_back(t);
+                    return result;
+                }
+            }
+        }
     }
 
-    // Pattern B: _X where X is a single uppercase letter  e.g. _F, _R
-    bool allUnderscoreLetter = true;
-    for (const auto& s : suffixes)
-        if (s.size() != 2 || s[0] != '_' || !std::isupper((unsigned char)s[1]))
-            { allUnderscoreLetter = false; break; }
-    if (allUnderscoreLetter) {
-        result.isMultiCamera = true;
-        for (const auto& s : suffixes) result.tokens.push_back(s.substr(1));
-        result.suffixGroup2 = "_([A-Za-z])";
-        return result;
+    // -----------------------------------------------------------------------
+    // Pattern P: token BEFORE the timestamp (prefix layout).
+    // e.g.  CAM1_20260223_0005.MOV  /  CAM2_20260223_0005.MOV
+    // -----------------------------------------------------------------------
+    {
+        std::regex tsSearch(timestampRegex(tsFmt));
+        std::set<std::string> prefixes;
+        bool anyNonZero = false;
+        for (const auto& f : files) {
+            std::string base = pathBasename(f);
+            std::smatch m;
+            if (!std::regex_search(base, m, tsSearch)) continue;
+            size_t tsOff = static_cast<size_t>(m.position(0));
+            if (tsOff == 0) continue;
+            anyNonZero = true;
+            std::string pre = base.substr(0, tsOff);
+            while (!pre.empty() && (pre.back() == '_' || pre.back() == '-'))
+                pre.pop_back();
+            if (!pre.empty()) prefixes.insert(pre);
+        }
+        if (anyNonZero && prefixes.size() >= 2) {
+            // Detect separator character between prefix and timestamp
+            char sep = '_';
+            {
+                std::string base0 = pathBasename(files[0]);
+                std::smatch m0;
+                if (std::regex_search(base0, m0, tsSearch)) {
+                    size_t tsOff0 = static_cast<size_t>(m0.position(0));
+                    std::string tok0 = *prefixes.begin();
+                    if (tsOff0 > tok0.size()) sep = base0[tok0.size()];
+                }
+            }
+            result.isMultiCamera     = true;
+            result.isPrefix          = true;
+            result.tokenCaptureGroup = 1;
+            result.tsCaptureGroup    = 2;
+            result.tokenDesc         = "filename prefix";
+            for (const auto& p : prefixes) result.tokens.push_back(p);
+            result.prefixGroup1 = "(";
+            bool first = true;
+            for (const auto& t : prefixes) {
+                if (!first) result.prefixGroup1 += "|";
+                result.prefixGroup1 += escapeRegex(t);
+                first = false;
+            }
+            result.prefixGroup1 += ")";
+            result.prefixGroup1 += escapeRegex(std::string(1, sep));
+            return result;
+        }
     }
 
-    return result;  // unrecognised pattern — single-camera path handles it
+    return result;  // unrecognised pattern — treat as single camera
 }
 
 // Guess the timestamp format string from a sample filename (path or basename).
@@ -1042,6 +1184,7 @@ static SuffixAnalysis analyzeThumbSuffix(const std::vector<std::string>& cameraD
         int count = 0;
         for (const auto& entry : fs::directory_iterator(dir)) {
             if (!entry.is_regular_file() || count >= 3) continue;
+            if (isDotFile(entry.path())) continue;
             std::string ext = entry.path().extension().string();
             std::transform(ext.begin(), ext.end(), ext.begin(),
                            [](unsigned char c){ return std::tolower(c); });
@@ -1064,6 +1207,7 @@ static bool detectSidecarJpg(const std::string& dir)
     if (!fs::is_directory(dir)) return false;
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
+        if (isDotFile(entry.path())) continue;
         std::string ext = entry.path().extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(),
                        [](unsigned char c){ return std::tolower(c); });
@@ -1087,6 +1231,7 @@ static bool sidecarTimestampMatch(const std::string& dir,
     if (!fs::is_directory(dir)) return false;
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
+        if (isDotFile(entry.path())) continue;
         std::string ext = entry.path().extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(),
                        [](unsigned char c){ return std::tolower(c); });
@@ -1189,6 +1334,7 @@ static void wizardCard(const std::string& root,
     struct CamData {
         std::string dirName;
         std::string dirPath;
+        std::string sampleFile;           // basename of first video file
         int         fileCount   = 0;
         bool        hasSidecar  = false;
         bool        sidecarOk   = false;  // basenames confirmed >=3 samples
@@ -1202,6 +1348,7 @@ static void wizardCard(const std::string& root,
         c.dirPath    = d;
         auto files   = listVideoFiles(d);
         c.fileCount  = static_cast<int>(files.size());
+        c.sampleFile = files.empty() ? "" : fs::path(files[0]).filename().string();
         c.hasSidecar = detectSidecarJpg(d);
         c.sidecarOk  = c.hasSidecar && sidecarTimestampMatch(d, tsFmt);
         if (!files.empty()) {
@@ -1223,12 +1370,41 @@ static void wizardCard(const std::string& root,
     // Flat-layout detection
     bool             flatLayout  = isFlatLayout(cameraDirs, scanRoot);
     FlatTokenAnalysis flatAnalysis;
-    if (flatLayout) flatAnalysis = analyzeFlatCameraTokens(cameraDirs[0], tsFmt);
-    bool isFlatMulti = flatLayout && flatAnalysis.isMultiCamera;
+    // Analyse tokens for any single-directory layout (flat root or single subdir like 100_DSC/).
+    if (cameraDirs.size() == 1) flatAnalysis = analyzeCameraTokens(cameraDirs[0], tsFmt);
+    bool isFlatMulti = (cameraDirs.size() == 1) && flatAnalysis.isMultiCamera;
+    // For single-subdir token layouts (e.g. all cameras in 100_DSC/), record the subdir.
+    std::string tokenScanSubdir = (isFlatMulti && !flatLayout && !cams.empty())
+                                   ? cams[0].dirName : "";
+
+    // Sample filename per camera token (for mapping UI).
+    std::map<std::string, std::string> tokenSampleFile;
+    if (isFlatMulti && !cameraDirs.empty()) {
+        const std::string& tokenDir = cams.empty() ? cameraDirs[0] : cams[0].dirPath;
+        auto flatFiles = listVideoFiles(tokenDir);
+        for (const auto& tok : flatAnalysis.tokens) {
+            for (const auto& f : flatFiles) {
+                std::string base = pathBasename(f);
+                bool hit = false;
+                if (flatAnalysis.isPrefix) {
+                    hit = base.size() >= tok.size()
+                       && base.substr(0, tok.size()) == tok
+                       && (base.size() == tok.size()
+                           || base[tok.size()] == '_' || base[tok.size()] == '-');
+                } else {
+                    auto dot = base.rfind('.');
+                    int tsLen = timestampTokenLen(tsFmt);
+                    if (dot != std::string::npos && (int)dot > tsLen)
+                        hit = base.substr(tsLen, dot - tsLen).find(tok) != std::string::npos;
+                }
+                if (hit) { tokenSampleFile[tok] = base; break; }
+            }
+        }
+    }
 
     // ---- Summary of what was found ----
     std::string layoutNote = isFlatMulti
-        ? " (flat layout, " + std::to_string(flatAnalysis.tokens.size()) + " camera tokens)"
+        ? " (" + flatAnalysis.tokenDesc + ", " + std::to_string(flatAnalysis.tokens.size()) + " cameras)"
         : flatLayout ? " (flat layout)" : "";
     std::cout << "\nFound " << cams.size() << " camera director"
               << (cams.size() == 1 ? "y" : "ies") << layoutNote << ":\n";
@@ -1334,6 +1510,7 @@ static void wizardCard(const std::string& root,
         if (!c.hasSidecar || !sampleThumbFile.empty()) continue;
         for (const auto& entry : fs::directory_iterator(c.dirPath)) {
             if (!entry.is_regular_file()) continue;
+            if (isDotFile(entry.path())) continue;
             std::string ext = entry.path().extension().string();
             std::transform(ext.begin(), ext.end(), ext.begin(),
                            [](unsigned char ch){ return std::tolower(ch); });
@@ -1350,14 +1527,6 @@ static void wizardCard(const std::string& root,
             SuffixAnalysis thumbSfx = analyzeThumbSuffix(cameraDirs, tsFmt);
             thumbPattern = "^" + timestampRegex(tsFmt) + thumbSfx.pattern + "\\.jpg$";
         }
-    };
-
-    // Validate a camera subdirectory — must exist under scanRoot and contain video files
-    auto validateCamDir = [&](const std::string& dirname) -> bool {
-        if (dirname.empty()) return false;
-        fs::path p = fs::path(scanRoot) / dirname;
-        if (!fs::is_directory(p)) return false;
-        return !listVideoFiles(p.string()).empty();
     };
 
     // Trim whitespace from a raw input line
@@ -1485,120 +1654,143 @@ static void wizardCard(const std::string& root,
         int sel = -1;
         try { sel = std::stoi(cmd); } catch (...) {}
 
-        // [1] Camera mappings — sub-menu (redraws until CONFIRM)
+        // [1] Camera mappings — two-panel UI (slot assignments + numbered sources)
         if (sel == 1) {
-            auto drawCams = [&]() {
-                std::cout << "\n" << wizSep('-') << "\n";
-                std::cout << "  <path> = " << scanRoot << "\n\n";
-                auto showRole = [&](const std::string& label, const std::string& val, bool attn) {
-                    std::string row = "  " + label;
-                    while ((int)row.size() < 8) row += ' ';
-                    row += " ->  ";
-                    if (val.empty())       row += "(unassigned)";
-                    else if (isFlatMulti)  row += "token " + val;
-                    else                   row += "<path>/" + val + "/";
-                    if (attn)              row += "  [!] needs attention";
-                    std::cout << row << "\n";
-                };
-                showRole("front", roleFront, frontAttn);
-                showRole("rear",  roleRear,  rearAttn);
-                showRole("left",  roleLeft,  leftAttn);
-                showRole("right", roleRight, rightAttn);
-                if (isFlatMulti) {
-                    std::vector<std::string> ua;
-                    for (const auto& tok : flatAnalysis.tokens)
-                        if (tok != roleFront && tok != roleRear &&
-                            tok != roleLeft  && tok != roleRight)
-                            ua.push_back(tok);
-                    if (!ua.empty()) {
-                        std::cout << "\n  Unassigned tokens:";
-                        for (const auto& t : ua) std::cout << "  " << t;
-                        std::cout << "\n";
-                    }
-                } else {
-                    std::vector<std::string> ua;
-                    for (const auto& c : cams)
-                        if (c.dirName != roleFront && c.dirName != roleRear &&
-                            c.dirName != roleLeft  && c.dirName != roleRight)
-                            ua.push_back(c.dirName);
-                    if (!ua.empty()) {
-                        std::cout << "\n  Unassigned:";
-                        for (const auto& d : ua) std::cout << "  <path>/" << d << "/";
-                        std::cout << "\n";
-                    }
+            // Build numbered sources list once
+            struct Source {
+                std::string id;          // dirName or token
+                std::string label;       // display string for sources panel
+                std::string sampleFile;  // basename of first video file
+                int         fileCount = 0;
+            };
+            std::vector<Source> sources;
+            if (isFlatMulti) {
+                for (const auto& tok : flatAnalysis.tokens) {
+                    Source s;
+                    s.id         = tok;
+                    s.label      = tok + "  (" + flatAnalysis.tokenDesc + ")";
+                    s.sampleFile = tokenSampleFile.count(tok) ? tokenSampleFile.at(tok) : "";
+                    sources.push_back(s);
                 }
-                std::cout << "\n  CONFIRM to accept"
-                          << "  |  [F]ront  [B]ack/rear  [L]eft  [R]ight  to remap\n> ";
+            } else {
+                for (const auto& c : cams) {
+                    Source s;
+                    s.id         = c.dirName;
+                    s.label      = c.dirName + "/";
+                    s.sampleFile = c.sampleFile;
+                    s.fileCount  = c.fileCount;
+                    sources.push_back(s);
+                }
+            }
+
+            // State: SLOT_SELECT waits for F/B/L/R; SOURCE_SELECT waits for a number
+            enum class MapPhase { SLOT_SELECT, SOURCE_SELECT };
+            MapPhase     phase       = MapPhase::SLOT_SELECT;
+            std::string* pendingSlot = nullptr;
+            bool*        pendingAttn = nullptr;
+            std::string  pendingLabel;
+            char         pendingKey  = ' ';
+
+            // Two-pane layout: left=slot assignments (30), right=sources (31)
+            // "| " + left(30) + " | " + right(31) + " |" = 68
+            auto p30 = [](std::string s) -> std::string {
+                if ((int)s.size() > 30) s = s.substr(0, 30);
+                else s += std::string(30 - (int)s.size(), ' ');
+                return s;
+            };
+            auto p31 = [](std::string s) -> std::string {
+                if ((int)s.size() > 31) s = s.substr(0, 31);
+                else s += std::string(31 - (int)s.size(), ' ');
+                return s;
+            };
+            auto paneRow = [&](const std::string& left, const std::string& right) -> std::string {
+                return "| " + p30(left) + " | " + p31(right) + " |";
+            };
+            // Column separator: "+" + 32="=" + "+" + 33="=" + "+"  (= 68)
+            const std::string colSep = "+" + std::string(32, '=') + "+" + std::string(33, '=') + "+";
+
+            // Build flat source-line list: one label row + one sample row per source
+            std::vector<std::string> srcLines;
+            for (int i = 0; i < (int)sources.size(); ++i) {
+                const auto& src = sources[i];
+                std::string ln = "[" + std::to_string(i + 1) + "]  " + src.label;
+                if (src.fileCount > 0)
+                    ln += "  " + std::to_string(src.fileCount) + " file" + (src.fileCount == 1 ? "" : "s");
+                srcLines.push_back(ln);
+                if (!src.sampleFile.empty())
+                    srcLines.push_back("     " + src.sampleFile);
+            }
+
+            // Left-column slot data
+            const char        slotKeys[]  = {'F', 'B', 'L', 'R'};
+            const char* const slotNames[] = {"front", "rear", "left", "right"};
+            const std::string* slotVals[] = {&roleFront, &roleRear, &roleLeft, &roleRight};
+
+            auto drawMap = [&]() {
+                int totalRows = std::max(4, (int)srcLines.size());
+                std::cout << "\n  <path> = " << scanRoot << "\n" << colSep << "\n";
+                for (int row = 0; row < totalRows; ++row) {
+                    // Left pane: slot row or blank
+                    std::string left;
+                    if (row < 4) {
+                        bool hl = (phase == MapPhase::SOURCE_SELECT
+                                   && pendingSlot == slotVals[row]);
+                        left  = (hl ? ">>" : "  ");
+                        left += "["; left += slotKeys[row]; left += "] ";
+                        left += slotNames[row];
+                        left += "  ->  ";
+                        if (slotVals[row]->empty())    left += "(unassigned)";
+                        else if (isFlatMulti)          left += *slotVals[row];
+                        else                           left += *slotVals[row] + "/";
+                    }
+                    // Right pane: source line or blank
+                    std::string right = (row < (int)srcLines.size()) ? srcLines[row] : "";
+                    std::cout << paneRow(left, right) << "\n";
+                }
+                std::cout << wizSep('-') << "\n";
+                if (phase == MapPhase::SLOT_SELECT) {
+                    std::cout << wizRow("  CONFIRM  |  [F/B/L/R] select slot  |  Q quit") << "\n";
+                } else {
+                    std::string act = "  Assign [";
+                    act += pendingKey; act += "]"; act += pendingLabel;
+                    act += ":  [1-"; act += std::to_string(sources.size());
+                    act += "] pick  |  0 unassign  |  Q cancel";
+                    std::cout << wizRow(act) << "\n";
+                }
+                std::cout << wizSep('=') << "\n> ";
                 std::cout.flush();
             };
+
             while (true) {
-                drawCams();
+                drawMap();
                 std::string c2;
                 if (!std::getline(std::cin, c2)) break;
                 c2 = trimLine(c2);
-                if (c2 == "CONFIRM") break;
                 std::string u = c2;
                 std::transform(u.begin(), u.end(), u.begin(),
                                [](unsigned char ch){ return std::toupper(ch); });
-                std::string* slot     = nullptr;
-                bool*        attnFlag = nullptr;
-                std::string  slotLabel;
-                if      (u == "F") { slot = &roleFront; attnFlag = &frontAttn; slotLabel = "Front";     }
-                else if (u == "B") { slot = &roleRear;  attnFlag = &rearAttn;  slotLabel = "Back/Rear"; }
-                else if (u == "L") { slot = &roleLeft;  attnFlag = &leftAttn;  slotLabel = "Left";      }
-                else if (u == "R") { slot = &roleRight; attnFlag = &rightAttn; slotLabel = "Right";     }
-                if (!slot) continue;
-
-                if (isFlatMulti) {
-                    // Flat layout: remap to a camera token
-                    std::cout << "\nRemap " << slotLabel << " camera.\n"
-                              << "Available tokens:";
-                    for (const auto& t : flatAnalysis.tokens) std::cout << "  " << t;
-                    std::cout << "\nType token (blank to unassign): ";
-                    std::cout.flush();
-                    std::string tok;
-                    if (!std::getline(std::cin, tok)) continue;
-                    tok = trimLine(tok);
-                    if (tok.empty()) {
-                        *slot = ""; *attnFlag = false;
-                    } else {
-                        bool valid = false;
-                        for (const auto& t : flatAnalysis.tokens) if (t == tok) { valid = true; break; }
-                        if (valid) {
-                            if (roleFront == tok) { roleFront = ""; frontAttn = false; }
-                            if (roleRear  == tok) { roleRear  = ""; rearAttn  = false; }
-                            if (roleLeft  == tok) { roleLeft  = ""; leftAttn  = false; }
-                            if (roleRight == tok) { roleRight = ""; rightAttn = false; }
-                            *slot = tok; *attnFlag = false;
-                            std::cout << "  OK -- token " << tok << " assigned.\n";
-                        } else {
-                            *slot = tok; *attnFlag = true;
-                            std::cout << "  Warning: token '" << tok << "' not found in detected tokens.\n";
-                        }
-                    }
+                if (phase == MapPhase::SLOT_SELECT) {
+                    if (u == "CONFIRM" || u == "Q") break;
+                    if      (u == "F") { pendingSlot = &roleFront; pendingAttn = &frontAttn; pendingLabel = "front"; pendingKey = 'F'; phase = MapPhase::SOURCE_SELECT; }
+                    else if (u == "B") { pendingSlot = &roleRear;  pendingAttn = &rearAttn;  pendingLabel = "rear";  pendingKey = 'B'; phase = MapPhase::SOURCE_SELECT; }
+                    else if (u == "L") { pendingSlot = &roleLeft;  pendingAttn = &leftAttn;  pendingLabel = "left";  pendingKey = 'L'; phase = MapPhase::SOURCE_SELECT; }
+                    else if (u == "R") { pendingSlot = &roleRight; pendingAttn = &rightAttn; pendingLabel = "right"; pendingKey = 'R'; phase = MapPhase::SOURCE_SELECT; }
                 } else {
-                    // Subdir layout: remap to a subdirectory name
-                    std::cout << "\nRemap " << slotLabel << " camera.\n"
-                              << "Type subdirectory name (blank to unassign):\n"
-                              << "  <path>/ ";
-                    std::cout.flush();
-                    std::string sub;
-                    if (!std::getline(std::cin, sub)) continue;
-                    sub = trimLine(sub);
-                    while (!sub.empty() && sub.back() == '/') sub.pop_back();
-                    if (sub.empty()) {
-                        *slot = ""; *attnFlag = false;
-                    } else if (validateCamDir(sub)) {
-                        if (roleFront == sub) { roleFront = ""; frontAttn = false; }
-                        if (roleRear  == sub) { roleRear  = ""; rearAttn  = false; }
-                        if (roleLeft  == sub) { roleLeft  = ""; leftAttn  = false; }
-                        if (roleRight == sub) { roleRight = ""; rightAttn = false; }
-                        *slot = sub; *attnFlag = false;
-                        std::cout << "  OK -- <path>/" << sub << "/ validated.\n";
-                    } else {
-                        *slot = sub; *attnFlag = true;
-                        std::cout << "  Warning: <path>/" << sub
-                                  << "/ not found or has no video files.\n";
+                    if (u == "Q") { phase = MapPhase::SLOT_SELECT; pendingSlot = nullptr; continue; }
+                    if (u == "0") {
+                        *pendingSlot = ""; *pendingAttn = false;
+                        phase = MapPhase::SLOT_SELECT; pendingSlot = nullptr; continue;
+                    }
+                    int pick = 0;
+                    try { pick = std::stoi(u); } catch (...) {}
+                    if (pick >= 1 && pick <= (int)sources.size()) {
+                        const std::string& chosen = sources[pick - 1].id;
+                        if (roleFront == chosen) { roleFront = ""; frontAttn = false; }
+                        if (roleRear  == chosen) { roleRear  = ""; rearAttn  = false; }
+                        if (roleLeft  == chosen) { roleLeft  = ""; leftAttn  = false; }
+                        if (roleRight == chosen) { roleRight = ""; rightAttn = false; }
+                        *pendingSlot = chosen; *pendingAttn = false;
+                        phase = MapPhase::SLOT_SELECT; pendingSlot = nullptr;
                     }
                 }
             }
@@ -1670,10 +1862,20 @@ static void wizardCard(const std::string& root,
     // filename_regex:
     //   subdir layout — group 1 = timestamp; camera identity from scan_subdir
     //   flat multi-camera — group 1 = timestamp, group 2 = camera token
-    if (isFlatMulti)
-        j["filename_regex"] = timestampRegex(tsFmt) + flatAnalysis.suffixGroup2 + extRegex(primaryExt);
-    else
+    if (isFlatMulti) {
+        if (flatAnalysis.isPrefix)
+            j["filename_regex"] = flatAnalysis.prefixGroup1
+                                 + timestampRegex(tsFmt) + extRegex(primaryExt);
+        else
+            j["filename_regex"] = timestampRegex(tsFmt)
+                                 + flatAnalysis.suffixGroup2 + extRegex(primaryExt);
+        if (flatAnalysis.tokenCaptureGroup != 2)
+            j["token_capture_group"]     = flatAnalysis.tokenCaptureGroup;
+        if (flatAnalysis.tsCaptureGroup != 1)
+            j["timestamp_capture_group"] = flatAnalysis.tsCaptureGroup;
+    } else {
         j["filename_regex"] = timestampRegex(tsFmt) + suffix.pattern + extRegex(primaryExt);
+    }
 
     // timestamp_format / timestamp_source
     std::string spFmt = strptimeFmt(tsFmt);
@@ -1719,7 +1921,7 @@ static void wizardCard(const std::string& root,
             s["name"]           = role;
             s["display"]        = capitalize(role);
             s["filename_token"] = tok;
-            s["scan_subdir"]    = "";
+            s["scan_subdir"]    = tokenScanSubdir;
             s["is_primary"]     = (role == "front");
             jSlots.push_back(s);
         }
@@ -1920,4 +2122,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00089
+// SN: 00090

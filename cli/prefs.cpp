@@ -309,6 +309,9 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
         UI::printLine("[L]  Extra collage args   "
                       + (working.encode.extraCollageArgs.empty()
                          ? "(none)" : working.encode.extraCollageArgs));
+        UI::printLine("[M]  Extra downscale args "
+                      + (working.encode.extraDownArgs.empty()
+                         ? "(none)" : working.encode.extraDownArgs));
         UI::printLine();
         UI::printLine("  WARNING: These settings are passed directly to ffmpeg.");
         UI::printLine("  Invalid values will cause encode failures at build time.");
@@ -421,9 +424,14 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
                 "Extra collage args (empty to clear)", working.encode.extraCollageArgs);
             changed = true;
         }
+        else if (ch == 'M') {
+            working.encode.extraDownArgs = UI::promptString(
+                "Extra downscale args (empty to clear)", working.encode.extraDownArgs);
+            changed = true;
+        }
         else {
             std::cout << "  Invalid option.\n";
         }
     }
 }
-// SN: 00089
+// SN: 00090

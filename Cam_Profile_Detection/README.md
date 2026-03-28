@@ -2,7 +2,9 @@
 
 Run this tool to generate a diagnostic report about your dashcam.
 Attach the output file to a GitHub issue and we can add detection support
-for your camera without needing the hardware in hand.
+for your camera without needing the hardware in hand. An empty SD card 
+will not work with this process. Please have at least two trips recorded
+with a time gap of at least 15 minutes between them for proper detection.
 
 **Open an issue:** https://github.com/Nutball-Labs/PathMux/issues/new/choose
 
@@ -77,4 +79,4 @@ If you prefer not to share them publicly, open the generated `.txt` file
 in any text editor and replace the coordinate numbers with `XX.XXXXX`
 before attaching. Keep all field names and structure intact.
 
-<!-- SN: 00089 -->
+<!-- SN: 00090 -->

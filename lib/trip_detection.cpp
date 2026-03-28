@@ -268,18 +268,19 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
             std::smatch match;
             if (!std::regex_search(filename, match, filePattern)) continue;
 
-            // Group 1 = timestamp string.
-            // Group 2 (optional) = camera token.  If present and a
-            // filenameToken is configured for this slot, verify they match.
-            if (match.size() > 2 && match[2].matched && !slot.filenameToken.empty()) {
-                if (match[2].str() != slot.filenameToken) continue;
+            // Camera token group and timestamp group are configurable (default 2 and 1).
+            // Prefix-token layouts set token=1, timestamp=2.
+            int tkGrp = profile.tokenCaptureGroup;
+            int tsGrp = profile.timestampCaptureGroup;
+            if ((int)match.size() > tkGrp && match[tkGrp].matched && !slot.filenameToken.empty()) {
+                if (match[tkGrp].str() != slot.filenameToken) continue;
             }
 
             std::time_t epoch;
             if (profile.timestampSource == "exiftool_metadata") {
                 epoch = exiftoolTimestamp(entry.path().string(), exiftoolPath);
             } else {
-                epoch = stringToTimestamp(match[1].str(), profile.timestampFormat,
+                epoch = stringToTimestamp(match[tsGrp].str(), profile.timestampFormat,
                                          profile.timestampTimezone == "utc");
             }
             if (epoch <= 0) continue;
@@ -430,4 +431,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 }
 
 } // namespace Pathmux
-// SN: 00089
+// SN: 00090

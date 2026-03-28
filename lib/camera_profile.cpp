@@ -65,7 +65,9 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
     p.filenameRegex   = j.value("filename_regex",    "");
     p.timestampFormat = j.value("timestamp_format",  "");
     p.timestampSource   = j.value("timestamp_source",    "filename");
-    p.timestampTimezone = j.value("timestamp_timezone",  "utc");
+    p.timestampTimezone       = j.value("timestamp_timezone",      "utc");
+    p.timestampCaptureGroup   = j.value("timestamp_capture_group", 1);
+    p.tokenCaptureGroup       = j.value("token_capture_group",     2);
     p.containerExt    = j.value("container_ext",     "");
     p.thumbnailMethod = j.value("thumbnail_method", "replace_ext");
     p.gpsMethod       = j.value("gps_method",       "none");
@@ -92,6 +94,8 @@ void CameraProfile::saveToFile(const std::string& path) const {
     j["timestamp_format"]  = timestampFormat;
     j["timestamp_source"]   = timestampSource;
     j["timestamp_timezone"] = timestampTimezone;
+    if (timestampCaptureGroup != 1) j["timestamp_capture_group"] = timestampCaptureGroup;
+    if (tokenCaptureGroup     != 2) j["token_capture_group"]     = tokenCaptureGroup;
     j["container_ext"]     = containerExt;
     j["thumbnail_method"] = thumbnailMethod;
     j["gps_method"]       = gpsMethod;
@@ -157,4 +161,4 @@ CameraProfile CameraProfile::d90Default() {
 }
 
 } // namespace Pathmux
-// SN: 00089
+// SN: 00090
