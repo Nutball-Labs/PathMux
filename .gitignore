@@ -28,3 +28,6 @@ packages/*.tar.gz
 pm_ls-lR.txt
 
 sn_audit.txt
+
+# macOS metadata
+._*
