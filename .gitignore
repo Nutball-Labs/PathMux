@@ -34,5 +34,8 @@ pm_ls-lR.txt
 
 sn_audit.txt
 
+# macOS metadata
+._*
+
 # Claude Code machine-local settings (use .claude/settings.<machine>.json as template)
 .claude/settings.local.json
