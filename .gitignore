@@ -33,3 +33,6 @@ build_out.txt
 pm_ls-lR.txt
 
 sn_audit.txt
+
+# Claude Code machine-local settings (use .claude/settings.<machine>.json as template)
+.claude/settings.local.json

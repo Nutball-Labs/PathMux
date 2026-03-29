@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake --build build-linux)",
+      "Bash(powershell -Command \"Get-ChildItem 'C:\\\\Program Files \\(x86\\)\\\\WiX Toolset*' -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem 'C:\\\\Program Files\\\\WiX*' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(powershell -Command \"Get-ChildItem 'C:\\\\Users\\\\iceberg\\\\Nutball-Labs\\\\pathmux\\\\build-win' -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime | Sort-Object LastWriteTime -Descending | Select-Object -First 20\")",
+      "Bash(powershell -Command \"Get-ChildItem 'C:\\\\Program Files \\(x86\\)\\\\NSIS' -ErrorAction SilentlyContinue | Select-Object Name; Test-Path 'C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe'\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\iceberg\\\\Nutball-Labs\\\\pathmux\\\\build-win\\\\CMakeCache.txt' | Select-String 'CMAKE_GENERATOR|CMAKE_CXX_COMPILER|CMAKE_BUILD_TYPE' | Select-Object -First 10\")",
+      "Bash(powershell -Command \"Test-Path 'C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat'\")",
+      "Bash(powershell -Command \"dotnet tool list -g 2>&1 | Select-String wix; Get-Command dotnet -ErrorAction SilentlyContinue | Select-Object Source\")",
+      "Bash(powershell -Command \"Get-ChildItem 'C:\\\\Users\\\\iceberg\\\\Nutball-Labs\\\\pathmux\\\\.github' -Recurse | Select-Object Name, FullName\")",
+      "Bash(powershell -Command \"dotnet --version; wix --version\")",
+      "Bash(powershell -Command \"Get-ChildItem 'C:\\\\Program Files\\\\dotnet' -ErrorAction SilentlyContinue | Select-Object -First 3 Name; Get-ChildItem \\\\\"$env:USERPROFILE\\\\.dotnet\\\\tools\\\\\" -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(where candle:*)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Read(//c/Program Files/**)"
+    ]
+  }
+}
