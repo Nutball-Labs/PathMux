@@ -40,6 +40,12 @@ struct BuildTimings {
     int collage1080Secs = -1;  // 1080p downscale
 };
 
+static int elapsedSecs(std::chrono::steady_clock::time_point t0) {
+    return static_cast<int>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - t0).count());
+}
+
 // ---------------------------------------------------------------------------
 // appendBuildLog — append one entry to pm_buildlog.json in sourcePath.
 // Records the build configuration, output location, trip duration, and the
@@ -56,13 +62,18 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
     std::string fallbackLog = Platform::getConfigDir() + "pm_buildlog.json";
 
     // Determine write target by probing writability of the source directory.
+    // Use a temp sentinel file (matching manifest writability check pattern)
+    // to avoid creating an empty pm_buildlog.json as a probe side effect.
     bool usesFallback = false;
     {
-        std::ofstream probe(primaryLog, std::ios::app);
-        if (!probe.is_open()) {
+        std::string testFile = opts.sourcePath + "/.pm_write_test";
+        std::ofstream probe(testFile);
+        if (probe.is_open()) {
+            probe.close();
+            std::error_code ec;
+            fs::remove(testFile, ec);
+        } else {
             usesFallback = true;
-            std::cerr << "Notice: Source path not writable; buildlog will be written to:\n"
-                      << "  " << fallbackLog << "\n";
         }
     }
     std::string logFile = usesFallback ? fallbackLog : primaryLog;
@@ -203,7 +214,7 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
     }
     ofs << log.dump(2) << "\n";
     if (usesFallback)
-        std::cerr << "Notice: Buildlog entry written to fallback location:\n"
+        std::cerr << "Notice: Source path not writable; buildlog written to:\n"
                   << "  " << logFile << "\n";
 }
 
@@ -778,9 +789,15 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         std::error_code ec;
         fs::create_directories(tmpDir, ec);
         if (ec) {
-            std::cerr << "Error: Could not create tmp directory: "
-                      << tmpDir << "\n  " << ec.message() << "\n";
-            return false;
+            tmpDir = (fs::path(Pathmux::Platform::getConfigDir()) / "pm_tmp").string();
+            ec.clear();
+            fs::create_directories(tmpDir, ec);
+            if (ec) {
+                std::cerr << "Error: Could not create tmp directory: "
+                          << tmpDir << "\n  " << ec.message() << "\n";
+                return false;
+            }
+            std::cout << "  Notice: Tmp files written to: " << tmpDir << "\n";
         }
     }
 
@@ -968,9 +985,15 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         std::error_code ec;
         fs::create_directories(tmpDir, ec);
         if (ec) {
-            std::cerr << "Error: Could not create tmp directory: "
-                      << tmpDir << "\n  " << ec.message() << "\n";
-            return false;
+            tmpDir = (fs::path(Pathmux::Platform::getConfigDir()) / "pm_tmp").string();
+            ec.clear();
+            fs::create_directories(tmpDir, ec);
+            if (ec) {
+                std::cerr << "Error: Could not create tmp directory: "
+                          << tmpDir << "\n  " << ec.message() << "\n";
+                return false;
+            }
+            std::cout << "  Notice: Tmp files written to: " << tmpDir << "\n";
         }
     }
 
@@ -2041,11 +2064,6 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     namespace fs = std::filesystem;
     using clock  = std::chrono::steady_clock;
 
-    auto elapsedSecs = [](clock::time_point t0) -> int {
-        return static_cast<int>(
-            std::chrono::duration_cast<std::chrono::seconds>(clock::now() - t0).count());
-    };
-
     auto collectSegments = [&](const std::string& slot) -> std::vector<std::string> {
         std::vector<std::string> files;
         for (const auto& seg : trip.segments) {
@@ -2089,19 +2107,21 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
 
     // --- 1080p downscale ---
     if (opts.buildCollage1080) {
-        auto t0 = clock::now();
         if (opts.buildCollage4K && !collage4KOk) {
             std::cerr << "  Skipping 1080p — 4K collage failed.\n";
-        } else if (!collage4KPath.empty() && collage4KOk) {
-            std::string proposed1080 = (fs::path(outDir) /
-                                        makeOutputName(trip, "Collage_1080p", "mp4",
-                                                       opts.basenameOverride)).string();
-            std::string out1080 = UI::confirmOutputPath(proposed1080);
-            buildCollage1080(collage4KPath, out1080, opts);
         } else {
-            buildCollage1080Direct(trip, opts);
+            auto t0 = clock::now();
+            if (!collage4KPath.empty() && collage4KOk) {
+                std::string proposed1080 = (fs::path(outDir) /
+                                            makeOutputName(trip, "Collage_1080p", "mp4",
+                                                           opts.basenameOverride)).string();
+                std::string out1080 = UI::confirmOutputPath(proposed1080);
+                buildCollage1080(collage4KPath, out1080, opts);
+            } else {
+                buildCollage1080Direct(trip, opts);
+            }
+            timings.collage1080Secs = elapsedSecs(t0);
         }
-        timings.collage1080Secs = elapsedSecs(t0);
     }
 
     if (opts.buildAudio) {
@@ -2236,10 +2256,6 @@ void VideoBuilder::run(ConfigManager& config) {
         };
 
         using clock = std::chrono::steady_clock;
-        auto elapsedSecs = [](clock::time_point t0) -> int {
-            return static_cast<int>(
-                std::chrono::duration_cast<std::chrono::seconds>(clock::now() - t0).count());
-        };
 
         BuildTimings timings;
 
