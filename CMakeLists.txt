@@ -267,6 +267,7 @@ if(WIN32)
         )
         add_custom_target(msi
             COMMAND "${WIX_EXECUTABLE}" build
+                -arch x64
                 -o "${CMAKE_SOURCE_DIR}/packages/pathmux-${PATHMUX_VERSION}-win64.msi"
                 "${CMAKE_BINARY_DIR}/pathmux.wxs"
                 -d BinDir="${CMAKE_BINARY_DIR}"
