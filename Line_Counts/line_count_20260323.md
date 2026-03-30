@@ -1,15 +1,15 @@
 # PathMux Line Count — 2026-03-23
 
-## Grand Total: ~20,078 lines
+## Grand Total: 20,078 lines
 
 | Category | Lines |
 |---|---|
-| C++ source (`.cpp`) | ~9,936 |
-| C++ headers (`.hpp`) | ~2,517 |
-| Markdown (`.md`) | ~4,765 |
+| C++ source (`.cpp`) | 9,936 |
+| C++ headers (`.hpp`) | 2,517 |
+| Markdown (`.md`) | 4,765 |
 | `CMakeLists.txt` | 255 |
 | Man pages (`.1`) | 1,797 |
-| **Total** | **~20,078** |
+| **Total** | **20,078** |
 
 ---
 

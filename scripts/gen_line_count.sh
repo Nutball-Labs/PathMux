@@ -83,16 +83,16 @@ t_grand=$(( t_src_cpp + t_src_h + t_cmake + t_md + t_man ))
 cat <<HEADER
 # PathMux Line Count — ${DISPLAY_DATE}
 
-## Grand Total: ~$(fmt $t_grand) lines
+## Grand Total: $(fmt $t_grand) lines
 
 | Category | Lines |
 |---|---|
-| C++ source (\`.cpp\`) | ~$(fmt $t_src_cpp) |
-| C++ headers (\`.hpp\` / \`.h\`) | ~$(fmt $t_src_h) |
-| Markdown (\`.md\`) | ~$(fmt $t_md) |
+| C++ source (\`.cpp\`) | $(fmt $t_src_cpp) |
+| C++ headers (\`.hpp\` / \`.h\`) | $(fmt $t_src_h) |
+| Markdown (\`.md\`) | $(fmt $t_md) |
 | \`CMakeLists.txt\` | $(fmt $t_cmake) |
 | Man pages (\`.1\`) | $(fmt $t_man) |
-| **Total** | **~$(fmt $t_grand)** |
+| **Total** | **$(fmt $t_grand)** |
 
 ---
 
