@@ -71,14 +71,40 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Static library — core logic shared by CLI and future Qt6 GUI
+# Install dirs — needed early for RPATH calculation
 # ---------------------------------------------------------------------------
-add_library(pathmuxlib STATIC
+include(GNUInstallDirs)
+
+# ---------------------------------------------------------------------------
+# Shared library — RPATH so installed binaries find libpathmux at runtime
+# ---------------------------------------------------------------------------
+if(APPLE)
+    set(CMAKE_INSTALL_RPATH "@executable_path/../lib")
+elseif(UNIX)
+    set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+endif()
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+# Windows: auto-export all symbols from the DLL (no __declspec annotations needed)
+if(WIN32)
+    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
+# ---------------------------------------------------------------------------
+# Shared library — core logic shared by CLI and future Qt6 GUI
+# ---------------------------------------------------------------------------
+add_library(pathmuxlib SHARED
     lib/camera_profile.cpp
     lib/trip_detection.cpp
     lib/config_manager.cpp
     lib/platform.cpp
     lib/gps_export.cpp
+)
+
+set_target_properties(pathmuxlib PROPERTIES
+    OUTPUT_NAME "pathmux"
+    SOVERSION   1
+    VERSION     "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}"
 )
 
 # lib/ headers are PUBLIC so all targets linking pathmuxlib get them.
@@ -175,13 +201,12 @@ target_link_libraries(pm_tripdebug PRIVATE pathmuxlib)
 # ---------------------------------------------------------------------------
 # Install targets — platform-specific layouts
 # ---------------------------------------------------------------------------
-include(GNUInstallDirs)
-
 if(WIN32)
-    # Windows: all binaries at the package root; README and LICENSE alongside
+    # Windows: all binaries + DLL at the package root; README and LICENSE alongside
     install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug
         RUNTIME DESTINATION "."
     )
+    install(TARGETS pathmuxlib RUNTIME DESTINATION ".")
     install(FILES
             "${CMAKE_SOURCE_DIR}/LICENSE"
             "${CMAKE_SOURCE_DIR}/README.md"
@@ -191,6 +216,7 @@ else()
     install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
+    install(TARGETS pathmuxlib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
     # Compress man pages — both RPM and DEB ecosystems expect .gz man pages.
     # Generate .1.gz files in the build dir at build time; install those.
@@ -282,6 +308,48 @@ if(WIN32)
 endif()
 
 # ---------------------------------------------------------------------------
+# pathmux-gui — Qt6 Widgets front-end
+# Skipped silently if Qt6 is not installed; CLI builds are unaffected.
+# Install: sudo dnf install qt6-qtbase-devel
+# ---------------------------------------------------------------------------
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(Qt6_FOUND)
+    add_executable(pathmux-gui
+        gui/main.cpp
+        gui/MainWindow.cpp
+        gui/ManifestPanel.cpp
+        gui/TripGridPanel.cpp
+        gui/TripTile.cpp
+        gui/EmptyManifestWidget.cpp
+        gui/ScanProgressDialog.cpp
+        gui/TripPropertiesDialog.cpp
+        gui/AboutDialog.cpp
+        gui/resources/pathmux.qrc
+    )
+    set_target_properties(pathmux-gui PROPERTIES
+        AUTOMOC ON
+        AUTOUIC ON
+        AUTORCC ON
+    )
+    if(WIN32)
+        set_target_properties(pathmux-gui PROPERTIES WIN32_EXECUTABLE TRUE)
+    elseif(APPLE)
+        set_target_properties(pathmux-gui PROPERTIES MACOSX_BUNDLE TRUE)
+    endif()
+    target_include_directories(pathmux-gui PRIVATE gui/ ${CMAKE_SOURCE_DIR})
+    target_link_libraries(pathmux-gui PRIVATE pathmuxlib Qt6::Widgets)
+    if(NOT WIN32)
+        install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                                    BUNDLE  DESTINATION .)
+    else()
+        install(TARGETS pathmux-gui RUNTIME DESTINATION ".")
+    endif()
+    message(STATUS "Qt6 found (${Qt6_VERSION}) — pathmux-gui target enabled")
+else()
+    message(STATUS "Qt6 not found — pathmux-gui skipped (install qt6-qtbase-devel)")
+endif()
+
+# ---------------------------------------------------------------------------
 # CPack — binary package generation
 # Linux: cmake --build build-linux --target package  -> RPM, DEB, TGZ
 # Windows ZIP: cmake --build build-win --target package  -> ZIP
@@ -301,6 +369,11 @@ set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_SOURCE_DIR}/packages")
 if(WIN32)
     set(CPACK_GENERATOR "ZIP")
     set(CPACK_PACKAGE_FILE_NAME "pathmux-${PATHMUX_VERSION}-win64")
+elseif(APPLE)
+    # macOS: TGZ + ZIP (generic binary tarballs for manual install)
+    set(CPACK_GENERATOR "TGZ;ZIP")
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+    set(CPACK_PACKAGE_FILE_NAME "pathmux-${PATHMUX_VERSION}-macOS")
 else()
     # Linux: RPM (Alma/RHEL), DEB (Ubuntu/Debian), TGZ (generic binary tarball)
     set(CPACK_GENERATOR "RPM;DEB;TGZ")
@@ -330,6 +403,16 @@ functionality.")
     set(CPACK_DEBIAN_PACKAGE_SECTION "video")
     set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/Nutball-Labs/PathMux")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libstdc++6")
+
+    # ldconfig scriptlets — update the linker cache after install/remove
+    file(WRITE "${CMAKE_BINARY_DIR}/postinst" "#!/bin/sh\nset -e\nldconfig\n")
+    file(WRITE "${CMAKE_BINARY_DIR}/postrm"   "#!/bin/sh\nset -e\nldconfig\n")
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+        "${CMAKE_BINARY_DIR}/postinst"
+        "${CMAKE_BINARY_DIR}/postrm")
+    file(WRITE "${CMAKE_BINARY_DIR}/rpm_ldconfig.sh" "#!/bin/sh\n/sbin/ldconfig\n")
+    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE   "${CMAKE_BINARY_DIR}/rpm_ldconfig.sh")
+    set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_BINARY_DIR}/rpm_ldconfig.sh")
 endif()
 
 include(CPack)

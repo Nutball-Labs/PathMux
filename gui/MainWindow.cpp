@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Nutball Labs / Stephen Berg
+#include "MainWindow.h"
+#include "ManifestPanel.h"
+#include "TripGridPanel.h"
+#include "ScanProgressDialog.h"
+#include "AboutDialog.h"
+#include <QSplitter>
+#include <QFileDialog>
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
+#include <QKeySequence>
+
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent)
+{
+    setWindowTitle("PathMux Dashcam Explorer");
+    resize(1200, 700);
+
+    m_splitter      = new QSplitter(Qt::Horizontal, this);
+    m_manifestPanel = new ManifestPanel(m_splitter);
+    m_tripGridPanel = new TripGridPanel(m_splitter);
+
+    m_splitter->addWidget(m_manifestPanel);
+    m_splitter->addWidget(m_tripGridPanel);
+    m_splitter->setStretchFactor(0, 0);   // left pane: fixed
+    m_splitter->setStretchFactor(1, 1);   // right pane: expands
+    m_splitter->setSizes({280, 920});
+
+    setCentralWidget(m_splitter);
+    buildMenuBar();
+
+    connect(m_manifestPanel, &ManifestPanel::manifestSelected,
+            m_tripGridPanel, &TripGridPanel::loadManifest);
+    connect(m_manifestPanel, &ManifestPanel::scanRequested,
+            this,            &MainWindow::onScanRequested);
+    connect(m_tripGridPanel, &TripGridPanel::scanRequested,
+            this,            &MainWindow::onScanRequested);
+
+    // Ctrl+scroll zoom: whichever panel the user is hovering drives the zoom,
+    // MainWindow distributes to both so they stay in sync.
+    connect(m_tripGridPanel, &TripGridPanel::zoomChanged,
+            this,            &MainWindow::onZoomChanged);
+    connect(m_manifestPanel, &ManifestPanel::zoomChanged,
+            this,            &MainWindow::onZoomChanged);
+}
+
+void MainWindow::buildMenuBar()
+{
+    // ---- File ----
+    QMenu* fileMenu = menuBar()->addMenu("&File");
+
+    QAction* scanAct = fileMenu->addAction("&Scan Source Directory\u2026");
+    scanAct->setShortcut(QKeySequence::Open);
+    connect(scanAct, &QAction::triggered, this, &MainWindow::onScanRequested);
+
+    fileMenu->addSeparator();
+
+    QAction* quitAct = fileMenu->addAction("&Quit");
+    quitAct->setShortcut(QKeySequence::Quit);
+    connect(quitAct, &QAction::triggered, this, &MainWindow::close);
+
+    // ---- View ----
+    QMenu* viewMenu = menuBar()->addMenu("&View");
+
+    QAction* zoomInAct = viewMenu->addAction("Zoom &In");
+    zoomInAct->setShortcut(QKeySequence::ZoomIn);
+    zoomInAct->setEnabled(false);   // placeholder — driven by Ctrl+scroll for now
+
+    QAction* zoomOutAct = viewMenu->addAction("Zoom &Out");
+    zoomOutAct->setShortcut(QKeySequence::ZoomOut);
+    zoomOutAct->setEnabled(false);
+
+    QAction* zoomResetAct = viewMenu->addAction("&Reset Zoom");
+    zoomResetAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+    zoomResetAct->setEnabled(false);
+
+    // ---- Trips ----
+    QMenu* tripsMenu = menuBar()->addMenu("&Trips");
+
+    QAction* exportGpsAct = tripsMenu->addAction("&Export GPS Track\u2026");
+    exportGpsAct->setEnabled(false);   // placeholder
+
+    QAction* buildVideoAct = tripsMenu->addAction("&Build Video\u2026");
+    buildVideoAct->setEnabled(false);  // placeholder
+
+    tripsMenu->addSeparator();
+
+    QAction* validateAct = tripsMenu->addAction("&Validate Manifest");
+    validateAct->setEnabled(false);    // placeholder
+
+    // ---- Tools ----
+    QMenu* toolsMenu = menuBar()->addMenu("&Tools");
+
+    QAction* prefsAct = toolsMenu->addAction("&Preferences\u2026");
+    prefsAct->setShortcut(QKeySequence::Preferences);
+    prefsAct->setEnabled(false);       // placeholder
+
+    toolsMenu->addSeparator();
+
+    QAction* probeAct = toolsMenu->addAction("&Probe SD Card\u2026");
+    probeAct->setEnabled(false);       // placeholder
+
+    // ---- Help ----
+    QMenu* helpMenu = menuBar()->addMenu("&Help");
+
+    QAction* aboutAct = helpMenu->addAction("&About PathMux");
+    connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
+}
+
+void MainWindow::onAbout()
+{
+    AboutDialog dlg(this);
+    dlg.exec();
+}
+
+void MainWindow::onScanRequested()
+{
+    QString dir = QFileDialog::getExistingDirectory(
+        this, "Select Dashcam Source Directory", QString(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (dir.isEmpty()) return;
+
+    ScanProgressDialog dlg(this);
+    connect(&dlg, &ScanProgressDialog::scanComplete,
+            this, &MainWindow::onScanComplete);
+    dlg.startScan(dir);
+    dlg.exec();
+}
+
+void MainWindow::onZoomChanged(double factor)
+{
+    m_tripGridPanel->setZoom(factor);
+    m_manifestPanel->setZoom(factor);
+}
+
+void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
+{
+    m_manifestPanel->refresh();
+    m_tripGridPanel->refreshPageState();
+    // Auto-select the just-scanned manifest so trips appear immediately
+    m_tripGridPanel->loadManifest(entry);
+    m_manifestPanel->selectEntry(entry);
+}
+// SN: 00090
