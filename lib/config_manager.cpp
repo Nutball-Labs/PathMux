@@ -658,6 +658,7 @@ std::vector<ManifestEntry> ConfigManager::loadManifestIndex() {
         e.lastTrip     = jm.value("last_trip",    "");
         e.manifestMd5  = jm.value("manifest_md5", "");
         e.note         = jm.value("note",         "");
+        e.nickname     = jm.value("nickname",     e.path);  // default to path
         if (!e.path.empty()) index.push_back(e);
     }
     // Sort by lastTrip descending — most recently used manifest first
@@ -682,6 +683,7 @@ void ConfigManager::saveManifestIndex(const std::vector<ManifestEntry>& index) {
         jm["last_trip"]     = e.lastTrip;
         jm["manifest_md5"]  = e.manifestMd5;
         jm["note"]          = e.note;
+        jm["nickname"]      = e.nickname.empty() ? e.path : e.nickname;
         root["manifests"].push_back(jm);
     }
     std::ofstream ofs(idxFile);
@@ -719,6 +721,18 @@ void ConfigManager::saveManifestNote(const std::string& path,
         if (e.path == path) {
             e.note        = note;
             e.manifestMd5 = fileMd5(manifestFile);
+            break;
+        }
+    }
+    saveManifestIndex(index);
+}
+
+void ConfigManager::setManifestNickname(const std::string& id,
+                                        const std::string& nickname) {
+    auto index = loadManifestIndex();
+    for (auto& e : index) {
+        if (normalizeId(e.id) == normalizeId(id)) {
+            e.nickname = nickname;
             break;
         }
     }

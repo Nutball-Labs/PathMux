@@ -140,6 +140,7 @@ struct ManifestEntry {
     std::string lastTrip;        // startTime of last trip  (for index display)
     std::string manifestMd5;     // md5 of manifest file — validated on load
     std::string note;            // User-set note for this manifest
+    std::string nickname;        // Display label; defaults to path if empty
 };
 
 // ---------------------------------------------------------------------------
@@ -283,6 +284,8 @@ public:
     // Updates both the index entry and the note field in the manifest file.
     void                       saveManifestNote(const std::string& path,
                                                 const std::string& note);
+    void                       setManifestNickname(const std::string& id,
+                                                   const std::string& nickname);
 
     // Startup validation — checks each index entry's manifest file exists
     // and its md5 matches.  Prompts user on any failure.

@@ -13,7 +13,7 @@ for working on the PathMux project. Read this before touching any code.
 JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
 https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
 
-**Current version:** 1.0.0 (SN 00089)
+**Current version:** 1.0.1a (SN 00091)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -83,7 +83,7 @@ bottom of the file:
 ```
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00089`
+- There is one project-wide **high-water mark** SN, currently `00091`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -300,4 +300,4 @@ When a communication is prefaced with either label:
 - All CLI work on `main` branch; GUI will branch when CLI is complete
 
 
-<!-- SN: 00089 -->
+<!-- SN: 00091 -->

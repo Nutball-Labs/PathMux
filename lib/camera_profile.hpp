@@ -66,7 +66,7 @@ struct CameraProfile {
     std::string name;
     std::string profileId;
 
-    std::vector<CameraSlot> slots;
+    std::vector<CameraSlot> cameraSlots;
 
     std::string filenameRegex;
     std::string timestampFormat;

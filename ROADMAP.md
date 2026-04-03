@@ -145,8 +145,9 @@ values on D90) — stored but ignored. Speed in km/h.
   - [x] `.deb` — Debian/Ubuntu — v1.0.1
   - [x] `.tgz` — generic Linux binary tarball — v1.0.1
   See "Packaging Checklist" section below for audit items.
-- [ ] **README refresh** — currently documents internal state; needs public-audience rewrite
-- [ ] **Packaging audit** — verify architecture doesn't block RPM/DEB (see Packaging section)
+- [x] **README refresh** — public-audience rewrite done; Download section added for v1.0.1a packages
+- [x] **Packaging audit** — both known issues resolved (no hard ExifTool dep, license = GPL-3.0-or-later);
+  LICENSE install target confirmed in CMakeLists.txt; packages posted as v1.0.1a
 
 **Camera profile abstraction — next critical step:**
 - [ ] Extract camera format detection from `trip_detection.cpp` into a
@@ -695,7 +696,7 @@ package for the Debian/Ubuntu equivalent (likely Debian backports or Ubuntu PPA)
 - [x] `pm_gpsinfo` binary → `/usr/bin/` — same install target
 - [x] `pm_tripdebug` binary → `/usr/bin/`
 - [x] `pathmux.1` man page → `/usr/share/man/man1/` — `install(FILES ...)` in CMakeLists.txt
-- [ ] `LICENSE` file → `/usr/share/licenses/pathmux/` — blocked on license decision
+- [x] `LICENSE` file → `/usr/share/licenses/pathmux/` — `install(FILES LICENSE DESTINATION ...)` in CMakeLists.txt
 - [x] `libpathmuxlib.a` not installed — internal static lib only; correct
 
 **FHS compliance — verified by architecture:**
@@ -719,17 +720,13 @@ package for the Debian/Ubuntu equivalent (likely Debian backports or Ubuntu PPA)
   spec may need customization for `%post` man page registration and dep handling)
 - [ ] `debian/` directory — `control`, `rules`, `changelog`, `copyright` files
 
-**⚠ Known issues to fix before packaging:**
+**Known issues — RESOLVED:**
 
-1. **Hard ExifTool Requires in CMakeLists.txt** — `CPACK_RPM_PACKAGE_REQUIRES`
-   currently declares `exiftool >= 13.51`, which will break RPM install on Alma 9
-   since EPEL ships 13.10.  Must be changed to a soft `Recommends:` (or removed)
-   with a runtime version check and clear error message in the app.
+1. ~~**Hard ExifTool Requires**~~ — `CPACK_RPM_PACKAGE_REQUIRES` removed entirely;
+   no hard ExifTool dep in RPM. ExifTool is a soft runtime requirement (documented).
 
-2. **License pre-set to GPL-2.0** — `CPACK_PACKAGE_LICENSE` and
-   `CPACK_RPM_PACKAGE_LICENSE` are already set to `GPL-2.0` / `GPLv2` in
-   CMakeLists.txt.  If the license decision is actually MIT, these need updating.
-   Resolve the license decision (v1.0 gate item) and update accordingly.
+2. ~~**License pre-set to GPL-2.0**~~ — `CPACK_RPM_PACKAGE_LICENSE` now set to
+   `GPL-3.0-or-later`; license decision was GPL v3 (2026-03-22).
 
 **Priority:** Medium — keep packaging compatibility in mind during development;
 do a formal audit before cutting v1.0 release candidate.
@@ -1191,4 +1188,4 @@ When a user reports an unsupported camera:
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
 
-<!-- SN: 00087 -->
+<!-- SN: 00091 -->

@@ -11,6 +11,25 @@ per-camera MP4 files and 4K collages.
 
 ---
 
+## Download
+
+Pre-built packages for the latest release are on the
+[GitHub releases page](https://github.com/Nutball-Labs/PathMux/releases/latest):
+
+| Platform | Package |
+|---|---|
+| Linux — RHEL / Alma / Fedora | `.rpm` |
+| Linux — Debian / Ubuntu | `.deb` |
+| Linux — generic x86_64 | `.tar.gz` |
+| Windows 10/11 | `.msi` installer or `.zip` portable |
+
+All packages require `ffmpeg`/`ffprobe` and `exiftool` installed separately
+(see [Requirements](#requirements)).
+
+To build from source instead, see [Building from Source](#building-from-source).
+
+---
+
 ## Who it's for
 
 - **Anyone with a multi-camera dashcam** who wants more than a phone app.
@@ -78,7 +97,7 @@ testing is on Linux (Alma 9.x / RHEL 9).
 
 ---
 
-## Installation
+## Building from Source
 
 ```bash
 git clone https://github.com/Nutball-Labs/PathMux.git
@@ -301,4 +320,4 @@ Windows.  Phase 2 (Qt6 GUI) is planned.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
-<!-- SN: 00090 -->
+<!-- SN: 00091 -->

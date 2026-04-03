@@ -2,6 +2,7 @@
 build-linux/
 build-win/
 build-macos/
+build-mac/
 *.o
 *.a
 
@@ -31,11 +32,15 @@ build_out.txt
 
 # Misc
 pm_ls-lR.txt
+Line_Counts/cron.log
 
 sn_audit.txt
 
 # macOS metadata
 ._*
+
+# NFS temp files
+.nfs*
 
 # Claude Code machine-local settings (use .claude/settings.<machine>.json as template)
 .claude/settings.local.json

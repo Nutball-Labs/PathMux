@@ -1,15 +1,15 @@
-# PathMux Line Count — 2026-03-30
+# PathMux Line Count — 2026-04-03
 
-## Grand Total: ~22,128 lines
+## Grand Total: 22,128 lines
 
 | Category | Lines |
 |---|---|
-| C++ source (`.cpp`) | ~13,004 |
-| C++ headers (`.hpp` / `.h`) | ~2,383 |
-| Markdown (`.md`) | ~4,484 |
+| C++ source (`.cpp`) | 13,004 |
+| C++ headers (`.hpp` / `.h`) | 2,383 |
+| Markdown (`.md`) | 4,484 |
 | `CMakeLists.txt` | 420 |
 | Man pages (`.1`) | 1,837 |
-| **Total** | **~22,128** |
+| **Total** | **22,128** |
 
 ---
 
@@ -27,13 +27,13 @@
 | `gui/ScanProgressDialog.cpp` | 127 |
 | `gui/AboutDialog.cpp` | 78 |
 | `gui/EmptyManifestWidget.cpp` | 75 |
-| `gui/main.cpp` | 18 |
 | `gui/TripGridPanel.h` | 72 |
 | `gui/ManifestPanel.h` | 56 |
 | `gui/TripTile.h` | 49 |
 | `gui/ScanProgressDialog.h` | 32 |
 | `gui/MainWindow.h` | 29 |
 | `gui/EmptyManifestWidget.h` | 21 |
+| `gui/main.cpp` | 18 |
 | `gui/TripPropertiesDialog.h` | 13 |
 | `gui/AboutDialog.h` | 11 |
 
@@ -45,12 +45,12 @@
 | `cli/gpx_export.cpp` | 733 |
 | `cli/find_trips.cpp` | 661 |
 | `cli/prefs.cpp` | 437 |
+| `cli/ui_helpers.hpp` | 364 |
 | `cli/main.cpp` | 338 |
+| `cli/video_build.hpp` | 216 |
 | `cli/locations.cpp` | 130 |
 | `cli/host_prefs.cpp` | 129 |
 | `cli/kml_prefs.cpp` | 106 |
-| `cli/ui_helpers.hpp` | 364 |
-| `cli/video_build.hpp` | 216 |
 | `cli/gpx_export.hpp` | 85 |
 | `cli/find_trips.hpp` | 62 |
 | `cli/prefs.hpp` | 28 |
@@ -65,15 +65,15 @@
 | `lib/config_manager.cpp` | 1,437 |
 | `lib/gps_export.cpp` | 461 |
 | `lib/trip_detection.cpp` | 434 |
-| `lib/camera_profile.cpp` | 164 |
-| `lib/platform.cpp` | 76 |
 | `lib/config_manager.hpp` | 359 |
+| `lib/camera_profile.cpp` | 164 |
 | `lib/trip_format.hpp` | 159 |
 | `lib/trip_detection.hpp` | 158 |
 | `lib/logger.hpp` | 139 |
 | `lib/format_helpers.hpp` | 119 |
 | `lib/camera_profile.hpp` | 111 |
 | `lib/compat.hpp` | 98 |
+| `lib/platform.cpp` | 76 |
 | `lib/version.hpp` | 47 |
 | `lib/gps_export.hpp` | 41 |
 | `lib/platform.hpp` | 40 |

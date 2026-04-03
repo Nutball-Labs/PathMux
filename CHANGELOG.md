@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## [Unreleased — Qt6 GUI initial implementation] - 2026-03-29
+### Added
+- **Qt6 GUI (`gui/`):** Initial `pathmux-gui` binary — Qt Widgets two-pane dashcam explorer.
+  - `MainWindow`: `QSplitter` host; wires all cross-panel signals; distributes Ctrl+scroll zoom.
+  - `ManifestPanel`: left pane — manifest list with `ManifestItemDelegate` (two-line: nickname bold + trip count subdued), sort pulldown (Most Recent / Most Trips / Name A→Z), "+" scan button.
+  - `TripGridPanel`: right pane — three-page `QStackedWidget` (no manifests / none selected / tile grid); manual-geometry tile layout recalculates column count on resize; deferred per-event-loop thumbnail loading via `QTimer::singleShot(0)` chain.
+  - `TripTile`: fixed 360×200 tile — front/rear `QLabel` thumbnail placeholders (160×90 each, stacked), start date+time (bold 10pt), duration, detail row (segs · crow's distance · GPS ✓/~/—).
+  - `EmptyManifestWidget`: first-run/no-manifest state — theme camera icon with "?" composited, hover tint, click → scan.
+  - `ScanProgressDialog`: background `QThread` scan worker; indeterminate progress bar; emits `scanComplete(ManifestEntry)` on success.
+- **`ManifestEntry::nickname`** (`lib/config_manager.hpp/.cpp`): optional user label stored in `manifests.json`; defaults to source path for display.
+- **Ctrl+scroll text zoom** (`gui/TripGridPanel`, `gui/ManifestPanel`, `gui/TripTile`): `setTextZoom(double)` on tiles scales label font sizes proportionally; manifest list font scales via `m_list->setFont()`; both panes stay in sync via `MainWindow::onZoomChanged`; thumbnails intentionally unaffected.
+- **`libpathmux.so` shared library** (`CMakeLists.txt`): library target changed from `STATIC` to `SHARED`; `OUTPUT_NAME "pathmux"`, `SOVERSION 1`; RPATH set for both Apple (`@executable_path/../lib`) and Linux (`${CMAKE_INSTALL_LIBDIR}`); `CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON`; ldconfig post-install scriptlets for RPM/DEB.
+
+### Fixed
+- **`CameraProfile::cameraSlots`** (`lib/camera_profile.hpp/.cpp`, `lib/trip_detection.cpp`): renamed from `slots` — Qt's `#define slots` macro (expands to empty via `Q_SLOTS`) caused template parse errors in the GUI build. JSON key `"slots"` unchanged.
+- **Haversine endpoint guard** (`gui/TripTile.cpp`): crow's distance now only computed if both `startLat/Lon` AND `endLat/Lon` are non-zero; previously could compute distance to 0,0 (Gulf of Guinea) if GPS extraction succeeded for trip start but failed on last segment.
+- **`build-mac` directory references** (`CMakeLists.txt`): corrected from `build-macos` to match macOS default build directory.
+
+### Notes
+- **Thumbnail availability**: tiles show grey placeholders for trips in manifests scanned before the CameraProfile abstraction layer (pre-2026-03-21). Rescan those source directories to populate `firstThumbs`. Not a GUI bug.
+- **GUI cosmetic polish in progress** — a few visual glitches noted; continuing next session.
+
+---
+
 ## [1.0.1a / SN: 00090] - 2026-03-28
 ### Fixed
 - **pm_tmp fallback to config dir** (`cli/video_build.cpp`): `buildCollage4K()` and

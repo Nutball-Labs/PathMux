@@ -251,7 +251,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
     // Build one timestamp->path map per slot.
     std::map<std::string, std::map<std::time_t, std::string>> slotFiles;
-    for (const auto& slot : profile.slots)
+    for (const auto& slot : profile.cameraSlots)
         slotFiles[slot.name] = {};
 
     auto scanSlot = [&](const CameraSlot& slot) {
@@ -288,7 +288,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         }
     };
 
-    for (const auto& slot : profile.slots)
+    for (const auto& slot : profile.cameraSlots)
         scanSlot(slot);
 
     if (slotFiles[primary].empty()) return trips;
@@ -400,7 +400,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
         seg.thumbs[primary]  = thumbFor(fPath, profile.thumbnailMethod);
 
         // Non-primary cameras — fuzzy-matched against primary timestamp.
-        for (const auto& slot : profile.slots) {
+        for (const auto& slot : profile.cameraSlots) {
             if (slot.isPrimary) continue;
             std::string p = findClosest(fTime, slotFiles[slot.name]);
             seg.cameras[slot.name] = p;

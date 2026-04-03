@@ -12,13 +12,13 @@ namespace Pathmux {
 // ---------------------------------------------------------------------------
 
 std::string CameraProfile::primarySlot() const {
-    for (const auto& s : slots)
+    for (const auto& s : cameraSlots)
         if (s.isPrimary) return s.name;
     return "";
 }
 
 const CameraSlot* CameraProfile::slotByName(const std::string& slotName) const {
-    for (const auto& s : slots)
+    for (const auto& s : cameraSlots)
         if (s.name == slotName) return &s;
     return nullptr;
 }
@@ -26,9 +26,9 @@ const CameraSlot* CameraProfile::slotByName(const std::string& slotName) const {
 bool CameraProfile::isValid() const {
     // timestampFormat is required only when timestamps come from filenames.
     bool needsFmt = (timestampSource != "exiftool_metadata");
-    if (slots.empty() || filenameRegex.empty() || (needsFmt && timestampFormat.empty()))
+    if (cameraSlots.empty() || filenameRegex.empty() || (needsFmt && timestampFormat.empty()))
         return false;
-    for (const auto& s : slots)
+    for (const auto& s : cameraSlots)
         if (s.isPrimary) return true;
     return false;
 }
@@ -47,7 +47,7 @@ bool CameraProfile::isValid() const {
 //   "thumbnail_method": "ths_sidecar",
 //   "gps_method": "exiftool_ligogps",
 //   "default_layout": "2x2",
-//   "slots": [
+//   "cameraSlots": [
 //     { "name": "front", "display": "Front", "filename_token": "_F",
 //       "scan_subdir": "Front", "is_primary": true },
 //     ...
@@ -73,14 +73,14 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
     p.gpsMethod       = j.value("gps_method",       "none");
     p.defaultLayout   = j.value("default_layout",   "2x2");
 
-    for (const auto& js : j.value("slots", json::array())) {
+    for (const auto& js : j.value("cameraSlots", json::array())) {
         CameraSlot s;
         s.name          = js.value("name",           "");
         s.displayName   = js.value("display",        "");
         s.filenameToken = js.value("filename_token", "");
         s.scanSubdir    = js.value("scan_subdir",    "");
         s.isPrimary     = js.value("is_primary",     false);
-        if (!s.name.empty()) p.slots.push_back(s);
+        if (!s.name.empty()) p.cameraSlots.push_back(s);
     }
     return p;
 }
@@ -102,7 +102,7 @@ void CameraProfile::saveToFile(const std::string& path) const {
     j["default_layout"]   = defaultLayout;
 
     json slotArr = json::array();
-    for (const auto& s : slots) {
+    for (const auto& s : cameraSlots) {
         json js;
         js["name"]           = s.name;
         js["display"]        = s.displayName;
@@ -111,7 +111,7 @@ void CameraProfile::saveToFile(const std::string& path) const {
         js["is_primary"]     = s.isPrimary;
         slotArr.push_back(js);
     }
-    j["slots"] = slotArr;
+    j["cameraSlots"] = slotArr;
 
     std::ofstream f(path);
     if (!f) throw std::runtime_error("Cannot write camera profile: " + path);
@@ -156,7 +156,7 @@ CameraProfile CameraProfile::d90Default() {
     right.name = "right"; right.displayName = "Right";
     right.filenameToken = "_B"; right.scanSubdir = "Right";
 
-    p.slots = { front, rear, left, right };
+    p.cameraSlots = { front, rear, left, right };
     return p;
 }
 
