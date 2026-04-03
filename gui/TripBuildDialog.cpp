@@ -43,6 +43,20 @@ TripBuildDialog::TripBuildDialog(const ManifestEntry& manifest,
         .arg(QString::fromStdString(trip.date))
         .arg(QString::fromStdString(trip.startTime)));
     setMinimumWidth(520);
+    setStyleSheet(
+        "QGroupBox {"
+        "  border: 1px solid #909090;"
+        "  border-radius: 4px;"
+        "  margin-top: 8px;"
+        "  font-weight: bold;"
+        "}"
+        "QGroupBox::title {"
+        "  subcontrol-origin: margin;"
+        "  subcontrol-position: top left;"
+        "  left: 8px;"
+        "  padding: 0 4px;"
+        "}"
+    );
 
     ConfigManager config;
     config.loadSettings();
