@@ -28,7 +28,7 @@ struct CollageSlot {
 // CollageOptions — settings for the free-form collage builder (mode 2).
 // ---------------------------------------------------------------------------
 struct CollageOptions {
-    CollageSlot slots[4];       // [0]=top-left  [1]=top-right
+    CollageSlot quadrants[4];   // [0]=top-left  [1]=top-right
                                 // [2]=bottom-left [3]=bottom-right
     int         audioSlot       = 0;    // which slot provides audio (0-based)
     bool        build4K         = true;
@@ -213,4 +213,4 @@ private:
 };
 
 #endif
-// SN: 00089
+// SN: 00091

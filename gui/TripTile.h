@@ -5,6 +5,7 @@
 #include "trip_detection.hpp"
 
 class QLabel;
+class QPushButton;
 
 class TripTile : public QWidget {
     Q_OBJECT
@@ -28,8 +29,13 @@ public:
     static constexpr int RIGHT_X   = DIV_X + PADDING;             // 184
     static constexpr int RIGHT_W   = W - RIGHT_X - PADDING;       // 168
 
+    // Layout constant for button vertical position
+    static constexpr int BUILD_BTN_Y = 101;
+    static constexpr int BUILD_BTN_H =  28;
+
 signals:
     void doubleClicked();
+    void buildRequested();
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
@@ -45,5 +51,6 @@ private:
     QLabel*       m_startLabel;
     QLabel*       m_durationLabel;
     QLabel*       m_detailLabel;
+    QPushButton*  m_buildBtn;
 };
-// SN: 00090
+// SN: 00091

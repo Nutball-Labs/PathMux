@@ -1364,7 +1364,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
         UI::printLine("  Slots:  (top-left  top-right  bottom-left  bottom-right)");
         for (int i = 0; i < 4; ++i) {
             std::string row = "  [" + std::to_string(i + 1) + "]  "
-                            + slotLabel(opts.slots[i]);
+                            + slotLabel(opts.quadrants[i]);
             UI::printLine(row);
         }
         UI::printLine();
@@ -1387,7 +1387,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
         if (up == "Q") return;
 
         if (up == "OFF") {
-            for (auto& s : opts.slots) { s.filePath.clear(); s.label.clear(); }
+            for (auto& s : opts.quadrants) { s.filePath.clear(); s.label.clear(); }
             std::cout << "  All slots cleared.\n";
             continue;
         }
@@ -1395,7 +1395,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
         if (up == "GO") {
             // Validate — need at least one filled slot and at least one output
             bool anySlot = false;
-            for (const auto& s : opts.slots)
+            for (const auto& s : opts.quadrants)
                 if (!s.filePath.empty()) { anySlot = true; break; }
             if (!anySlot) {
                 std::cout << "  No files assigned — set at least one slot first.\n";
@@ -1406,7 +1406,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
                 continue;
             }
             // Validate audio slot has a file
-            if (opts.slots[opts.audioSlot].filePath.empty()) {
+            if (opts.quadrants[opts.audioSlot].filePath.empty()) {
                 std::cout << "  Audio slot " << (opts.audioSlot + 1)
                           << " is empty — choose a filled slot for [A] audio.\n";
                 continue;
@@ -1418,7 +1418,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
             // Cycle audio slot to next filled slot
             for (int tries = 0; tries < 4; ++tries) {
                 opts.audioSlot = (opts.audioSlot + 1) % 4;
-                if (!opts.slots[opts.audioSlot].filePath.empty()) break;
+                if (!opts.quadrants[opts.audioSlot].filePath.empty()) break;
             }
             continue;
         }
@@ -1453,19 +1453,19 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
             path.erase(path.find_last_not_of(" \t") + 1);
 
             if (path.empty()) {
-                opts.slots[idx].filePath.clear();
-                opts.slots[idx].label.clear();
+                opts.quadrants[idx].filePath.clear();
+                opts.quadrants[idx].label.clear();
                 std::cout << "  Slot " << (idx + 1) << " cleared.\n";
             } else if (!fs::exists(path)) {
                 std::cout << "  File not found: " << path << "\n";
             } else {
-                opts.slots[idx].filePath = path;
-                opts.slots[idx].label    = fs::path(path).filename().string();
+                opts.quadrants[idx].filePath = path;
+                opts.quadrants[idx].label    = fs::path(path).filename().string();
                 // If audio slot is empty, auto-assign to this slot
-                if (opts.slots[opts.audioSlot].filePath.empty())
+                if (opts.quadrants[opts.audioSlot].filePath.empty())
                     opts.audioSlot = idx;
                 std::cout << "  Slot " << (idx + 1) << " set to "
-                          << opts.slots[idx].label << "\n";
+                          << opts.quadrants[idx].label << "\n";
             }
             continue;
         }
@@ -1492,11 +1492,11 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
     double maxDur = 0.0;
     double durations[4] = {0.0, 0.0, 0.0, 0.0};
     for (int i = 0; i < 4; ++i) {
-        if (!opts.slots[i].filePath.empty()) {
-            durations[i] = getFileDuration(opts.slots[i].filePath,
+        if (!opts.quadrants[i].filePath.empty()) {
+            durations[i] = getFileDuration(opts.quadrants[i].filePath,
                                            opts.ffprobePath);
             std::cout << "  Slot " << (i + 1) << ": "
-                      << opts.slots[i].label << "  "
+                      << opts.quadrants[i].label << "  "
                       << std::fixed << std::setprecision(1)
                       << durations[i] << "s\n";
             if (durations[i] > maxDur) maxDur = durations[i];
@@ -1517,7 +1517,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
     for (int i = 0; i < 4; ++i) {
         std::cout << "  Preparing slot " << (i + 1) << "...\n";
         paddedInputs[i] = buildPaddedInput(
-            opts.slots[i].filePath,
+            opts.quadrants[i].filePath,
             durations[i],
             maxDur,
             i,
@@ -2340,4 +2340,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00090
+// SN: 00091

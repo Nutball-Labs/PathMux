@@ -323,7 +323,10 @@ if(Qt6_FOUND)
         gui/EmptyManifestWidget.cpp
         gui/ScanProgressDialog.cpp
         gui/TripPropertiesDialog.cpp
+        gui/TripBuildDialog.cpp
+        gui/BuildProgressDialog.cpp
         gui/AboutDialog.cpp
+        cli/video_build.cpp
         gui/resources/pathmux.qrc
     )
     set_target_properties(pathmux-gui PROPERTIES
@@ -336,7 +339,7 @@ if(Qt6_FOUND)
     elseif(APPLE)
         set_target_properties(pathmux-gui PROPERTIES MACOSX_BUNDLE TRUE)
     endif()
-    target_include_directories(pathmux-gui PRIVATE gui/ ${CMAKE_SOURCE_DIR})
+    target_include_directories(pathmux-gui PRIVATE gui/ cli/ ${CMAKE_SOURCE_DIR})
     target_link_libraries(pathmux-gui PRIVATE pathmuxlib Qt6::Widgets)
     if(NOT WIN32)
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -417,4 +420,4 @@ endif()
 
 include(CPack)
 
-# SN: 00090
+# SN: 00091

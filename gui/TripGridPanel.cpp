@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "TripGridPanel.h"
 #include "TripTile.h"
+#include "TripBuildDialog.h"
+#include "BuildProgressDialog.h"
 #include "EmptyManifestWidget.h"
 #include <QStackedWidget>
 #include <QScrollArea>
@@ -80,6 +82,8 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
         tile->show();
         connect(tile, &TripTile::doubleClicked,
                 [this, t]() { emit tripDoubleClicked(m_currentManifest, t); });
+        connect(tile, &TripTile::buildRequested,
+                [this, t]() { onBuildRequested(t); });
         tile->setTextZoom(m_zoomFactor);
         m_tiles.push_back(tile);
 
@@ -198,4 +202,19 @@ void TripGridPanel::applyZoom()
     for (auto* tile : m_tiles)
         tile->setTextZoom(m_zoomFactor);
 }
-// SN: 00090
+
+void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
+{
+    TripBuildDialog dlg(m_currentManifest, trip, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    if (dlg.processNow()) {
+        VideoOptions opts = dlg.buildOptions();
+        BuildProgressDialog progress(trip, opts, this);
+        progress.startBuild();
+        progress.exec();
+    }
+    // "Add to Batch Queue" path: dlg.processNow() == false — handled in future release
+}
+// SN: 00091

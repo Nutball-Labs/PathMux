@@ -4,6 +4,7 @@
 #include "TripPropertiesDialog.h"
 #include "format_helpers.hpp"
 #include <QLabel>
+#include <QPushButton>
 #include <QPainter>
 #include <QStyleOption>
 #include <QMouseEvent>
@@ -77,6 +78,17 @@ TripTile::TripTile(const Trip& trip, bool imperial, QWidget* parent)
     }
     detail += "  \u00b7  " + gpsStatusText(trip);
     m_detailLabel->setText(detail);
+
+    // --- Build Video button ---
+    m_buildBtn = new QPushButton("Build Video\u2026", this);
+    m_buildBtn->setGeometry(RIGHT_X, BUILD_BTN_Y, RIGHT_W, BUILD_BTN_H);
+    m_buildBtn->setStyleSheet(
+        "QPushButton { border: 1px solid #0078d4; border-radius: 3px; "
+        "color: #0078d4; background: white; font-size: 9pt; }"
+        "QPushButton:hover { background: #e5f1fb; }"
+        "QPushButton:pressed { background: #cce4f7; }"
+    );
+    connect(m_buildBtn, &QPushButton::clicked, this, &TripTile::buildRequested);
 }
 
 void TripTile::setThumbnail(const QString& slot, const QPixmap& pixmap)
@@ -138,4 +150,4 @@ void TripTile::paintEvent(QPaintEvent*)
     p.setPen(QPen(QColor(0xc8c8c8), 1));
     p.drawLine(DIV_X, PADDING + 4, DIV_X, H - PADDING - 4);
 }
-// SN: 00090
+// SN: 00091
