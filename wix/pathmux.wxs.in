@@ -7,6 +7,10 @@
   BinDir and SrcDir are passed at build time:
       wix build -d BinDir=<build-win dir> -d SrcDir=<source root>
 
+  windeployqt must be run on pathmux-gui.exe before this target so that Qt
+  DLLs and plugin subdirectories exist in BinDir.  run-build.ps1 handles
+  this automatically; the CMake install(CODE ...) step handles it for CPack.
+
   UPGRADE GUID: A7F93C1E-2B47-4D8F-9A12-6BE89B540D75
   This GUID must never change — it ties all PathMux MSI versions together
   so Windows Installer can detect and upgrade previous installations.
@@ -33,21 +37,22 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="PathMux">
 
-        <!-- One component per file — required for Guid="*" auto-generation -->
-        <!-- Qt6 GUI (requires Qt6 to be installed and windeployqt run first) -->
-        <Component Id="C_pathmux_gui"    Guid="*"><File Source="$(var.BinDir)\pathmux-gui.exe"   KeyPath="yes" /></Component>
+        <!-- Qt plugin subdirectories — must exist before ComponentGroups reference them -->
+        <Directory Id="dir_platforms"           Name="platforms" />
+        <Directory Id="dir_styles"              Name="styles" />
+        <Directory Id="dir_imageformats"        Name="imageformats" />
+        <Directory Id="dir_iconengines"         Name="iconengines" />
+        <Directory Id="dir_generic"             Name="generic" />
+        <Directory Id="dir_networkinformation"  Name="networkinformation" />
+        <Directory Id="dir_tls"                 Name="tls" />
 
-        <!-- CLI tools and shared library -->
-        <Component Id="C_pathmux"        Guid="*"><File Source="$(var.BinDir)\pathmux.exe"        KeyPath="yes" /></Component>
-        <Component Id="C_pm_gpsinfo"     Guid="*"><File Source="$(var.BinDir)\pm_gpsinfo.exe"     KeyPath="yes" /></Component>
-        <Component Id="C_pm_gpsexport"   Guid="*"><File Source="$(var.BinDir)\pm_gpsexport.exe"   KeyPath="yes" /></Component>
-        <Component Id="C_pm_ls"          Guid="*"><File Source="$(var.BinDir)\pm_ls.exe"          KeyPath="yes" /></Component>
-        <Component Id="C_pm_audit"       Guid="*"><File Source="$(var.BinDir)\pm_audit.exe"       KeyPath="yes" /></Component>
-        <Component Id="C_pm_findgpslock" Guid="*"><File Source="$(var.BinDir)\pm_findgpslock.exe" KeyPath="yes" /></Component>
-        <Component Id="C_pm_probe"       Guid="*"><File Source="$(var.BinDir)\pm_probe.exe"       KeyPath="yes" /></Component>
-        <Component Id="C_pm_tripdebug"   Guid="*"><File Source="$(var.BinDir)\pm_tripdebug.exe"   KeyPath="yes" /></Component>
-        <Component Id="C_LICENSE"        Guid="*"><File Source="$(var.SrcDir)\LICENSE"            KeyPath="yes" /></Component>
-        <Component Id="C_README"         Guid="*"><File Source="$(var.SrcDir)\README.md"          KeyPath="yes" /></Component>
+        <!-- Documentation from source tree -->
+        <Component Id="C_LICENSE" Guid="*">
+          <File Source="$(var.SrcDir)\LICENSE" KeyPath="yes" />
+        </Component>
+        <Component Id="C_README" Guid="*">
+          <File Source="$(var.SrcDir)\README.md" KeyPath="yes" />
+        </Component>
 
         <!-- Add install dir to system PATH so all pm_* tools are reachable from any prompt -->
         <Component Id="C_PATH" Guid="*">
@@ -59,20 +64,71 @@
     </StandardDirectory>
 
     <Feature Id="Complete" Title="PathMux" Level="1">
-      <ComponentRef Id="C_pathmux_gui" />
-      <ComponentRef Id="C_pathmux" />
-      <ComponentRef Id="C_pm_gpsinfo" />
-      <ComponentRef Id="C_pm_gpsexport" />
-      <ComponentRef Id="C_pm_ls" />
-      <ComponentRef Id="C_pm_audit" />
-      <ComponentRef Id="C_pm_findgpslock" />
-      <ComponentRef Id="C_pm_probe" />
-      <ComponentRef Id="C_pm_tripdebug" />
+      <!-- Harvested file groups (defined in Fragment below) -->
+      <ComponentGroupRef Id="grp_root" />
+      <ComponentGroupRef Id="grp_platforms" />
+      <ComponentGroupRef Id="grp_styles" />
+      <ComponentGroupRef Id="grp_imageformats" />
+      <ComponentGroupRef Id="grp_iconengines" />
+      <ComponentGroupRef Id="grp_generic" />
+      <ComponentGroupRef Id="grp_networkinformation" />
+      <ComponentGroupRef Id="grp_tls" />
+      <!-- Explicit components -->
       <ComponentRef Id="C_LICENSE" />
       <ComponentRef Id="C_README" />
       <ComponentRef Id="C_PATH" />
     </Feature>
 
   </Package>
+
+  <!--
+    Fragment: ComponentGroups that harvest BinDir content.
+    Using Fragment + ComponentGroup with Directory= attribute is the correct
+    WiX 6 pattern for harvesting multiple files into named referenceable groups.
+    windeployqt must have been run before wix build so these globs resolve.
+  -->
+  <Fragment>
+    <!-- Root: all EXEs + all DLLs (Qt, MinGW runtime, libpathmux, support DLLs) -->
+    <ComponentGroup Id="grp_root" Directory="INSTALLDIR">
+      <Files Include="$(var.BinDir)\*.exe" />
+      <Files Include="$(var.BinDir)\*.dll" />
+    </ComponentGroup>
+
+    <!-- Qt platform plugin — must live in platforms\ relative to the exe -->
+    <ComponentGroup Id="grp_platforms" Directory="dir_platforms">
+      <Files Include="$(var.BinDir)\platforms\*.dll" />
+    </ComponentGroup>
+
+    <!-- Qt style plugin -->
+    <ComponentGroup Id="grp_styles" Directory="dir_styles">
+      <Files Include="$(var.BinDir)\styles\*.dll" />
+    </ComponentGroup>
+
+    <!-- Qt image format plugins -->
+    <ComponentGroup Id="grp_imageformats" Directory="dir_imageformats">
+      <Files Include="$(var.BinDir)\imageformats\*.dll" />
+    </ComponentGroup>
+
+    <!-- Qt icon engine plugins -->
+    <ComponentGroup Id="grp_iconengines" Directory="dir_iconengines">
+      <Files Include="$(var.BinDir)\iconengines\*.dll" />
+    </ComponentGroup>
+
+    <!-- Qt generic input plugins -->
+    <ComponentGroup Id="grp_generic" Directory="dir_generic">
+      <Files Include="$(var.BinDir)\generic\*.dll" />
+    </ComponentGroup>
+
+    <!-- Qt network information plugins -->
+    <ComponentGroup Id="grp_networkinformation" Directory="dir_networkinformation">
+      <Files Include="$(var.BinDir)\networkinformation\*.dll" />
+    </ComponentGroup>
+
+    <!-- Qt TLS backend plugins -->
+    <ComponentGroup Id="grp_tls" Directory="dir_tls">
+      <Files Include="$(var.BinDir)\tls\*.dll" />
+    </ComponentGroup>
+  </Fragment>
+
 </Wix>
 <!-- SN: 00092 -->
