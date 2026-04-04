@@ -1,0 +1,18 @@
+# Line-ending normalization
+# Ensures Windows-specific files always have CRLF on checkout,
+# regardless of the authoring platform.
+
+# PowerShell scripts must be CRLF on Windows (PS 5.x backtick-continuation fails on LF)
+*.ps1   text eol=crlf
+
+# Batch files
+*.bat   text eol=crlf
+
+# WiX installer definitions
+*.wxs   text eol=crlf
+*.wxs.in text eol=crlf
+
+# Shell scripts — always LF
+*.sh    text eol=lf
+
+# Everything else — let git use the platform default (core.autocrlf)

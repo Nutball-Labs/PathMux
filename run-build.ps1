@@ -1,4 +1,4 @@
-# PathMux Windows build + package — PowerShell runner
+﻿# PathMux Windows build + package — PowerShell runner
 # Usage:
 #   .\run-build.ps1           — configure, build, ZIP, MSI
 #   .\run-build.ps1 -NoPack   — configure + build only
@@ -7,29 +7,31 @@ param(
     [switch]$NoGui       # skip windeployqt + GUI MSI step (CLI-only build)
 )
 
-$vcvars       = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 $cmake        = "C:\Qt\Tools\CMake_64\bin\cmake.exe"
+$ninja        = "C:\Qt\Tools\Ninja\ninja.exe"
 $wix          = "$env:USERPROFILE\.dotnet\tools\wix.exe"
-$windeployqt  = "C:\Qt\6.6.2\msvc2019_64\bin\windeployqt.exe"   # adjust Qt version path if needed
+$qtDir        = "C:\Qt\6.10.2\mingw_64"
+$mingwBin     = "C:\Qt\Tools\mingw1310_64\bin"
+$windeployqt  = "$qtDir\bin\windeployqt.exe"
+$gcc          = "$mingwBin\gcc.exe"
+$gpp          = "$mingwBin\g++.exe"
 $src          = "C:\Users\iceberg\Nutball-Labs\pathmux"
 $build        = "C:\Users\iceberg\Nutball-Labs\pathmux\build-win"
 $out          = "C:\Users\iceberg\Nutball-Labs\pathmux\build_out.txt"
 
-# Source vcvars and capture the resulting environment
-$envBlock = cmd /c "`"$vcvars`" > NUL 2>&1 && set" 2>$null
-foreach ($line in $envBlock) {
-    if ($line -match "^([^=]+)=(.*)$") {
-        [System.Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], "Process")
-    }
-}
+# Add MinGW to PATH so Ninja can find gcc/g++ and MinGW runtime DLLs
+$env:PATH = "$mingwBin;$env:PATH"
 
 # Ensure packages/ dir exists
 $null = New-Item -ItemType Directory -Force "$src\packages"
 
-# Configure — pass wix.exe path explicitly so find_program() doesn't depend on PATH
+# Configure — MinGW + Qt 6.10.2; pass wix.exe path explicitly so find_program() doesn't depend on PATH
 $wixArg = if (Test-Path $wix) { "-DWIX_EXECUTABLE=$wix" } else { "" }
 & $cmake -S $src -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release `
-    -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl $wixArg 2>&1 | Tee-Object -FilePath $out
+    -DCMAKE_C_COMPILER="$gcc" -DCMAKE_CXX_COMPILER="$gpp" `
+    -DCMAKE_MAKE_PROGRAM="$ninja" `
+    -DCMAKE_PREFIX_PATH="$qtDir" `
+    $wixArg 2>&1 | Tee-Object -FilePath $out
 if ($LASTEXITCODE -ne 0) { Write-Host "Configure failed"; exit 1 }
 
 # Build

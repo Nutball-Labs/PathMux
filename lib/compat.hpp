@@ -5,7 +5,9 @@
 #include <string>
 #include <ctime>
 #ifdef _WIN32
-#  define NOMINMAX        // prevent windows.h from defining min/max macros
+#  ifndef NOMINMAX
+#    define NOMINMAX      // prevent windows.h from defining min/max macros
+#  endif
 #  include <windows.h>   // GetComputerNameA — no Winsock init required
 #else
 #  include <unistd.h>    // gethostname
@@ -41,14 +43,14 @@
 #  define WEXITSTATUS(s) (((s) >> 8) & 0xff)
 #endif
 
-// localtime_r — MSVC only (MinGW provides it natively via <time.h>).
-#ifdef _MSC_VER
+// localtime_r — not available on Windows (MSVC or MinGW); shim via localtime_s.
+#ifdef _WIN32
 inline struct tm* localtime_r(const time_t* timep, struct tm* result) {
-    localtime_s(result, timep);   // MSVC: reversed params vs POSIX
+    localtime_s(result, timep);   // Windows: reversed params vs POSIX
     return result;
 }
 
-// timegm — POSIX/GNU extension not available on MSVC; _mkgmtime is equivalent.
+// timegm — POSIX/GNU extension not available on Windows; _mkgmtime is equivalent.
 inline time_t timegm(struct tm* t) {
     return _mkgmtime(t);
 }
@@ -95,4 +97,4 @@ inline std::string pathBasename(const std::string& p) {
     return (pos != std::string::npos) ? p.substr(pos + 1) : p;
 }
 
-// SN: 00089
+// SN: 00092

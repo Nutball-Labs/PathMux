@@ -3,17 +3,23 @@
 Follow these steps in order on each platform. The source is already
 cross-platform — these are packaging/deployment steps only.
 
+**Status (2026-04-04):**
+- ✅ Linux packages built (RPM, DEB, tar.gz)
+- ✅ macOS packages built (tar.gz, zip) — Qt 6.11.0 via Homebrew on penny
+- ❌ Windows packages — still needed (run on nutball1)
+- ❌ GitHub release — waiting on Windows packages
+
 ---
 
 ## WINDOWS (nutball1 — Windows NVMe)
 
 ### Prerequisites (one-time)
-- Visual Studio 2022 Community (C++ workload) — `vcvars64.bat` used by `run-build.ps1`
-- Qt 6.6.x via Qt Online Installer — install MSVC 2019 64-bit component
-  - Default path assumed: `C:\Qt\6.6.2\msvc2019_64\`
-  - Adjust `$windeployqt` in `run-build.ps1` if your Qt version/path differs
+- Qt 6.10.2 MinGW via Qt Online Installer — MinGW 13.1.0 64-bit component
+  - Installed at: `C:\Qt\6.10.2\mingw_64\` and `C:\Qt\Tools\mingw1310_64\`
+  - `run-build.ps1` is configured for these paths; adjust if Qt version differs
 - WiX 6 (for MSI): `dotnet tool install --global wix`
 - CMake: bundled with Qt at `C:\Qt\Tools\CMake_64\bin\cmake.exe`
+- Ninja: bundled with Qt at `C:\Qt\Tools\Ninja\ninja.exe`
 
 ### Build & Package
 ```powershell
@@ -99,7 +105,7 @@ packages/pathmux-1.1.0-macOS.zip
 
 ## GitHub Release (do this after both platforms are packaged)
 
-Linux packages are already built and in `packages/`. Gather all six files:
+Linux and macOS packages are built and in `packages/`. Once Windows is done, gather all seven files:
 
 ```
 packages/pathmux-1.1.0-1.x86_64.rpm
