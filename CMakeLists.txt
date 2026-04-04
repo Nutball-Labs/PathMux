@@ -370,6 +370,21 @@ if(Qt6_FOUND)
                     DESTINATION "share/applications")
         endif()
     endif()
+    # macOS: run macdeployqt after each build to rewrite Qt load paths from
+    # the Homebrew absolute paths to @executable_path/../Frameworks/.
+    # Without this, both the bundled Qt and the system Homebrew Qt get loaded,
+    # causing Objective-C class conflicts and a cocoa plugin crash at startup.
+    if(APPLE)
+        find_program(MACDEPLOYQT_EXECUTABLE macdeployqt
+            HINTS "${Qt6_DIR}/../../../bin"
+            REQUIRED
+        )
+        add_custom_command(TARGET pathmux-gui POST_BUILD
+            COMMAND "${MACDEPLOYQT_EXECUTABLE}" "$<TARGET_BUNDLE_DIR:pathmux-gui>"
+            COMMENT "Running macdeployqt to fix Qt framework load paths"
+        )
+    endif()
+
     message(STATUS "Qt6 found (${Qt6_VERSION}) — pathmux-gui target enabled")
 else()
     message(STATUS "Qt6 not found — pathmux-gui skipped (install qt6-qtbase-devel)")
@@ -524,4 +539,4 @@ endif()
 
 include(CPack)
 
-# SN: 00092
+# SN: 00093

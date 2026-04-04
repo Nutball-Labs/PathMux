@@ -17,8 +17,9 @@ class QVBoxLayout;
 // One row in the stage stack — name, bar, live status (ETA → ✓ when done)
 struct StageRow {
     QString       label;
-    QProgressBar* bar    = nullptr;
-    QLabel*       status = nullptr;
+    QProgressBar* bar     = nullptr;
+    QLabel*       status  = nullptr;
+    bool          started = false;  // true once first progress signal received
 };
 
 class BuildProgressDialog : public QDialog {
@@ -51,4 +52,4 @@ private:
     QLabel*           m_finalLabel   = nullptr;
     QPushButton*      m_closeBtn     = nullptr;
 };
-// SN: 00092
+// SN: 00093

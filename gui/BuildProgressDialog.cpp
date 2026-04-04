@@ -93,7 +93,11 @@ public slots:
 
             QProcess proc;
             proc.setReadChannel(QProcess::StandardOutput);
+#ifdef _WIN32
+            proc.start("cmd.exe", {"/c", QString::fromStdString(fullCmd)});
+#else
             proc.start("sh", {"-c", QString::fromStdString(fullCmd)});
+#endif
             if (!proc.waitForStarted(10000)) return false;
 
             QByteArray buf;
@@ -134,10 +138,12 @@ public slots:
             buf += proc.readAllStandardOutput();
             proc.waitForFinished(-1);
 
+            bool success = proc.exitStatus() == QProcess::NormalExit
+                        && proc.exitCode() == 0;
             if (totalUs > 0)
-                emit progress(QString::fromStdString(label), 100, 0);
+                emit progress(QString::fromStdString(label), success ? 100 : -1, 0);
 
-            return proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0;
+            return success;
         };
 
         try {
@@ -338,12 +344,40 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs)
     auto it = m_rowIndex.find(label);
     if (it == m_rowIndex.end()) return;
     StageRow& row = m_rows[it.value()];
-    row.bar->setValue(pct);
+
+    // pct == -1: stage failed — show error indicator without marking done.
+    if (pct < 0) {
+        row.bar->setRange(0, 100);
+        row.bar->setValue(0);
+        row.status->setText("\u2717");
+        row.status->setStyleSheet("color: #cc0000; font-weight: bold;");
+        m_finalLabel->setText(stageDisplayName(label) + " \u2014 failed");
+        m_finalLabel->setStyleSheet("color: #cc0000; font-style: italic;");
+        return;
+    }
+
+    // First signal for this stage: switch bar to indeterminate pulsing so the
+    // user can see it is active even before we have real percentage data.
+    if (!row.started) {
+        row.started = true;
+        row.bar->setRange(0, 0);   // range(0,0) = Qt indeterminate animation
+        row.status->setText("Running\u2026");
+        row.status->setStyleSheet("color: #0055aa; font-style: italic; font-size: 8pt;");
+        // Scroll so the newly active row is visible.
+        QScrollBar* sb = m_scrollArea->verticalScrollBar();
+        sb->setValue(sb->maximum());
+    }
 
     if (pct >= 100) {
+        row.bar->setRange(0, 100);
+        row.bar->setValue(100);
         row.status->setText("\u2713");
         row.status->setStyleSheet("color: #228b22; font-weight: bold;");
-    } else {
+    } else if (pct > 0) {
+        // Switch from indeterminate to determinate now that we have real data.
+        if (row.bar->maximum() == 0)
+            row.bar->setRange(0, 100);
+        row.bar->setValue(pct);
         if (etaSecs > 0) {
             if (etaSecs >= 60)
                 row.status->setText(QString("%1m %2s")
@@ -352,7 +386,10 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs)
                 row.status->setText(QString("%1s").arg(etaSecs));
             row.status->setStyleSheet("color: #505050; font-size: 8pt;");
         }
-        // Update active-stage footer with the most recently seen in-flight label.
+        m_finalLabel->setText(stageDisplayName(label) + "\u2026");
+        m_finalLabel->setStyleSheet("color: #606060; font-style: italic;");
+    } else {
+        // pct == 0: stage just activated (bar already pulsing from above).
         m_finalLabel->setText(stageDisplayName(label) + "\u2026");
         m_finalLabel->setStyleSheet("color: #606060; font-style: italic;");
     }
@@ -364,9 +401,17 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs)
 void BuildProgressDialog::onFinished(bool ok, const QString& error)
 {
     if (ok) {
-        // Complete any row that didn't receive a final 100% update.
         for (StageRow& row : m_rows) {
-            if (row.bar->value() < 100) {
+            if (row.bar->value() >= 100) continue;  // already marked done
+            if (!row.started) {
+                // Pre-populated but never activated — stage was skipped.
+                row.bar->setRange(0, 100);
+                row.bar->setValue(0);
+                row.status->setText("\u2014");   // em-dash = skipped
+                row.status->setStyleSheet("color: #909090;");
+            } else {
+                // Started but no final 100% signal (e.g. totalSecs==0 path).
+                row.bar->setRange(0, 100);
                 row.bar->setValue(100);
                 row.status->setText("\u2713");
                 row.status->setStyleSheet("color: #228b22; font-weight: bold;");
