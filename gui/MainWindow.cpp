@@ -35,6 +35,8 @@ MainWindow::MainWindow(QWidget* parent)
             m_tripGridPanel, &TripGridPanel::loadManifest);
     connect(m_manifestPanel, &ManifestPanel::scanRequested,
             this,            &MainWindow::onScanRequested);
+    connect(m_manifestPanel, &ManifestPanel::rebuildRequested,
+            this,            &MainWindow::onRebuildRequested);
     connect(m_tripGridPanel, &TripGridPanel::scanRequested,
             this,            &MainWindow::onScanRequested);
 
@@ -135,6 +137,16 @@ void MainWindow::onZoomChanged(double factor)
     m_manifestPanel->setZoom(factor);
 }
 
+void MainWindow::onRebuildRequested(const Pathmux::ManifestEntry& entry)
+{
+    // Rescan the known path — no directory picker needed.
+    ScanProgressDialog dlg(this);
+    connect(&dlg, &ScanProgressDialog::scanComplete,
+            this, &MainWindow::onScanComplete);
+    dlg.startScan(QString::fromStdString(entry.path));
+    dlg.exec();
+}
+
 void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
 {
     m_manifestPanel->refresh();
@@ -143,4 +155,4 @@ void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
     m_tripGridPanel->loadManifest(entry);
     m_manifestPanel->selectEntry(entry);
 }
-// SN: 00090
+// SN: 00092

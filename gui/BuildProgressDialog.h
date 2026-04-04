@@ -3,6 +3,7 @@
 #pragma once
 #include <QDialog>
 #include <QVector>
+#include <QMap>
 #include <QString>
 #include "trip_detection.hpp"
 #include "video_build.hpp"
@@ -37,7 +38,7 @@ private slots:
 
 private:
     void addStageRow(const QString& label);
-    void completeCurrentRow();
+    void populateExpectedRows();
 
     Pathmux::Trip     m_trip;
     VideoOptions      m_opts;
@@ -45,9 +46,9 @@ private:
     QScrollArea*      m_scrollArea   = nullptr;
     QVBoxLayout*      m_stageLayout  = nullptr;
     QVector<StageRow> m_rows;
-    QString           m_currentLabel;
+    QMap<QString,int> m_rowIndex;    // label → index in m_rows
 
     QLabel*           m_finalLabel   = nullptr;
     QPushButton*      m_closeBtn     = nullptr;
 };
-// SN: 00091
+// SN: 00092

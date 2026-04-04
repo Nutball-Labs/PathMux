@@ -24,6 +24,7 @@ public:
 signals:
     void manifestSelected(const Pathmux::ManifestEntry& entry);
     void scanRequested();
+    void rebuildRequested(const Pathmux::ManifestEntry& entry);
     void zoomChanged(double factor);
 
 protected:
@@ -34,6 +35,7 @@ private slots:
     void onItemClicked(QListWidgetItem* item);
     void onSortChanged(int index);
     void onAddClicked();
+    void onContextMenu(const QPoint& pos);
 
 private:
     QListWidget*           m_list;
@@ -53,4 +55,4 @@ private:
     void applySort();
     void applyListZoom();
 };
-// SN: 00090
+// SN: 00092

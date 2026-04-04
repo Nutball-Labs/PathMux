@@ -26,6 +26,7 @@
 #include <ctime>
 #include <array>
 #include <chrono>
+#include <thread>
 
 namespace fs = std::filesystem;
 using namespace Pathmux;
@@ -365,6 +366,10 @@ static void drawFinalizingLine(const std::string& label,
 bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
                                           const std::string& label,
                                           int totalDurationSecs) {
+    // GUI path: delegate to QProcess-based runner to avoid fork() in QThread.
+    if (ffmpegRunner)
+        return ffmpegRunner(cmd, label, totalDurationSecs);
+
 #ifdef _WIN32
     if (totalDurationSecs <= 0 || Logger::instance().isDebug())
         return runFfmpeg(cmd);
@@ -707,7 +712,10 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
                             makeOutputName(trip, camera, opts.containerFormat,
                                            opts.basenameOverride)).string();
     std::string outFile  = UI::confirmOutputPath(proposed);
-    if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
+    if (outFile != proposed) {
+        std::lock_guard<std::mutex> lk(m_renamedMutex);
+        renamedFiles.push_back({proposed, outFile});
+    }
     std::string listFile = (fs::path(outDir) / ("pm_tmp_concat_" + camera + ".txt")).string();
 
     if (writeConcatList(segments, listFile).empty()) return false;
@@ -2082,14 +2090,30 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     bool anyCamera = opts.buildFront || opts.buildRear || opts.buildLeft || opts.buildRight;
     if (anyCamera) {
         auto t0 = clock::now();
-        if (opts.buildFront)
-            buildCameraFile(trip, "Front", collectSegments("front"), opts);
-        if (opts.buildRear)
-            buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
-        if (opts.buildLeft)
-            buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
-        if (opts.buildRight)
-            buildCameraFile(trip, "Right", collectSegments("right"), opts);
+        if (opts.parallelConcats) {
+            // Stream-copy concats are low-CPU / disk-bound; run concurrently.
+            std::vector<std::thread> threads;
+            auto launch = [&](bool cond, const char* cam, const char* slot) {
+                if (cond)
+                    threads.emplace_back([this, &trip, &opts, cam, slot, &collectSegments]() {
+                        buildCameraFile(trip, cam, collectSegments(slot), opts);
+                    });
+            };
+            launch(opts.buildFront, "Front", "front");
+            launch(opts.buildRear,  "Rear",  "rear");
+            launch(opts.buildLeft,  "Left",  "left");
+            launch(opts.buildRight, "Right", "right");
+            for (auto& t : threads) t.join();
+        } else {
+            if (opts.buildFront)
+                buildCameraFile(trip, "Front", collectSegments("front"), opts);
+            if (opts.buildRear)
+                buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
+            if (opts.buildLeft)
+                buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
+            if (opts.buildRight)
+                buildCameraFile(trip, "Right", collectSegments("right"), opts);
+        }
         timings.concatSecs = elapsedSecs(t0);
     }
 
@@ -2340,4 +2364,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00091
+// SN: 00092

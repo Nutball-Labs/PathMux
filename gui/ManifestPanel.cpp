@@ -11,6 +11,7 @@
 #include <QStyledItemDelegate>
 #include <QStyleOption>
 #include <QWheelEvent>
+#include <QMenu>
 #include <algorithm>
 
 using namespace Pathmux;
@@ -113,6 +114,10 @@ ManifestPanel::ManifestPanel(QWidget* parent)
     connect(m_addBtn,   &QPushButton::clicked,
             this,       &ManifestPanel::onAddClicked);
 
+    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_list, &QListWidget::customContextMenuRequested,
+            this,   &ManifestPanel::onContextMenu);
+
     // Capture base font size for scaling; install filter to intercept Ctrl+wheel
     double pt = m_list->font().pointSizeF();
     m_baseFontPt = (pt > 0) ? pt : 9.0;
@@ -195,6 +200,19 @@ void ManifestPanel::onAddClicked()
     emit scanRequested();
 }
 
+void ManifestPanel::onContextMenu(const QPoint& pos)
+{
+    QListWidgetItem* item = m_list->itemAt(pos);
+    if (!item) return;
+    int row = m_list->row(item);
+    if (row < 0 || row >= (int)m_entries.size()) return;
+
+    QMenu menu(this);
+    QAction* rebuildAct = menu.addAction("Rebuild Manifest");
+    if (menu.exec(m_list->mapToGlobal(pos)) == rebuildAct)
+        emit rebuildRequested(m_entries[row]);
+}
+
 void ManifestPanel::wheelEvent(QWheelEvent* event)
 {
     if (event->modifiers() & Qt::ControlModifier) {
@@ -233,4 +251,4 @@ void ManifestPanel::applyListZoom()
     m_list->setFont(f);
     m_list->update();
 }
-// SN: 00090
+// SN: 00092

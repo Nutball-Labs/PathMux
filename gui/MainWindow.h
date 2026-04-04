@@ -15,6 +15,7 @@ public:
 
 private slots:
     void onScanRequested();
+    void onRebuildRequested(const Pathmux::ManifestEntry& entry);
     void onScanComplete(const Pathmux::ManifestEntry& entry);
     void onZoomChanged(double factor);
     void onAbout();
@@ -26,4 +27,4 @@ private:
     ManifestPanel* m_manifestPanel;
     TripGridPanel* m_tripGridPanel;
 };
-// SN: 00090
+// SN: 00092

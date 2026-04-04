@@ -7,6 +7,7 @@
 #include <vector>
 #include <array>
 #include <functional>
+#include <mutex>
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
 
@@ -92,6 +93,10 @@ struct VideoOptions {
     // e.g. "MyTrip" → MyTrip_Front.mp4, MyTrip_Collage_4K.mp4, etc.
     // Empty = use auto-generated date_time prefix.
     std::string basenameOverride;
+
+    // Run per-camera concat stages concurrently (stream-copy, low CPU).
+    // Disabled in CLI to avoid interleaved terminal output.
+    bool parallelConcats = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -116,6 +121,15 @@ public:
     // Args: stage label (e.g. "collage:4K"), percent complete (0–100), ETA seconds.
     // Null (default) = draw to terminal.
     std::function<void(const std::string& label, int pct, int etaSecs)> progressCallback;
+
+    // Optional process runner — set by the Qt GUI layer to replace the
+    // fork()/system() path in runFfmpegWithProgress with a QProcess-based
+    // implementation that is safe to call from a QThread.
+    // Args: ffmpeg command string, stage label, total duration seconds.
+    // Returns true on exit-code 0.  Null (default) = use fork/FIFO path.
+    std::function<bool(const std::string& cmd,
+                       const std::string& label,
+                       int totalSecs)> ffmpegRunner;
 
     // Called from find_trips interactive browser.
     VideoOptions configureOptions(ConfigManager& config, Trip& trip);
@@ -168,7 +182,9 @@ private:
 
     // Rename tracking — populated when an output path is changed to avoid
     // overwriting an existing file. Reported once at end of run().
+    // Protected by m_renamedMutex when parallelConcats is in use.
     std::vector<std::pair<std::string,std::string>> renamedFiles;
+    std::mutex m_renamedMutex;
 
     // --- Helpers ---
     // Write a ffmpeg concat list file to a temp path, return the path.
@@ -213,4 +229,4 @@ private:
 };
 
 #endif
-// SN: 00091
+// SN: 00092

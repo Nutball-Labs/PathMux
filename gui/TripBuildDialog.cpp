@@ -339,10 +339,11 @@ VideoOptions TripBuildDialog::buildOptions() const
     opts.outputDir        = m_outputDir ? m_outputDir->text().trimmed().toStdString() : "";
     opts.basenameOverride = m_basename  ? m_basename->text().trimmed().toStdString()  : "";
 
-    opts.ffmpegPath = m_ffmpegPath;
-    opts.encode     = m_encode;
-    opts.sourcePath  = m_manifest.path;
-    opts.manifestId  = m_manifest.id;
+    opts.ffmpegPath      = m_ffmpegPath;
+    opts.encode          = m_encode;
+    opts.sourcePath      = m_manifest.path;
+    opts.manifestId      = m_manifest.id;
+    opts.parallelConcats = true;   // stream-copy is disk-bound; run cameras concurrently
 
     return opts;
 }
@@ -351,4 +352,4 @@ bool TripBuildDialog::processNow() const
 {
     return m_btnNow && m_btnNow->isChecked();
 }
-// SN: 00091
+// SN: 00092

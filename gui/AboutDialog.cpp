@@ -19,13 +19,30 @@ AboutDialog::AboutDialog(QWidget* parent)
     vbox->setContentsMargins(20, 20, 20, 16);
     vbox->setSpacing(0);
 
-    // --- Logo ---
-    QPixmap logo(":/images/Nutball-Labs_logo.jpg");
-    if (!logo.isNull()) {
-        auto* logoLabel = new QLabel(this);
-        logoLabel->setPixmap(logo.scaledToWidth(180, Qt::SmoothTransformation));
-        logoLabel->setAlignment(Qt::AlignHCenter);
-        vbox->addWidget(logoLabel);
+    // --- Logo row: Nutball-Labs (left) | PathMux (right) ---
+    {
+        auto* hbox = new QHBoxLayout;
+        hbox->setSpacing(16);
+        hbox->addStretch();
+
+        QPixmap nlLogo(":/images/Nutball-Labs_logo.png");
+        if (!nlLogo.isNull()) {
+            auto* nlLabel = new QLabel(this);
+            nlLabel->setPixmap(nlLogo.scaledToHeight(80, Qt::SmoothTransformation));
+            nlLabel->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
+            hbox->addWidget(nlLabel);
+        }
+
+        QPixmap pmLogo(":/images/pathmux_256.png");
+        if (!pmLogo.isNull()) {
+            auto* pmLabel = new QLabel(this);
+            pmLabel->setPixmap(pmLogo.scaledToHeight(80, Qt::SmoothTransformation));
+            pmLabel->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
+            hbox->addWidget(pmLabel);
+        }
+
+        hbox->addStretch();
+        vbox->addLayout(hbox);
         vbox->addSpacing(12);
     }
 
@@ -75,4 +92,4 @@ AboutDialog::AboutDialog(QWidget* parent)
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::accept);
     vbox->addWidget(buttons);
 }
-// SN: 00090
+// SN: 00092

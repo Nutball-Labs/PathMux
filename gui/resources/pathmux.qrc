@@ -1,6 +1,14 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
   <qresource prefix="/images">
-    <file>Nutball-Labs_logo.jpg</file>
+    <file>Nutball-Labs_logo.png</file>
+    <file>pathmux_16.png</file>
+    <file>pathmux_32.png</file>
+    <file>pathmux_48.png</file>
+    <file>pathmux_64.png</file>
+    <file>pathmux_128.png</file>
+    <file>pathmux_256.png</file>
+    <file>pathmux_512.png</file>
   </qresource>
 </RCC>
+<!-- SN: 00092 -->

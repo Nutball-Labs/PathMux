@@ -9,6 +9,8 @@
 #include <QVBoxLayout>
 #include <QDialogButtonBox>
 #include <QFileInfo>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QString>
 #include <vector>
 #include <string>
@@ -144,6 +146,15 @@ static QWidget* makeCameraTab(const Trip& t, const std::string& slot, QWidget* p
         }
     }
 
+    // Double-click a row to open the file in the system default viewer.
+    QObject::connect(table, &QTableWidget::itemDoubleClicked,
+                     [table](QTableWidgetItem* item) {
+        if (!item) return;
+        QString path = table->item(item->row(), 0)->text();
+        if (path == "\u2014") return;   // skip absent-segment rows
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    });
+
     vbox->addWidget(table);
     return w;
 }
@@ -199,4 +210,4 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip, QWidget* parent)
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::accept);
     vbox->addWidget(buttons);
 }
-// SN: 00090
+// SN: 00092

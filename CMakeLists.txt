@@ -76,14 +76,16 @@ endif()
 include(GNUInstallDirs)
 
 # ---------------------------------------------------------------------------
-# Shared library — RPATH so installed binaries find libpathmux at runtime
+# Shared library — RPATH for installed binaries
+# macOS: @executable_path-relative so the app bundle is self-contained.
+# Linux: no RPATH — ldconfig (invoked by the RPM/DEB post-install scriptlet)
+#   registers the library in /etc/ld.so.cache; RPM's check-rpaths rejects any
+#   RPATH that points at a standard system path like /usr/lib64.
 # ---------------------------------------------------------------------------
 if(APPLE)
     set(CMAKE_INSTALL_RPATH "@executable_path/../lib")
-elseif(UNIX)
-    set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 # Windows: auto-export all symbols from the DLL (no __declspec annotations needed)
 if(WIN32)
@@ -344,6 +346,12 @@ if(Qt6_FOUND)
     if(NOT WIN32)
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
+        # XDG icon hierarchy for Linux desktop environments
+        foreach(sz 16 32 48 64 128 256 512)
+            install(FILES "gui/resources/pathmux_${sz}.png"
+                    DESTINATION "share/icons/hicolor/${sz}x${sz}/apps"
+                    RENAME "pathmux.png")
+        endforeach()
     else()
         install(TARGETS pathmux-gui RUNTIME DESTINATION ".")
     endif()
@@ -420,4 +428,4 @@ endif()
 
 include(CPack)
 
-# SN: 00091
+# SN: 00092
