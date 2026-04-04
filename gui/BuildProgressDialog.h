@@ -35,7 +35,9 @@ signals:
     void buildComplete(bool ok);
 
 private slots:
-    void onProgress(const QString& label, int pct, int etaSecs);
+    // msg is non-empty only on failure — carries first line of ffmpeg stderr
+    void onProgress(const QString& label, int pct, int etaSecs,
+                    const QString& msg = "");
     void onFinished(bool ok, const QString& error);
 
 private:
@@ -50,7 +52,8 @@ private:
     QVector<StageRow> m_rows;
     QMap<QString,int> m_rowIndex;    // label → index in m_rows
 
-    QLabel*           m_finalLabel   = nullptr;
-    QPushButton*      m_closeBtn     = nullptr;
+    QLabel*           m_outputDirLabel = nullptr;  // shows resolved output path
+    QLabel*           m_finalLabel     = nullptr;
+    QPushButton*      m_closeBtn       = nullptr;
 };
 // SN: 00093

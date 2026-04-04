@@ -14,6 +14,11 @@
 #include <QProcess>
 #include <set>
 #include <cctype>
+#ifdef _WIN32
+#  include <windows.h>
+#else
+#  include <unistd.h>
+#endif
 
 using namespace Pathmux;
 
@@ -68,7 +73,7 @@ public slots:
 
         // Route progress signals through the Qt signal/slot system.
         builder.progressCallback = [this](const std::string& label, int pct, int eta) {
-            emit progress(QString::fromStdString(label), pct, eta);
+            emit progress(QString::fromStdString(label), pct, eta, "");
         };
 
         // Use QProcess instead of fork()/system() — fork() is unsafe from a
@@ -77,28 +82,41 @@ public slots:
         builder.ffmpegRunner = [this](const std::string& cmd,
                                       const std::string& label,
                                       int totalSecs) -> bool {
-            // Add -loglevel quiet and -progress pipe:1 (write to stdout).
+            // Add -loglevel error (keeps errors visible) and -progress pipe:1
+            // (machine-readable progress to stdout). -loglevel error is used
+            // instead of -loglevel quiet so that failure messages appear in
+            // stderr and can be shown in the dialog.
             std::string fullCmd = cmd;
             {
                 auto pos = fullCmd.find(' ');
                 if (pos != std::string::npos)
-                    fullCmd.insert(pos, " -loglevel quiet -progress pipe:1");
+                    fullCmd.insert(pos, " -loglevel error -progress pipe:1");
             }
 
             int64_t totalUs   = (int64_t)totalSecs * 1000000LL;
             int64_t outTimeUs = 0;
             double  speed     = 1.0;
 
-            emit progress(QString::fromStdString(label), 0, 0);
+            // Emit cmd as a debug message (pct=-2 sentinel, etaSecs unused,
+            // msg = the actual command line being run).
+            emit progress(QString::fromStdString(label), -2, 0,
+                          QString::fromStdString(fullCmd));
+            emit progress(QString::fromStdString(label), 0, 0, "");
 
             QProcess proc;
+            // Read stdout for -progress key=value output; stderr separately
+            // for error messages.
             proc.setReadChannel(QProcess::StandardOutput);
 #ifdef _WIN32
             proc.start("cmd.exe", {"/c", QString::fromStdString(fullCmd)});
 #else
             proc.start("sh", {"-c", QString::fromStdString(fullCmd)});
 #endif
-            if (!proc.waitForStarted(10000)) return false;
+            if (!proc.waitForStarted(10000)) {
+                emit progress(QString::fromStdString(label), -1, 0,
+                              "Process failed to start");
+                return false;
+            }
 
             QByteArray buf;
             while (proc.state() != QProcess::NotRunning) {
@@ -129,21 +147,32 @@ public slots:
                         int pct = (int)(std::min(1.0, (double)outTimeUs / (double)totalUs) * 100);
                         int eta = speed > 0.001
                             ? (int)((totalUs - outTimeUs) / (speed * 1e6)) : 0;
-                        emit progress(QString::fromStdString(label), pct, eta);
+                        emit progress(QString::fromStdString(label), pct, eta, "");
                     }
                 }
             }
 
-            // Drain any remaining stdout before reading exit status.
+            // Drain remaining stdout and collect stderr for error reporting.
             buf += proc.readAllStandardOutput();
+            QByteArray errOut = proc.readAllStandardError();
             proc.waitForFinished(-1);
 
             bool success = proc.exitStatus() == QProcess::NormalExit
                         && proc.exitCode() == 0;
-            // Always emit final state so the dialog reflects success or failure
-            // even when ffmpeg exited before producing any progress output
-            // (e.g. file not found, bad path, empty concat list).
-            emit progress(QString::fromStdString(label), success ? 100 : -1, 0);
+
+            // Build an error message from stderr (first non-empty line).
+            QString errMsg;
+            if (!success && !errOut.isEmpty()) {
+                for (const QByteArray& ln : errOut.split('\n')) {
+                    QString s = QString::fromLatin1(ln).trimmed();
+                    if (!s.isEmpty()) { errMsg = s; break; }
+                }
+            }
+
+            // Always emit final state so the dialog shows success or failure
+            // even when ffmpeg exited before producing any progress output.
+            emit progress(QString::fromStdString(label),
+                          success ? 100 : -1, 0, errMsg);
 
             return success;
         };
@@ -159,7 +188,9 @@ public slots:
     }
 
 signals:
-    void progress(const QString& label, int pct, int etaSecs);
+    // msg: non-empty on pct==-1 (ffmpeg stderr) or pct==-2 (cmd being run)
+    void progress(const QString& label, int pct, int etaSecs,
+                  const QString& msg);
     void finished(bool ok, const QString& error);
 
 private:
@@ -192,6 +223,31 @@ BuildProgressDialog::BuildProgressDialog(const Trip& trip,
             .arg(QString::fromStdString(trip.duration)),
         this);
     vlay->addWidget(tripLabel);
+
+    // Output directory — show where files will be written so the user can
+    // find them.  If outputDir is empty the build uses "." (current dir).
+    {
+        std::string outDir = opts.outputDir.empty() ? "." : opts.outputDir;
+        // Resolve "." to an absolute path so the user sees the real location.
+        if (outDir == ".") {
+#ifdef _WIN32
+            char buf[MAX_PATH] = {};
+            if (GetCurrentDirectoryA(MAX_PATH, buf))
+                outDir = buf;
+#else
+            char buf[4096] = {};
+            if (getcwd(buf, sizeof(buf)))
+                outDir = buf;
+#endif
+        }
+        m_outputDirLabel = new QLabel(
+            QString("Output: <tt>%1</tt>")
+                .arg(QString::fromStdString(outDir).toHtmlEscaped()),
+            this);
+        m_outputDirLabel->setStyleSheet("color: #404040; font-size: 8pt;");
+        m_outputDirLabel->setWordWrap(true);
+        vlay->addWidget(m_outputDirLabel);
+    }
 
     // Scroll area for the growing stage stack
     m_scrollArea = new QScrollArea(this);
@@ -325,7 +381,8 @@ void BuildProgressDialog::startBuild()
     worker->moveToThread(thread);
 
     connect(thread, &QThread::started,      worker, &BuildWorker::start);
-    connect(worker, &BuildWorker::progress, this,   &BuildProgressDialog::onProgress);
+    connect(worker, &BuildWorker::progress, this,   &BuildProgressDialog::onProgress,
+            Qt::QueuedConnection);
     connect(worker, &BuildWorker::finished, this,   &BuildProgressDialog::onFinished);
     connect(worker, &BuildWorker::finished, thread, &QThread::quit);
     connect(thread, &QThread::finished,     worker, &QObject::deleteLater);
@@ -337,8 +394,18 @@ void BuildProgressDialog::startBuild()
 // Progress update from worker.
 // Safe for concurrent stages: each label maps to its own row via m_rowIndex.
 // ---------------------------------------------------------------------------
-void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs)
+void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
+                                     const QString& msg)
 {
+    // pct == -2: debug/verbose — show the command being run in the footer.
+    if (pct == -2) {
+        if (!msg.isEmpty()) {
+            m_finalLabel->setText(msg);
+            m_finalLabel->setStyleSheet("color: #808080; font-size: 7pt; font-style: italic;");
+        }
+        return;
+    }
+
     // Add row on-the-fly for stages that weren't pre-populated (e.g. norm:N).
     if (!m_rowIndex.contains(label))
         addStageRow(label);
@@ -354,7 +421,10 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs)
         row.bar->setValue(0);
         row.status->setText("\u2717");
         row.status->setStyleSheet("color: #cc0000; font-weight: bold;");
-        m_finalLabel->setText(stageDisplayName(label) + " \u2014 failed");
+        QString errText = stageDisplayName(label) + " \u2014 failed";
+        if (!msg.isEmpty())
+            errText += ": " + msg;
+        m_finalLabel->setText(errText);
         m_finalLabel->setStyleSheet("color: #cc0000; font-style: italic;");
         return;
     }
@@ -421,8 +491,18 @@ void BuildProgressDialog::onFinished(bool ok, const QString& error)
                 row.status->setStyleSheet("color: #228b22; font-weight: bold;");
             }
         }
-        m_finalLabel->setText("\u2713  Build complete.");
-        m_finalLabel->setStyleSheet("color: #228b22; font-weight: bold;");
+        // If any stage explicitly failed, say so in the footer.
+        bool anyFailed = false;
+        for (const StageRow& row : m_rows)
+            if (row.failed) { anyFailed = true; break; }
+
+        if (anyFailed) {
+            m_finalLabel->setText("\u26a0  Completed with errors — check \u2717 rows above");
+            m_finalLabel->setStyleSheet("color: #b35900; font-weight: bold;");
+        } else {
+            m_finalLabel->setText("\u2713  Build complete.");
+            m_finalLabel->setStyleSheet("color: #228b22; font-weight: bold;");
+        }
     } else {
         // Mark any in-flight row as errored.
         for (StageRow& row : m_rows) {
@@ -440,4 +520,4 @@ void BuildProgressDialog::onFinished(bool ok, const QString& error)
 }
 
 #include "BuildProgressDialog.moc"
-// SN: 00092
+// SN: 00093
