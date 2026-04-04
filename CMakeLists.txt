@@ -330,6 +330,31 @@ if(Qt6_FOUND)
     target_link_libraries(pathmux-gui PRIVATE pathmuxlib Qt6::Widgets)
     if(WIN32)
         install(TARGETS pathmux-gui RUNTIME DESTINATION ".")
+        # Run windeployqt at install time so CPack ZIP captures Qt DLLs and
+        # plugin directories.  We locate windeployqt relative to the Qt6 bin dir
+        # so this works regardless of Qt version or install path.
+        find_program(WINDEPLOYQT_EXECUTABLE
+            NAMES windeployqt windeployqt6
+            HINTS "${Qt6_DIR}/../../../bin"
+            NO_DEFAULT_PATH
+        )
+        if(WINDEPLOYQT_EXECUTABLE)
+            install(CODE "
+                message(STATUS \"Running windeployqt on installed pathmux-gui.exe ...\")
+                execute_process(
+                    COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
+                        --release --no-translations
+                        \"\${CMAKE_INSTALL_PREFIX}/pathmux-gui.exe\"
+                    RESULT_VARIABLE _wdqt_result
+                )
+                if(NOT _wdqt_result EQUAL 0)
+                    message(WARNING \"windeployqt exited with \${_wdqt_result}\")
+                endif()
+            ")
+            message(STATUS "windeployqt found: ${WINDEPLOYQT_EXECUTABLE} — Qt DLLs will be bundled in ZIP")
+        else()
+            message(WARNING "windeployqt not found — Qt DLLs will NOT be bundled in the ZIP package")
+        endif()
     else()
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
@@ -392,9 +417,49 @@ if(WIN32)
 endif()
 
 # ---------------------------------------------------------------------------
+# macOS .pkg installer — macOS only, requires pkgbuild (Xcode Command Line Tools)
+# Run: cmake --build build-mac --target pkg
+# Output: packages/pathmux-<version>-macOS.pkg
+# ---------------------------------------------------------------------------
+if(APPLE)
+    find_program(PKGBUILD_EXECUTABLE pkgbuild)
+    if(PKGBUILD_EXECUTABLE)
+        set(_PKG_STAGING "${CMAKE_BINARY_DIR}/pkg-staging")
+        set(_PKG_OUTPUT  "${CMAKE_SOURCE_DIR}/packages/pathmux-${PATHMUX_VERSION}-macOS.pkg")
+
+        set(_PKG_DEPS pathmux pathmuxlib pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe)
+        if(Qt6_FOUND)
+            list(APPEND _PKG_DEPS pathmux-gui)
+        endif()
+
+        add_custom_target(pkg
+            # Clear and re-populate staging root
+            COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_PKG_STAGING}"
+            COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}"
+                    --prefix "${_PKG_STAGING}/payload"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_SOURCE_DIR}/packages"
+            # pkgbuild: files live under /usr/local on the target machine
+            COMMAND "${PKGBUILD_EXECUTABLE}"
+                    --root            "${_PKG_STAGING}/payload"
+                    --identifier      "com.nutballlabs.pathmux"
+                    --version         "${PATHMUX_VERSION}"
+                    --install-location "/usr/local"
+                    "${_PKG_OUTPUT}"
+            DEPENDS ${_PKG_DEPS}
+            COMMENT "Building macOS .pkg installer -> packages/pathmux-${PATHMUX_VERSION}-macOS.pkg"
+        )
+        message(STATUS "pkgbuild found: ${PKGBUILD_EXECUTABLE} — 'pkg' target enabled")
+    else()
+        message(STATUS "pkgbuild not found — 'pkg' target unavailable (install Xcode Command Line Tools)")
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # CPack — binary package generation
-# Linux: cmake --build build-linux --target package  -> RPM, DEB, TGZ
-# Windows ZIP: cmake --build build-win --target package  -> ZIP
+# Linux:   cmake --build build-linux --target package  -> RPM, DEB, TGZ
+# macOS:   cmake --build build-mac   --target package  -> TGZ, ZIP
+#          cmake --build build-mac   --target pkg      -> .pkg installer
+# Windows: cmake --build build-win   --target package  -> ZIP
 # Output lands in packages/ at the project root.
 # ---------------------------------------------------------------------------
 set(CPACK_PACKAGE_NAME "pathmux")
