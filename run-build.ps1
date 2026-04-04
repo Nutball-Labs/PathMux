@@ -3,15 +3,17 @@
 #   .\run-build.ps1           — configure, build, ZIP, MSI
 #   .\run-build.ps1 -NoPack   — configure + build only
 param(
-    [switch]$NoPack
+    [switch]$NoPack,
+    [switch]$NoGui       # skip windeployqt + GUI MSI step (CLI-only build)
 )
 
-$vcvars = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
-$cmake  = "C:\Qt\Tools\CMake_64\bin\cmake.exe"
-$wix    = "$env:USERPROFILE\.dotnet\tools\wix.exe"
-$src    = "C:\Users\iceberg\Nutball-Labs\pathmux"
-$build  = "C:\Users\iceberg\Nutball-Labs\pathmux\build-win"
-$out    = "C:\Users\iceberg\Nutball-Labs\pathmux\build_out.txt"
+$vcvars       = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+$cmake        = "C:\Qt\Tools\CMake_64\bin\cmake.exe"
+$wix          = "$env:USERPROFILE\.dotnet\tools\wix.exe"
+$windeployqt  = "C:\Qt\6.6.2\msvc2019_64\bin\windeployqt.exe"   # adjust Qt version path if needed
+$src          = "C:\Users\iceberg\Nutball-Labs\pathmux"
+$build        = "C:\Users\iceberg\Nutball-Labs\pathmux\build-win"
+$out          = "C:\Users\iceberg\Nutball-Labs\pathmux\build_out.txt"
 
 # Source vcvars and capture the resulting environment
 $envBlock = cmd /c "`"$vcvars`" > NUL 2>&1 && set" 2>$null
@@ -34,6 +36,20 @@ if ($LASTEXITCODE -ne 0) { Write-Host "Configure failed"; exit 1 }
 & $cmake --build $build 2>&1 | Tee-Object -FilePath $out -Append
 if ($LASTEXITCODE -ne 0) { Write-Host "Build failed"; exit 1 }
 
+# Qt deployment — copies Qt DLLs, platform plugins, and QML files next to
+# pathmux-gui.exe so it runs without a separate Qt installation.
+# Must run before CPack and MSI steps; CPack ZIP captures the result.
+if (-not $NoGui) {
+    if (Test-Path $windeployqt) {
+        Write-Host "`n--- Qt deployment (windeployqt) ---"
+        & $windeployqt --release --no-translations "$build\pathmux-gui.exe" 2>&1 | Tee-Object -FilePath $out -Append
+        if ($LASTEXITCODE -ne 0) { Write-Host "windeployqt failed"; exit 1 }
+    } else {
+        Write-Host "WARNING: windeployqt not found at $windeployqt — GUI may not run without Qt installed"
+        Write-Host "         Adjust `$windeployqt path in run-build.ps1 or install Qt via the Qt Online Installer"
+    }
+}
+
 if (-not $NoPack) {
     # ZIP via CPack
     Write-Host "`n--- Packaging ZIP ---"
@@ -51,4 +67,4 @@ if (-not $NoPack) {
 
 Write-Host "`nDone. Exit: $LASTEXITCODE"
 
-# SN: 00090
+# SN: 00092

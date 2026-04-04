@@ -25,6 +25,13 @@ endif()
 
 set(PATHMUX_VERSION "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}${VER_SUFFIX}")
 
+# macOS: set minimum deployment target before project() so all compiler tests
+# and find_package() calls see the correct SDK constraints.
+# Monterey (12.0) is the oldest release that ships std::filesystem without extra libs.
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version (Monterey)")
+endif()
+
 project(pathmux
     VERSION "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}"
     DESCRIPTION "Multi-camera dashcam footage manager, trip organizer, and video builder"
@@ -276,43 +283,11 @@ add_custom_target(archive
 )
 
 # ---------------------------------------------------------------------------
-# MSI installer — Windows only, requires WiX 6 (wix.exe in PATH)
-# Run: cmake --build build-win --target msi
-# Output: packages/pathmux-<version>-win64.msi
-# Install WiX 6: https://wixtoolset.org/releases/
-# ---------------------------------------------------------------------------
-if(WIN32)
-    # Accept explicit path from run-build.ps1 (-DWIX_EXECUTABLE=...) before searching PATH.
-    # WiX 6 installs as a .NET global tool and may not be visible in all shell environments.
-    if(NOT WIX_EXECUTABLE)
-        find_program(WIX_EXECUTABLE wix)
-    endif()
-    if(WIX_EXECUTABLE)
-        configure_file(
-            "${CMAKE_SOURCE_DIR}/wix/pathmux.wxs.in"
-            "${CMAKE_BINARY_DIR}/pathmux.wxs"
-            @ONLY
-        )
-        add_custom_target(msi
-            COMMAND "${WIX_EXECUTABLE}" build
-                -arch x64
-                -o "${CMAKE_SOURCE_DIR}/packages/pathmux-${PATHMUX_VERSION}-win64.msi"
-                "${CMAKE_BINARY_DIR}/pathmux.wxs"
-                -d BinDir="${CMAKE_BINARY_DIR}"
-                -d SrcDir="${CMAKE_SOURCE_DIR}"
-            DEPENDS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug
-            COMMENT "Building MSI with WiX 6"
-        )
-        message(STATUS "wix found: ${WIX_EXECUTABLE} — 'msi' target enabled")
-    else()
-        message(STATUS "wix.exe not found — 'msi' target unavailable (install WiX 6 from wixtoolset.org)")
-    endif()
-endif()
-
-# ---------------------------------------------------------------------------
 # pathmux-gui — Qt6 Widgets front-end
 # Skipped silently if Qt6 is not installed; CLI builds are unaffected.
-# Install: sudo dnf install qt6-qtbase-devel
+# Linux install:   sudo dnf install qt6-qtbase-devel
+# macOS install:   brew install qt6
+# Windows install: Qt Online Installer from qt.io
 # ---------------------------------------------------------------------------
 find_package(Qt6 QUIET COMPONENTS Widgets)
 if(Qt6_FOUND)
@@ -337,27 +312,83 @@ if(Qt6_FOUND)
         AUTORCC ON
     )
     if(WIN32)
+        # WIN32_EXECUTABLE suppresses the console window on Windows.
+        # pathmux.rc embeds pathmux.ico into the executable for taskbar/Explorer.
         set_target_properties(pathmux-gui PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_sources(pathmux-gui PRIVATE gui/resources/pathmux.rc)
     elseif(APPLE)
-        set_target_properties(pathmux-gui PROPERTIES MACOSX_BUNDLE TRUE)
+        set_target_properties(pathmux-gui PROPERTIES
+            MACOSX_BUNDLE                    TRUE
+            MACOSX_BUNDLE_BUNDLE_NAME        "PathMux"
+            MACOSX_BUNDLE_GUI_IDENTIFIER     "com.nutballlabs.pathmux"
+            MACOSX_BUNDLE_BUNDLE_VERSION     "${PATHMUX_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PATHMUX_VERSION}"
+            MACOSX_BUNDLE_INFO_PLIST         "${CMAKE_SOURCE_DIR}/gui/Info.plist.in"
+        )
     endif()
     target_include_directories(pathmux-gui PRIVATE gui/ cli/ ${CMAKE_SOURCE_DIR})
     target_link_libraries(pathmux-gui PRIVATE pathmuxlib Qt6::Widgets)
-    if(NOT WIN32)
+    if(WIN32)
+        install(TARGETS pathmux-gui RUNTIME DESTINATION ".")
+    else()
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
-        # XDG icon hierarchy for Linux desktop environments
+        # XDG icon hierarchy for Linux/macOS desktop environments
         foreach(sz 16 32 48 64 128 256 512)
             install(FILES "gui/resources/pathmux_${sz}.png"
                     DESTINATION "share/icons/hicolor/${sz}x${sz}/apps"
                     RENAME "pathmux.png")
         endforeach()
-    else()
-        install(TARGETS pathmux-gui RUNTIME DESTINATION ".")
+        # .desktop file — appears in GNOME/KDE application menus
+        if(NOT APPLE)
+            install(FILES "gui/pathmux.desktop"
+                    DESTINATION "share/applications")
+        endif()
     endif()
     message(STATUS "Qt6 found (${Qt6_VERSION}) — pathmux-gui target enabled")
 else()
     message(STATUS "Qt6 not found — pathmux-gui skipped (install qt6-qtbase-devel)")
+endif()
+
+# ---------------------------------------------------------------------------
+# MSI installer — Windows only, requires WiX 6 (wix.exe in PATH)
+# Run: cmake --build build-win --target msi
+# Output: packages/pathmux-<version>-win64.msi
+# Install WiX 6: https://wixtoolset.org/releases/
+# NOTE: Run windeployqt on pathmux-gui.exe before this target — the WiX
+#   template references Qt DLLs that windeployqt copies into the build dir.
+# ---------------------------------------------------------------------------
+if(WIN32)
+    # Accept explicit path from run-build.ps1 (-DWIX_EXECUTABLE=...) before searching PATH.
+    # WiX 6 installs as a .NET global tool and may not be visible in all shell environments.
+    if(NOT WIX_EXECUTABLE)
+        find_program(WIX_EXECUTABLE wix)
+    endif()
+    if(WIX_EXECUTABLE)
+        configure_file(
+            "${CMAKE_SOURCE_DIR}/wix/pathmux.wxs.in"
+            "${CMAKE_BINARY_DIR}/pathmux.wxs"
+            @ONLY
+        )
+        # Build dependency list — include GUI only if Qt6 was found
+        set(_MSI_DEPS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug)
+        if(Qt6_FOUND)
+            list(APPEND _MSI_DEPS pathmux-gui)
+        endif()
+        add_custom_target(msi
+            COMMAND "${WIX_EXECUTABLE}" build
+                -arch x64
+                -o "${CMAKE_SOURCE_DIR}/packages/pathmux-${PATHMUX_VERSION}-win64.msi"
+                "${CMAKE_BINARY_DIR}/pathmux.wxs"
+                -d BinDir="${CMAKE_BINARY_DIR}"
+                -d SrcDir="${CMAKE_SOURCE_DIR}"
+            DEPENDS ${_MSI_DEPS}
+            COMMENT "Building MSI with WiX 6"
+        )
+        message(STATUS "wix found: ${WIX_EXECUTABLE} — 'msi' target enabled")
+    else()
+        message(STATUS "wix.exe not found — 'msi' target unavailable (install WiX 6 from wixtoolset.org)")
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,10 @@
       <Directory Id="INSTALLDIR" Name="PathMux">
 
         <!-- One component per file — required for Guid="*" auto-generation -->
+        <!-- Qt6 GUI (requires Qt6 to be installed and windeployqt run first) -->
+        <Component Id="C_pathmux_gui"    Guid="*"><File Source="$(var.BinDir)\pathmux-gui.exe"   KeyPath="yes" /></Component>
+
+        <!-- CLI tools and shared library -->
         <Component Id="C_pathmux"        Guid="*"><File Source="$(var.BinDir)\pathmux.exe"        KeyPath="yes" /></Component>
         <Component Id="C_pm_gpsinfo"     Guid="*"><File Source="$(var.BinDir)\pm_gpsinfo.exe"     KeyPath="yes" /></Component>
         <Component Id="C_pm_gpsexport"   Guid="*"><File Source="$(var.BinDir)\pm_gpsexport.exe"   KeyPath="yes" /></Component>
@@ -55,6 +59,7 @@
     </StandardDirectory>
 
     <Feature Id="Complete" Title="PathMux" Level="1">
+      <ComponentRef Id="C_pathmux_gui" />
       <ComponentRef Id="C_pathmux" />
       <ComponentRef Id="C_pm_gpsinfo" />
       <ComponentRef Id="C_pm_gpsexport" />
@@ -70,4 +75,4 @@
 
   </Package>
 </Wix>
-<!-- SN: 00090 -->
+<!-- SN: 00092 -->

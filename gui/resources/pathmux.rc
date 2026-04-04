@@ -1,0 +1,6 @@
+// PathMux Windows application icon resource.
+// The MSVC resource compiler resolves the path relative to this file,
+// so ../../images/pathmux.ico points to the project-root images/ directory.
+#include <windows.h>
+IDI_APPICON ICON "..\\..\\images\\pathmux.ico"
+// SN: 00092
