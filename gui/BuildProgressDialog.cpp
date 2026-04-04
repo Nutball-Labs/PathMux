@@ -140,8 +140,10 @@ public slots:
 
             bool success = proc.exitStatus() == QProcess::NormalExit
                         && proc.exitCode() == 0;
-            if (totalUs > 0)
-                emit progress(QString::fromStdString(label), success ? 100 : -1, 0);
+            // Always emit final state so the dialog reflects success or failure
+            // even when ffmpeg exited before producing any progress output
+            // (e.g. file not found, bad path, empty concat list).
+            emit progress(QString::fromStdString(label), success ? 100 : -1, 0);
 
             return success;
         };
@@ -347,6 +349,7 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs)
 
     // pct == -1: stage failed — show error indicator without marking done.
     if (pct < 0) {
+        row.failed = true;
         row.bar->setRange(0, 100);
         row.bar->setValue(0);
         row.status->setText("\u2717");
@@ -403,6 +406,7 @@ void BuildProgressDialog::onFinished(bool ok, const QString& error)
     if (ok) {
         for (StageRow& row : m_rows) {
             if (row.bar->value() >= 100) continue;  // already marked done
+            if (row.failed) continue;               // already showing error
             if (!row.started) {
                 // Pre-populated but never activated — stage was skipped.
                 row.bar->setRange(0, 100);

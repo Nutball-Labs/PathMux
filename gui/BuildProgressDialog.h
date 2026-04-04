@@ -20,6 +20,7 @@ struct StageRow {
     QProgressBar* bar     = nullptr;
     QLabel*       status  = nullptr;
     bool          started = false;  // true once first progress signal received
+    bool          failed  = false;  // true if stage emitted pct == -1
 };
 
 class BuildProgressDialog : public QDialog {
