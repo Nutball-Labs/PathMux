@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## [1.1.0a / SN: 00093] - 2026-04-04
+### Fixed
+- **BuildProgressDialog: verbose mode + failure visibility** (`gui/BuildProgressDialog.cpp/.h`):
+  - Show resolved output directory in dialog header so users can find generated files.
+  - Capture ffmpeg stderr; display first error line in status footer when a stage fails.
+  - Show the exact ffmpeg command in the footer as each stage starts (pct==-2 verbose sentinel).
+  - Footer now shows "⚠ Completed with errors" when any stage has a red ✗, not "✓ Build complete".
+  - Switch `-loglevel quiet` → `-loglevel error` so ffmpeg errors are captured and shown.
+  - Explicit `Qt::QueuedConnection` on progress signal to guarantee signal ordering when stages
+    run on parallel `std::thread`s inside `buildTrip`.
+  - `StageRow::failed` flag prevents `onFinished(true)` from overwriting red ✗ rows with ✓.
+  - Final progress emit now always fires (removed `totalUs > 0` guard) so fast-failing stages
+    (bad path, permission denied, missing input) report failure instead of silently succeeding.
+- **Windows GUI: cmd.exe for ffmpeg** (`gui/BuildProgressDialog.cpp`): `sh -c` → `cmd.exe /c`
+  on Windows; `sh` doesn't exist in a standard Windows install, causing silent build failure.
+
+### Notes
+- Windows packages only in this patch (`pathmux-1.1.0a-win64.zip`, `pathmux-1.1.0a-win64.msi`).
+- Root cause of "all stages succeed in 2–3 seconds" on Windows was twofold: (1) `sh` not found
+  so process never started; (2) even after cmd.exe fix, fast ffmpeg failures with no progress
+  output fell through a `totalUs > 0` guard without emitting an error signal.
+
+---
+
 ## [Unreleased — Qt6 GUI initial implementation] - 2026-03-29
 ### Added
 - **Qt6 GUI (`gui/`):** Initial `pathmux-gui` binary — Qt Widgets two-pane dashcam explorer.
@@ -1179,4 +1203,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00090 -->
+<!-- SN: 00094 -->

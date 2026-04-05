@@ -11,7 +11,7 @@
 #define VERSION_MINOR 1
 #define VERSION_PATCH 0
 #define VERSION_BUILD 1
-#define VERSION_SUFFIX "a"
+#define VERSION_SUFFIX "b"
 
 // 2. Stringification macros
 #define STRINGIFY_HELPER(x) #x
@@ -44,4 +44,4 @@ static const char PATHMUX_LICENSE_NOTICE[] __attribute__((used)) =
     "|   ... Kali does NOT approve.\n";
 
 #endif
-// SN: 00093
+// SN: 00094

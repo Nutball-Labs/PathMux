@@ -6,8 +6,8 @@ cross-platform — these are packaging/deployment steps only.
 **Status (2026-04-04):**
 - ✅ Linux packages built (RPM, DEB, tar.gz)
 - ✅ macOS packages built (tar.gz, zip) — Qt 6.11.0 via Homebrew on penny
-- ❌ Windows packages — still needed (run on nutball1)
-- ❌ GitHub release — waiting on Windows packages
+- ✅ Windows packages built — Qt 6.10.2 MinGW on nutball1 (not MSVC — see Notes)
+- ✅ GitHub release v1.1.0 published — https://github.com/Nutball-Labs/PathMux/releases/tag/v1.1.0
 
 ---
 
@@ -147,4 +147,4 @@ Or use the GitHub web UI: Releases → Draft new release → tag v1.1.0 → uplo
 - The MSI `C_pathmux_gui` component assumes `windeployqt` has already been run
   and all Qt DLLs are present in `build-win\`. Qt DLL harvesting into the MSI
   is a future improvement — for now the ZIP is the canonical Windows distribution.
-<!-- SN: 00092 -->
+<!-- SN: 00094 -->

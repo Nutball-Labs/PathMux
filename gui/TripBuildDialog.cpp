@@ -373,4 +373,4 @@ bool TripBuildDialog::processNow() const
 {
     return m_btnNow && m_btnNow->isChecked();
 }
-// SN: 00093
+// SN: 00094

@@ -399,7 +399,7 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
     if (!CreateProcessA(nullptr, shellCmd.data(), nullptr, nullptr,
-                        FALSE, 0, nullptr, nullptr, &si, &pi)) {
+                        FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
         DeleteFileA(progressPath.c_str());
         return runFfmpeg(cmd);
     }
@@ -2364,4 +2364,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00092
+// SN: 00094

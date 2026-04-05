@@ -5,8 +5,6 @@
 #include <QVector>
 #include <QMap>
 #include <QString>
-#include <atomic>
-#include <memory>
 #include "trip_detection.hpp"
 #include "video_build.hpp"
 
@@ -19,14 +17,11 @@ class QVBoxLayout;
 // One row in the stage stack — name, bar, live status (ETA → ✓ when done)
 struct StageRow {
     QString       label;
-    QProgressBar* bar       = nullptr;
-    QLabel*       status    = nullptr;
-    QLabel*       fileLabel = nullptr;  // output filename, set when ffmpeg cmd is known
-    bool          started   = false;    // true once first progress signal received
-    bool          failed    = false;    // true if stage emitted pct == -1
+    QProgressBar* bar     = nullptr;
+    QLabel*       status  = nullptr;
+    bool          started = false;  // true once first progress signal received
+    bool          failed  = false;  // true if stage emitted pct == -1
 };
-
-class QCloseEvent;
 
 class BuildProgressDialog : public QDialog {
     Q_OBJECT
@@ -39,15 +34,11 @@ public:
 signals:
     void buildComplete(bool ok);
 
-protected:
-    void closeEvent(QCloseEvent* ev) override;
-
 private slots:
     // msg is non-empty only on failure — carries first line of ffmpeg stderr
     void onProgress(const QString& label, int pct, int etaSecs,
                     const QString& msg = "");
     void onFinished(bool ok, const QString& error);
-    void onCancelClicked();
 
 private:
     void addStageRow(const QString& label);
@@ -56,9 +47,6 @@ private:
     Pathmux::Trip     m_trip;
     VideoOptions      m_opts;
 
-    // Shared with the worker lambda — set to true to request cancellation.
-    std::shared_ptr<std::atomic<bool>> m_cancelFlag;
-
     QScrollArea*      m_scrollArea   = nullptr;
     QVBoxLayout*      m_stageLayout  = nullptr;
     QVector<StageRow> m_rows;
@@ -66,7 +54,6 @@ private:
 
     QLabel*           m_outputDirLabel = nullptr;  // shows resolved output path
     QLabel*           m_finalLabel     = nullptr;
-    QPushButton*      m_cancelBtn      = nullptr;
     QPushButton*      m_closeBtn       = nullptr;
 };
-// SN: 00093
+// SN: 00094

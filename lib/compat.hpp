@@ -21,16 +21,74 @@
 // Safe to include on all three platforms; most shims are no-ops on Linux/macOS.
 //
 // Linux/macOS: popen, pclose, WEXITSTATUS, and localtime_r are standard.
-// Windows (MSVC): popen/pclose → _popen/_pclose; WEXITSTATUS is a pass-through;
+// Windows: popen/pclose → windowsPopen/windowsPclose (CREATE_NO_WINDOW so no
+//   console window steals focus on each ffprobe/exiftool call).
+//   WEXITSTATUS is a pass-through.
 //   localtime_r does not exist — shimmed to localtime_s (reversed param order).
-// Windows (MinGW): usually has popen and localtime_r natively; defines harmless.
 // ---------------------------------------------------------------------------
 
 #ifdef _WIN32
-#  ifndef popen
-#    define popen  _popen
-#    define pclose _pclose
-#  endif
+#  include <io.h>      // _open_osfhandle
+#  include <fcntl.h>   // _O_RDONLY
+
+// windowsPopen — CreateProcess-based popen that suppresses the console window.
+// Supports "r" mode only (all current callers read stdout).
+inline FILE* windowsPopen(const char* cmd, const char* /*mode*/) {
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength              = sizeof(sa);
+    sa.lpSecurityDescriptor = nullptr;
+    sa.bInheritHandle       = TRUE;
+
+    HANDLE hRead, hWrite;
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0))
+        return nullptr;
+    // Don't let the child inherit the read end.
+    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si  = {};
+    si.cb            = sizeof(si);
+    si.dwFlags       = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.hStdInput     = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput    = hWrite;
+    si.hStdError     = GetStdHandle(STD_ERROR_HANDLE);
+    si.wShowWindow   = SW_HIDE;
+
+    // cmd.exe /c lets the shell handle redirection tokens (2>NUL, 2>&1 etc.)
+    // already embedded in `cmd`.
+    std::string cmdStr = std::string("cmd.exe /c ") + cmd;
+
+    PROCESS_INFORMATION pi = {};
+    // CreateProcessA requires a writable buffer for lpCommandLine.
+    // std::string::data() is non-const in C++17.
+    BOOL ok = CreateProcessA(nullptr, cmdStr.data(), nullptr, nullptr,
+                             TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    CloseHandle(hWrite);   // close write end regardless — child owns it now (or failed)
+    if (!ok) {
+        CloseHandle(hRead);
+        return nullptr;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    int fd = _open_osfhandle(reinterpret_cast<intptr_t>(hRead), _O_RDONLY);
+    if (fd == -1) {
+        CloseHandle(hRead);
+        return nullptr;
+    }
+    return _fdopen(fd, "r");
+}
+
+inline int windowsPclose(FILE* f) {
+    if (f) fclose(f);
+    return 0;
+}
+
+// Override any MinGW or MSVC definition so all callers get the hidden-window version.
+#  undef  popen
+#  undef  pclose
+#  define popen  windowsPopen
+#  define pclose windowsPclose
+
 #  ifndef WEXITSTATUS
 #    define WEXITSTATUS(s) (s)
 #  endif
@@ -97,4 +155,4 @@ inline std::string pathBasename(const std::string& p) {
     return (pos != std::string::npos) ? p.substr(pos + 1) : p;
 }
 
-// SN: 00092
+// SN: 00094

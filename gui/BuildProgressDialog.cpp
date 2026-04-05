@@ -11,14 +11,9 @@
 #include <QScrollArea>
 #include <QThread>
 #include <QScrollBar>
-#include <QCloseEvent>
 #include <QProcess>
-#include <QRegularExpression>
 #include <set>
 #include <cctype>
-#include <atomic>
-#include <memory>
-#include <stdexcept>
 #ifdef _WIN32
 #  include <windows.h>
 #else
@@ -26,21 +21,6 @@
 #endif
 
 using namespace Pathmux;
-
-// ---------------------------------------------------------------------------
-// Extract just the filename of the ffmpeg output file from a command string.
-// The output file is always the last "..." token in the command.
-// ---------------------------------------------------------------------------
-static QString outputFilenameFromCmd(const QString& cmd)
-{
-    int last = cmd.lastIndexOf('"');
-    if (last < 1) return {};
-    int prev = cmd.lastIndexOf('"', last - 1);
-    if (prev < 0) return {};
-    QString fullPath = cmd.mid(prev + 1, last - prev - 1);
-    int sep = fullPath.lastIndexOf(QRegularExpression(R"([/\\])"));
-    return sep >= 0 ? fullPath.mid(sep + 1) : fullPath;
-}
 
 // ---------------------------------------------------------------------------
 // Friendly display name for stage labels emitted by VideoBuilder.
@@ -84,9 +64,8 @@ static QString stageDisplayName(const QString& label)
 class BuildWorker : public QObject {
     Q_OBJECT
 public:
-    BuildWorker(const Trip& trip, const VideoOptions& opts,
-                std::shared_ptr<std::atomic<bool>> cancelFlag)
-        : m_trip(trip), m_opts(opts), m_cancelFlag(std::move(cancelFlag)) {}
+    BuildWorker(const Trip& trip, const VideoOptions& opts)
+        : m_trip(trip), m_opts(opts) {}
 
 public slots:
     void start() {
@@ -147,14 +126,6 @@ public slots:
             QByteArray buf;
             QByteArray errBuf;
             while (proc.state() != QProcess::NotRunning) {
-                // Check cancel flag every poll cycle — kill process and throw
-                // so buildTrip() stops immediately rather than starting the
-                // next stage.
-                if (m_cancelFlag->load()) {
-                    proc.kill();
-                    proc.waitForFinished(3000);
-                    throw std::runtime_error("cancelled");
-                }
                 proc.waitForReadyRead(100);
                 buf    += proc.readAllStandardOutput();
                 // Drain stderr each iteration — if the stderr pipe fills up
@@ -235,7 +206,6 @@ signals:
 private:
     Trip         m_trip;
     VideoOptions m_opts;
-    std::shared_ptr<std::atomic<bool>> m_cancelFlag;
 };
 
 // ---------------------------------------------------------------------------
@@ -244,15 +214,12 @@ private:
 BuildProgressDialog::BuildProgressDialog(const Trip& trip,
                                          const VideoOptions& opts,
                                          QWidget* parent)
-    : QDialog(parent), m_trip(trip), m_opts(opts),
-      m_cancelFlag(std::make_shared<std::atomic<bool>>(false))
+    : QDialog(parent), m_trip(trip), m_opts(opts)
 {
     setWindowTitle("Building Video");
-    // Non-modal independent window — main window stays accessible.
-    // Qt::Window gives it its own taskbar entry; keep default close button
-    // but disable it until the build finishes via the close button state.
-    setWindowFlags(Qt::Window);
+    setModal(true);
     setMinimumWidth(560);
+    setWindowFlags(windowFlags() & ~Qt::WindowCloseButtonHint);
 
     auto* vlay = new QVBoxLayout(this);
     vlay->setSpacing(10);
@@ -313,14 +280,11 @@ BuildProgressDialog::BuildProgressDialog(const Trip& trip,
     m_finalLabel->setStyleSheet("color: #606060; font-style: italic;");
     vlay->addWidget(m_finalLabel);
 
-    m_cancelBtn = new QPushButton("Cancel", this);
-    m_closeBtn  = new QPushButton("Close", this);
+    m_closeBtn = new QPushButton("Close", this);
     m_closeBtn->setEnabled(false);
     auto* bbox = new QDialogButtonBox(this);
-    bbox->addButton(m_cancelBtn, QDialogButtonBox::RejectRole);
-    bbox->addButton(m_closeBtn,  QDialogButtonBox::AcceptRole);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &BuildProgressDialog::onCancelClicked);
-    connect(m_closeBtn,  &QPushButton::clicked, this, &QDialog::accept);
+    bbox->addButton(m_closeBtn, QDialogButtonBox::AcceptRole);
+    connect(m_closeBtn, &QPushButton::clicked, this, &QDialog::accept);
     vlay->addWidget(bbox);
 
     resize(560, 300);
@@ -348,24 +312,12 @@ void BuildProgressDialog::addStageRow(const QString& label)
     );
 
     auto* hbox = new QHBoxLayout(rowFrame);
-    hbox->setContentsMargins(6, 4, 6, 4);
+    hbox->setContentsMargins(6, 3, 6, 3);
     hbox->setSpacing(8);
 
-    // Left column: stage name + filename subtitle stacked vertically
-    auto* nameCol  = new QWidget(rowFrame);
-    auto* nameVbox = new QVBoxLayout(nameCol);
-    nameVbox->setContentsMargins(0, 0, 0, 0);
-    nameVbox->setSpacing(1);
-
-    auto* nameLabel = new QLabel(stageDisplayName(label), nameCol);
-    nameVbox->addWidget(nameLabel);
-
-    row.fileLabel = new QLabel(nameCol);
-    row.fileLabel->setStyleSheet("color: #909090; font-size: 7pt; font-style: italic;");
-    nameVbox->addWidget(row.fileLabel);
-
-    nameCol->setMinimumWidth(200);
-    nameCol->setMaximumWidth(200);
+    auto* nameLabel = new QLabel(stageDisplayName(label), rowFrame);
+    nameLabel->setMinimumWidth(180);
+    nameLabel->setMaximumWidth(180);
 
     row.bar = new QProgressBar(rowFrame);
     row.bar->setRange(0, 100);
@@ -378,7 +330,7 @@ void BuildProgressDialog::addStageRow(const QString& label)
     row.status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     row.status->setStyleSheet("color: #505050; font-size: 8pt;");
 
-    hbox->addWidget(nameCol);
+    hbox->addWidget(nameLabel);
     hbox->addWidget(row.bar, 1);
     hbox->addWidget(row.status);
 
@@ -435,7 +387,7 @@ void BuildProgressDialog::startBuild()
     populateExpectedRows();
 
     QThread*     thread = new QThread(this);
-    BuildWorker* worker = new BuildWorker(m_trip, m_opts, m_cancelFlag);
+    BuildWorker* worker = new BuildWorker(m_trip, m_opts);
     worker->moveToThread(thread);
 
     connect(thread, &QThread::started,      worker, &BuildWorker::start);
@@ -455,19 +407,11 @@ void BuildProgressDialog::startBuild()
 void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
                                      const QString& msg)
 {
-    // pct == -2: ffmpeg command is known — extract output filename for the row.
+    // pct == -2: debug/verbose — show the command being run in the footer.
     if (pct == -2) {
         if (!msg.isEmpty()) {
-            // Show the command in the footer (verbose diagnostics).
             m_finalLabel->setText(msg);
             m_finalLabel->setStyleSheet("color: #808080; font-size: 7pt; font-style: italic;");
-            // Also update the row's filename subtitle if the row exists.
-            auto it = m_rowIndex.find(label);
-            if (it != m_rowIndex.end()) {
-                QString fname = outputFilenameFromCmd(msg);
-                if (!fname.isEmpty() && m_rows[it.value()].fileLabel)
-                    m_rows[it.value()].fileLabel->setText(fname);
-            }
         }
         return;
     }
@@ -570,54 +514,20 @@ void BuildProgressDialog::onFinished(bool ok, const QString& error)
             m_finalLabel->setStyleSheet("color: #228b22; font-weight: bold;");
         }
     } else {
-        bool cancelled = m_cancelFlag->load();
-        // Mark any in-flight row appropriately.
+        // Mark any in-flight row as errored.
         for (StageRow& row : m_rows) {
-            if (row.started && row.bar->value() < 100 && !row.failed) {
-                row.status->setText(cancelled ? "\u23f9" : "\u2717");  // ⏹ or ✗
-                row.status->setStyleSheet(cancelled
-                    ? "color: #808080; font-weight: bold;"
-                    : "color: #cc0000; font-weight: bold;");
+            if (row.bar->value() > 0 && row.bar->value() < 100) {
+                row.status->setText("\u2717");
+                row.status->setStyleSheet("color: #cc0000; font-weight: bold;");
             }
         }
-        if (cancelled) {
-            m_finalLabel->setText("\u23f9  Cancelled.");
-            m_finalLabel->setStyleSheet("color: #606060; font-weight: bold;");
-        } else {
-            m_finalLabel->setText("\u2717  Error: " + error);
-            m_finalLabel->setStyleSheet("color: #cc0000; font-weight: bold;");
-        }
+        m_finalLabel->setText("\u2717  Error: " + error);
+        m_finalLabel->setStyleSheet("color: #cc0000; font-weight: bold;");
     }
 
-    m_cancelBtn->setEnabled(false);
     m_closeBtn->setEnabled(true);
     emit buildComplete(ok);
 }
 
-// ---------------------------------------------------------------------------
-// Cancel button — set flag; the worker loop will kill ffmpeg and throw.
-// ---------------------------------------------------------------------------
-void BuildProgressDialog::onCancelClicked()
-{
-    m_cancelFlag->store(true);
-    m_cancelBtn->setEnabled(false);
-    m_cancelBtn->setText("Cancelling\u2026");
-    m_finalLabel->setText("Cancelling\u2026");
-    m_finalLabel->setStyleSheet("color: #808080; font-style: italic;");
-}
-
-// ---------------------------------------------------------------------------
-// Close via X button — cancel if still building, close if done.
-// ---------------------------------------------------------------------------
-void BuildProgressDialog::closeEvent(QCloseEvent* ev)
-{
-    if (m_cancelBtn->isEnabled()) {
-        onCancelClicked();
-        ev->ignore();   // stay open until worker acknowledges cancellation
-    } else {
-        ev->accept();
-    }
-}
-
 #include "BuildProgressDialog.moc"
-// SN: 00093
+// SN: 00094

@@ -1,18 +1,20 @@
-# Line-ending normalization
-# Ensures Windows-specific files always have CRLF on checkout,
-# regardless of the authoring platform.
+# Line-ending normalization: store LF in git, check out LF on all platforms.
+# This eliminates the CRLF/LF round-trip conflicts that occur when mixing
+# Windows (core.autocrlf=true) and macOS/Linux (core.autocrlf=false) machines.
+# All text editors in use (VS Code, vim) handle LF cleanly on Windows.
+* text=auto eol=lf
 
-# PowerShell scripts must be CRLF on Windows (PS 5.x backtick-continuation fails on LF)
-*.ps1   text eol=crlf
-
-# Batch files
-*.bat   text eol=crlf
-
-# WiX installer definitions
-*.wxs   text eol=crlf
-*.wxs.in text eol=crlf
-
-# Shell scripts — always LF
-*.sh    text eol=lf
-
-# Everything else — let git use the platform default (core.autocrlf)
+# Explicit binary markers so git never tries to convert these
+*.png    binary
+*.jpg    binary
+*.ico    binary
+*.icns   binary
+*.pkg    binary
+*.zip    binary
+*.tgz    binary
+*.msi    binary
+*.exe    binary
+*.dll    binary
+*.a      binary
+*.dylib  binary
+*.so     binary
