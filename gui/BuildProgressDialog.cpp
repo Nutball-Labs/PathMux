@@ -114,6 +114,18 @@ public slots:
             proc.setProgram("cmd.exe");
             proc.setNativeArguments("/c " + QString::fromStdString(fullCmd));
             proc.start();
+#elif defined(__APPLE__)
+            // macOS GUI apps launch with a minimal PATH (/usr/bin:/bin …) that
+            // excludes Homebrew (/usr/local/bin on Intel, /opt/homebrew/bin on
+            // Apple Silicon).  Prepend both so "ffmpeg" resolves regardless of
+            // which Homebrew prefix is in use.  An explicit ffmpegPath in prefs
+            // takes precedence because the command already contains the full path.
+            {
+                QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+                env.insert("PATH", "/usr/local/bin:/opt/homebrew/bin:" + env.value("PATH"));
+                proc.setProcessEnvironment(env);
+            }
+            proc.start("sh", {"-c", QString::fromStdString(fullCmd)});
 #else
             proc.start("sh", {"-c", QString::fromStdString(fullCmd)});
 #endif
