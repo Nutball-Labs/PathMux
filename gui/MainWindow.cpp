@@ -7,6 +7,7 @@
 #include "AboutDialog.h"
 #include "SettingsDialog.h"
 #include "ManifestManagerDialog.h"
+#include "SetupWizard.h"
 #include <QSplitter>
 #include <QFileDialog>
 #include <QMenuBar>
@@ -107,6 +108,9 @@ void MainWindow::buildMenuBar()
     settingsAct->setShortcut(QKeySequence::Preferences);
     connect(settingsAct, &QAction::triggered, this, &MainWindow::onSettings);
 
+    QAction* wizardAct = toolsMenu->addAction("Setup &Wizard\u2026");
+    connect(wizardAct, &QAction::triggered, this, &MainWindow::onSetupWizard);
+
     toolsMenu->addSeparator();
 
     QAction* probeAct = toolsMenu->addAction("&Probe SD Card\u2026");
@@ -143,6 +147,27 @@ void MainWindow::onManageManifests()
     connect(&dlg, &ManifestManagerDialog::manifestsChanged,
             m_tripGridPanel, &TripGridPanel::refreshPageState);
     dlg.exec();
+}
+
+void MainWindow::onSetupWizard()
+{
+    // Pre-populate wizard with current settings so existing users see their
+    // configuration and can update specific parts (e.g. swap encoder preset
+    // after adding a better GPU) without having to hunt for each setting.
+    Pathmux::ConfigManager config;
+    config.loadSettings();
+    const Pathmux::AppSettings& s = config.getSettings();
+
+    SetupWizard wiz(this);
+    wiz.setField("ffmpegPath",    QString::fromStdString(s.ffmpegPath));
+    wiz.setField("exiftoolPath",  QString::fromStdString(s.exiftoolPath));
+    wiz.setField("exportDir",     QString::fromStdString(s.defaultExportDir));
+    wiz.setField("encoderPreset", QString::fromStdString(s.encode.preset));
+
+    if (wiz.exec() == QDialog::Accepted) {
+        m_manifestPanel->refresh();
+        m_tripGridPanel->refreshPageState();
+    }
 }
 
 void MainWindow::onScanRequested()

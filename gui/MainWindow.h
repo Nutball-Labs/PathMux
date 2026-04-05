@@ -21,6 +21,7 @@ private slots:
     void onAbout();
     void onSettings();
     void onManageManifests();
+    void onSetupWizard();
 
 private:
     void buildMenuBar();
