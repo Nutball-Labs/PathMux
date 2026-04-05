@@ -52,6 +52,7 @@ private:
     QLabel*              m_noSelLabel;
     QScrollArea*         m_scrollArea;
     QWidget*             m_gridContainer;
+    QLabel*              m_manifestHeader = nullptr;  // sticky bar above tile grid
 
     Pathmux::ManifestEntry  m_currentManifest;
     std::vector<TripTile*>  m_tiles;
@@ -70,4 +71,4 @@ private slots:
     void loadNextThumbnail();
     void onBuildRequested(const Pathmux::Trip& trip);
 };
-// SN: 00091
+// SN: 00093

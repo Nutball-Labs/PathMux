@@ -20,6 +20,22 @@ TripGridPanel::TripGridPanel(QWidget* parent)
 {
     auto* vlay = new QVBoxLayout(this);
     vlay->setContentsMargins(0, 0, 0, 0);
+    vlay->setSpacing(0);
+
+    // Sticky manifest header — visible only when a manifest is loaded (PAGE_GRID).
+    // Format: "MR -- Z:/ex01/ -- 19 trips"
+    m_manifestHeader = new QLabel(this);
+    m_manifestHeader->setAlignment(Qt::AlignCenter);
+    m_manifestHeader->setStyleSheet(
+        "QLabel {"
+        "  background: #e8edf2;"
+        "  border-bottom: 1px solid #b0bbc8;"
+        "  padding: 4px 8px;"
+        "  font-size: 8pt;"
+        "  color: #2a3a4a;"
+        "}");
+    m_manifestHeader->hide();
+    vlay->addWidget(m_manifestHeader);
 
     m_stack = new QStackedWidget(this);
 
@@ -71,6 +87,17 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
     m_currentManifest = entry;
     clearTiles();
     m_thumbQueue.clear();
+
+    // Build sticky header: "MR -- Z:/ex01/ -- 19 trips"
+    {
+        QString id   = QString::fromStdString(entry.id).toUpper();
+        QString path = QString::fromStdString(entry.path);
+        int     n    = entry.tripCount;
+        m_manifestHeader->setText(
+            QString("%1 \u2014\u2014 %2 \u2014\u2014 %3 trip%4")
+                .arg(id).arg(path).arg(n).arg(n == 1 ? "" : "s"));
+        m_manifestHeader->show();
+    }
 
     ConfigManager config;
     config.loadSettings();
@@ -211,10 +238,13 @@ void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
 
     if (dlg.processNow()) {
         VideoOptions opts = dlg.buildOptions();
-        BuildProgressDialog progress(trip, opts, this);
-        progress.startBuild();
-        progress.exec();
+        // Non-modal: allocate on heap so the main window stays interactive.
+        // WA_DeleteOnClose cleans up when the user dismisses it.
+        auto* progress = new BuildProgressDialog(trip, opts, nullptr);
+        progress->setAttribute(Qt::WA_DeleteOnClose);
+        progress->show();
+        progress->startBuild();
     }
     // "Add to Batch Queue" path: dlg.processNow() == false — handled in future release
 }
-// SN: 00091
+// SN: 00093

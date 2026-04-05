@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "TripBuildDialog.h"
+#include <filesystem>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -339,6 +340,26 @@ VideoOptions TripBuildDialog::buildOptions() const
     opts.outputDir        = m_outputDir ? m_outputDir->text().trimmed().toStdString() : "";
     opts.basenameOverride = m_basename  ? m_basename->text().trimmed().toStdString()  : "";
 
+    // If no output directory was specified, default to the footage source
+    // directory so files land next to the input footage instead of in the
+    // app's CWD (which may be a non-writable Program Files directory).
+    if (opts.outputDir.empty()) {
+        namespace fs = std::filesystem;
+        for (const auto& seg : m_trip.segments) {
+            for (const auto& [slot, path] : seg.cameras) {
+                if (path.empty() || path == "-") continue;
+                // Segment path: <footage>/Front/20260225_0F.ts
+                // Parent of parent = footage root
+                std::error_code ec;
+                auto p = fs::path(path).parent_path().parent_path();
+                if (fs::is_directory(p, ec) && !ec)
+                    opts.outputDir = p.string();
+                break;
+            }
+            if (!opts.outputDir.empty()) break;
+        }
+    }
+
     opts.ffmpegPath      = m_ffmpegPath;
     opts.encode          = m_encode;
     opts.sourcePath      = m_manifest.path;
@@ -352,4 +373,4 @@ bool TripBuildDialog::processNow() const
 {
     return m_btnNow && m_btnNow->isChecked();
 }
-// SN: 00092
+// SN: 00093
