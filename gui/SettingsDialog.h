@@ -58,7 +58,6 @@ private:
     // -- General tab --
     QSpinBox*  m_gapThreshold   = nullptr;
     QSpinBox*  m_fuzzyWindow    = nullptr;
-    QSpinBox*  m_gpsSkip        = nullptr;
     QComboBox* m_timestampFmt   = nullptr;
     QComboBox* m_timeDisplay    = nullptr;
     QCheckBox* m_useImperial    = nullptr;

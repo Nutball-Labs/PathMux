@@ -96,10 +96,6 @@ void SettingsDialog::buildGeneralTab(QTabWidget* tabs)
     form->addRow("Camera fuzzy window:", m_fuzzyWindow);
     form->addRow("", new QLabel("<i>Timestamp tolerance for matching side cameras to Front (±N seconds)</i>"));
 
-    m_gpsSkip = new QSpinBox; m_gpsSkip->setRange(0, 300); m_gpsSkip->setSuffix(" s");
-    form->addRow("GPS cold-start skip:", m_gpsSkip);
-    form->addRow("", new QLabel("<i>Seconds to skip at start of first segment — avoids GPS lock lag</i>"));
-
     auto* sep1 = new QFrame; sep1->setFrameShape(QFrame::HLine); form->addRow(sep1);
 
     // Display
@@ -395,7 +391,6 @@ void SettingsDialog::loadFromConfig()
     // General
     m_gapThreshold->setValue(s.gapThresholdSeconds);
     m_fuzzyWindow->setValue(s.fuzzyWindowSeconds);
-    m_gpsSkip->setValue(s.gpsColStartSkip);
     m_timestampFmt->setCurrentIndex(comboFind(m_timestampFmt, QString::fromStdString(s.timestampFormat)));
     m_timeDisplay->setCurrentIndex(comboFind(m_timeDisplay, QString::fromStdString(s.timeDisplay)));
     m_useImperial->setChecked(s.useImperial);
@@ -465,7 +460,6 @@ void SettingsDialog::saveToConfig()
     // General
     s.gapThresholdSeconds = m_gapThreshold->value();
     s.fuzzyWindowSeconds  = m_fuzzyWindow->value();
-    s.gpsColStartSkip     = m_gpsSkip->value();
     s.timestampFormat     = m_timestampFmt->currentText().toStdString();
     s.timeDisplay         = m_timeDisplay->currentText().toStdString();
     s.useImperial         = m_useImperial->isChecked();

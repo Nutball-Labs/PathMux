@@ -82,9 +82,6 @@ struct AppSettings {
     int  gapThresholdSeconds = 900;    // Trip gap: default 15 minutes
     int  fuzzyWindowSeconds  = 5;      // Camera fuzzy-match tolerance (±N seconds)
 
-    // GPS extraction
-    int  gpsColStartSkip     = 45;     // Seconds to skip at start of first segment
-
     // External tool paths ("" = search system PATH)
     std::string exiftoolPath;          // default: "exiftool"
     std::string exiftoolOptions;       // default: "-ee3"
@@ -163,7 +160,6 @@ public:
 
     int                getGapThreshold()  const { return settings.gapThresholdSeconds; }
     int                getFuzzyWindow()   const { return settings.fuzzyWindowSeconds; }
-    int                getGpsSkip()       const { return settings.gpsColStartSkip; }
     std::string        getExiftoolPath()  const {
         return settings.exiftoolPath.empty() ? "exiftool" : settings.exiftoolPath;
     }

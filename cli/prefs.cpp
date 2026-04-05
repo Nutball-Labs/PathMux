@@ -48,8 +48,6 @@ bool PrefsEditor::run(ConfigManager& config) {
                       + "  (" + fmtTime(working.gapThresholdSeconds) + ")");
         UI::printLine("[B]  Fuzzy window (seconds)    "
                       + std::to_string(working.fuzzyWindowSeconds));
-        UI::printLine("[C]  GPS cold-start skip (s)   "
-                      + std::to_string(working.gpsColStartSkip));
         UI::printLine("[D]  Default export directory  "
                       + fmtPath(working.defaultExportDir));
         UI::printLine("[E]  ExifTool path             "
@@ -105,11 +103,6 @@ bool PrefsEditor::run(ConfigManager& config) {
         else if (ch == 'B') {
             working.fuzzyWindowSeconds = UI::promptInt(
                 "Fuzzy window (seconds)", working.fuzzyWindowSeconds, 1, 30);
-            changed = true;
-        }
-        else if (ch == 'C') {
-            working.gpsColStartSkip = UI::promptInt(
-                "GPS cold-start skip (seconds)", working.gpsColStartSkip, 0, 300);
             changed = true;
         }
         else if (ch == 'D') {

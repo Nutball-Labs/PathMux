@@ -75,7 +75,6 @@ void ConfigManager::loadSettings() {
     settings.schemaVersion       = j.value("schemaVersion",       settings.schemaVersion);
     settings.gapThresholdSeconds = j.value("gapThresholdSeconds", settings.gapThresholdSeconds);
     settings.fuzzyWindowSeconds  = j.value("fuzzyWindowSeconds",  settings.fuzzyWindowSeconds);
-    settings.gpsColStartSkip     = j.value("gpsColStartSkip",     settings.gpsColStartSkip);
     settings.exiftoolPath        = j.value("exiftoolPath",        settings.exiftoolPath);
     settings.exiftoolOptions     = j.value("exiftoolOptions",     settings.exiftoolOptions);
     settings.ffmpegPath          = j.value("ffmpegPath",          settings.ffmpegPath);
@@ -139,7 +138,6 @@ void ConfigManager::saveSettings() {
     j["schemaVersion"]       = settings.schemaVersion;
     j["gapThresholdSeconds"] = settings.gapThresholdSeconds;
     j["fuzzyWindowSeconds"]  = settings.fuzzyWindowSeconds;
-    j["gpsColStartSkip"]     = settings.gpsColStartSkip;
     j["exiftoolPath"]        = settings.exiftoolPath;
     j["exiftoolOptions"]     = settings.exiftoolOptions;
     j["ffmpegPath"]          = settings.ffmpegPath;
@@ -319,8 +317,6 @@ void ConfigManager::showSettings() const {
               << std::setw(28) << "fuzzyWindowSeconds"
               << settings.fuzzyWindowSeconds
               << "  (±" << settings.fuzzyWindowSeconds << "s)\n"
-              << std::setw(28) << "gpsColStartSkip"
-              << settings.gpsColStartSkip << "s\n"
               << std::setw(28) << "exiftoolPath"
               << (settings.exiftoolPath.empty() ? "exiftool (system)" : settings.exiftoolPath) << "\n"
               << std::setw(28) << "exiftoolOptions"
