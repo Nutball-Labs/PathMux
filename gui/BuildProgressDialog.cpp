@@ -266,7 +266,7 @@ BuildProgressDialog::BuildProgressDialog(const Trip& trip,
             QString("Output: <tt>%1</tt>")
                 .arg(QString::fromStdString(outDir).toHtmlEscaped()),
             this);
-        m_outputDirLabel->setStyleSheet("color: #404040; font-size: 8pt;");
+        m_outputDirLabel->setStyleSheet("font-size: 8pt;");   /* no color — inherits palette */
         m_outputDirLabel->setWordWrap(true);
         vlay->addWidget(m_outputDirLabel);
     }
@@ -289,7 +289,7 @@ BuildProgressDialog::BuildProgressDialog(const Trip& trip,
 
     // Final status line (shows "Build complete" or error)
     m_finalLabel = new QLabel("Waiting for first stage...", this);
-    m_finalLabel->setStyleSheet("color: #606060; font-style: italic;");
+    m_finalLabel->setStyleSheet("font-style: italic;");   /* no color — inherits palette */
     vlay->addWidget(m_finalLabel);
 
     m_closeBtn = new QPushButton("Close", this);
@@ -317,7 +317,7 @@ void BuildProgressDialog::addStageRow(const QString& label)
     rowFrame->setObjectName("stageRow");
     rowFrame->setStyleSheet(
         "QFrame#stageRow {"
-        "  border: 1px solid #c8c8c8;"
+        "  border: 1px solid #888888;"   /* visible on both light and dark themes */
         "  border-radius: 3px;"
         "}"
         "QFrame#stageRow QLabel { border: none; background: transparent; }"
@@ -340,7 +340,7 @@ void BuildProgressDialog::addStageRow(const QString& label)
     row.status = new QLabel(rowFrame);
     row.status->setMinimumWidth(90);
     row.status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    row.status->setStyleSheet("color: #505050; font-size: 8pt;");
+    row.status->setStyleSheet("font-size: 8pt;");   /* no color — inherits palette */
 
     hbox->addWidget(nameLabel);
     hbox->addWidget(row.bar, 1);
@@ -423,7 +423,7 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
     if (pct == -2) {
         if (!msg.isEmpty()) {
             m_finalLabel->setText(msg);
-            m_finalLabel->setStyleSheet("color: #808080; font-size: 7pt; font-style: italic;");
+            m_finalLabel->setStyleSheet("color: #999999; font-size: 7pt; font-style: italic;");
         }
         return;
     }
@@ -457,7 +457,7 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
         row.started = true;
         row.bar->setRange(0, 0);   // range(0,0) = Qt indeterminate animation
         row.status->setText("Running\u2026");
-        row.status->setStyleSheet("color: #0055aa; font-style: italic; font-size: 8pt;");
+        row.status->setStyleSheet("color: #4499ff; font-style: italic; font-size: 8pt;");
         // Scroll so the newly active row is visible.
         QScrollBar* sb = m_scrollArea->verticalScrollBar();
         sb->setValue(sb->maximum());
@@ -479,14 +479,14 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
                     .arg(etaSecs / 60).arg(etaSecs % 60, 2, 10, QChar('0')));
             else
                 row.status->setText(QString("%1s").arg(etaSecs));
-            row.status->setStyleSheet("color: #505050; font-size: 8pt;");
+            row.status->setStyleSheet("font-size: 8pt;");   /* no color — inherits palette */
         }
         m_finalLabel->setText(stageDisplayName(label) + "\u2026");
-        m_finalLabel->setStyleSheet("color: #606060; font-style: italic;");
+        m_finalLabel->setStyleSheet("font-style: italic;");   /* no color — inherits palette */
     } else {
         // pct == 0: stage just activated (bar already pulsing from above).
         m_finalLabel->setText(stageDisplayName(label) + "\u2026");
-        m_finalLabel->setStyleSheet("color: #606060; font-style: italic;");
+        m_finalLabel->setStyleSheet("font-style: italic;");   /* no color — inherits palette */
     }
 }
 
