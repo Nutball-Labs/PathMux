@@ -1,0 +1,13 @@
+#!/bin/bash
+# PathMux macOS postinstall — move GUI app to /Applications.
+# pkgbuild installs everything to /usr/local; the installer runs this
+# script with root privileges so it can write to /Applications.
+set -e
+
+if [ -d "/usr/local/pathmux-gui.app" ]; then
+    rm -rf "/Applications/pathmux-gui.app"
+    mv "/usr/local/pathmux-gui.app" "/Applications/"
+fi
+
+exit 0
+# SN: 00094

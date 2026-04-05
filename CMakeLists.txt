@@ -356,22 +356,17 @@ if(Qt6_FOUND)
             message(WARNING "windeployqt not found — Qt DLLs will NOT be bundled in the ZIP package")
         endif()
     elseif(APPLE)
-        # macOS: bundle goes to Applications/, CLI runtime stays in bin/.
-        # INSTALL_RPATH is intentionally empty — macdeployqt (POST_BUILD) already
-        # rewrites all load paths before cmake --install runs, so CMake's built-in
-        # rpath fixup step would error trying to delete a path that no longer exists.
-        # macdeployqt (POST_BUILD) rewrites all Qt load paths before cmake --install
-        # runs. CMake's install-time rpath fixup then tries to remove the build
-        # rpath and errors because macdeployqt already removed it. Both properties
-        # below suppress CMake's rpath manipulation for this target on macOS.
-        # Note: cmake --install still emits one install_name_tool error from its
-        # internal fixup script; this is cosmetic and does not affect the package.
+        # macOS: stage bundle under /usr/local (unsigned pkgs can install there);
+        # the postinstall script moves it to /Applications at install time.
+        # SKIP_*_RPATH: macdeployqt (POST_BUILD) rewrites Qt load paths before
+        # cmake --install runs, so CMake's rpath fixup would fail trying to delete
+        # a path macdeployqt already removed. Both flags suppress that step.
         set_target_properties(pathmux-gui PROPERTIES
             SKIP_BUILD_RPATH    TRUE
             SKIP_INSTALL_RPATH  TRUE
         )
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-                                    BUNDLE  DESTINATION Applications)
+                                    BUNDLE  DESTINATION .)
     else()
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
@@ -462,22 +457,24 @@ if(APPLE)
             list(APPEND _PKG_DEPS pathmux-gui)
         endif()
 
+        set(_PKG_SCRIPTS "${CMAKE_SOURCE_DIR}/packaging/macos-scripts")
+
         add_custom_target(pkg
             # Clear and re-populate staging root.
-            # cmake --install lays out:
-            #   payload/Applications/pathmux-gui.app   (BUNDLE DESTINATION Applications)
-            #   payload/usr/local/bin/pathmux …        (RUNTIME DESTINATION bin)
-            # pkgbuild --install-location / maps that tree onto the live filesystem,
-            # so the GUI lands in /Applications and the CLI tools in /usr/local/bin.
+            # cmake --install stages everything under /usr/local (safe for
+            # unsigned pkgs). The postinstall script (packaging/macos-scripts/)
+            # moves pathmux-gui.app from /usr/local to /Applications at install
+            # time using the elevated privileges the macOS installer already holds.
             COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_PKG_STAGING}"
             COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}"
                     --prefix "${_PKG_STAGING}/payload"
             COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_SOURCE_DIR}/packages"
             COMMAND "${PKGBUILD_EXECUTABLE}"
                     --root            "${_PKG_STAGING}/payload"
+                    --scripts         "${_PKG_SCRIPTS}"
                     --identifier      "com.nutballlabs.pathmux"
                     --version         "${PATHMUX_VERSION}"
-                    --install-location "/"
+                    --install-location "/usr/local"
                     "${_PKG_OUTPUT}"
             DEPENDS ${_PKG_DEPS}
             COMMENT "Building macOS .pkg installer -> packages/pathmux-${PATHMUX_VERSION}-macOS.pkg"
