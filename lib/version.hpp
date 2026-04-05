@@ -8,10 +8,10 @@
 
 // 1. Define discrete version components
 #define VERSION_MAJOR 1
-#define VERSION_MINOR 1
+#define VERSION_MINOR 2
 #define VERSION_PATCH 0
 #define VERSION_BUILD 1
-#define VERSION_SUFFIX "b"
+#define VERSION_SUFFIX ""
 
 // 2. Stringification macros
 #define STRINGIFY_HELPER(x) #x
@@ -44,4 +44,4 @@ static const char PATHMUX_LICENSE_NOTICE[] __attribute__((used)) =
     "|   ... Kali does NOT approve.\n";
 
 #endif
-// SN: 00094
+// SN: 00095

@@ -303,6 +303,9 @@ if(Qt6_FOUND)
         gui/TripBuildDialog.cpp
         gui/BuildProgressDialog.cpp
         gui/AboutDialog.cpp
+        gui/SettingsDialog.cpp
+        gui/ManifestManagerDialog.cpp
+        gui/SetupWizard.cpp
         cli/video_build.cpp
         gui/resources/pathmux.qrc
     )
@@ -555,4 +558,4 @@ endif()
 
 include(CPack)
 
-# SN: 00094
+# SN: 00095

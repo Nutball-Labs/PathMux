@@ -4,6 +4,8 @@
 #include <QIcon>
 #include <QPixmap>
 #include "MainWindow.h"
+#include "SetupWizard.h"
+#include "config_manager.hpp"
 #include "version.hpp"
 
 int main(int argc, char* argv[])
@@ -43,8 +45,18 @@ int main(int argc, char* argv[])
         appIcon.addPixmap(QPixmap(QString(":/images/pathmux_%1.png").arg(sz)));
     app.setWindowIcon(appIcon);
 
+    // First-run wizard: launch if no valid config exists yet.
+    {
+        Pathmux::ConfigManager cfg;
+        cfg.loadSettings();
+        if (cfg.isFirstRun()) {
+            SetupWizard wiz;
+            wiz.exec();   // saves settings internally on Finish; no-op if cancelled
+        }
+    }
+
     MainWindow w;
     w.show();
     return app.exec();
 }
-// SN: 00092
+// SN: 00095

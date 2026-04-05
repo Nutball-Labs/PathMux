@@ -5,6 +5,8 @@
 #include "TripGridPanel.h"
 #include "ScanProgressDialog.h"
 #include "AboutDialog.h"
+#include "SettingsDialog.h"
+#include "ManifestManagerDialog.h"
 #include <QSplitter>
 #include <QFileDialog>
 #include <QMenuBar>
@@ -53,12 +55,6 @@ void MainWindow::buildMenuBar()
     // ---- File ----
     QMenu* fileMenu = menuBar()->addMenu("&File");
 
-    QAction* scanAct = fileMenu->addAction("&Scan Source Directory\u2026");
-    scanAct->setShortcut(QKeySequence::Open);
-    connect(scanAct, &QAction::triggered, this, &MainWindow::onScanRequested);
-
-    fileMenu->addSeparator();
-
     QAction* quitAct = fileMenu->addAction("&Quit");
     quitAct->setShortcut(QKeySequence::Quit);
     connect(quitAct, &QAction::triggered, this, &MainWindow::close);
@@ -68,7 +64,7 @@ void MainWindow::buildMenuBar()
 
     QAction* zoomInAct = viewMenu->addAction("Zoom &In");
     zoomInAct->setShortcut(QKeySequence::ZoomIn);
-    zoomInAct->setEnabled(false);   // placeholder — driven by Ctrl+scroll for now
+    zoomInAct->setEnabled(false);   // driven by Ctrl+scroll for now
 
     QAction* zoomOutAct = viewMenu->addAction("Zoom &Out");
     zoomOutAct->setShortcut(QKeySequence::ZoomOut);
@@ -77,6 +73,18 @@ void MainWindow::buildMenuBar()
     QAction* zoomResetAct = viewMenu->addAction("&Reset Zoom");
     zoomResetAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
     zoomResetAct->setEnabled(false);
+
+    // ---- Manifests ----
+    QMenu* manifestsMenu = menuBar()->addMenu("&Manifests");
+
+    QAction* scanAct = manifestsMenu->addAction("&Scan Source Directory\u2026");
+    scanAct->setShortcut(QKeySequence::Open);
+    connect(scanAct, &QAction::triggered, this, &MainWindow::onScanRequested);
+
+    manifestsMenu->addSeparator();
+
+    QAction* manageAct = manifestsMenu->addAction("&Manage Manifests\u2026");
+    connect(manageAct, &QAction::triggered, this, &MainWindow::onManageManifests);
 
     // ---- Trips ----
     QMenu* tripsMenu = menuBar()->addMenu("&Trips");
@@ -95,9 +103,9 @@ void MainWindow::buildMenuBar()
     // ---- Tools ----
     QMenu* toolsMenu = menuBar()->addMenu("&Tools");
 
-    QAction* prefsAct = toolsMenu->addAction("&Preferences\u2026");
-    prefsAct->setShortcut(QKeySequence::Preferences);
-    prefsAct->setEnabled(false);       // placeholder
+    QAction* settingsAct = toolsMenu->addAction("&Settings\u2026");
+    settingsAct->setShortcut(QKeySequence::Preferences);
+    connect(settingsAct, &QAction::triggered, this, &MainWindow::onSettings);
 
     toolsMenu->addSeparator();
 
@@ -114,6 +122,26 @@ void MainWindow::buildMenuBar()
 void MainWindow::onAbout()
 {
     AboutDialog dlg(this);
+    dlg.exec();
+}
+
+void MainWindow::onSettings()
+{
+    SettingsDialog dlg(this);
+    if (dlg.exec() == QDialog::Accepted) {
+        // Reload in case display prefs changed
+        m_manifestPanel->refresh();
+        m_tripGridPanel->refreshPageState();
+    }
+}
+
+void MainWindow::onManageManifests()
+{
+    ManifestManagerDialog dlg(this);
+    connect(&dlg, &ManifestManagerDialog::manifestsChanged,
+            m_manifestPanel, &ManifestPanel::refresh);
+    connect(&dlg, &ManifestManagerDialog::manifestsChanged,
+            m_tripGridPanel, &TripGridPanel::refreshPageState);
     dlg.exec();
 }
 
@@ -155,4 +183,4 @@ void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
     m_tripGridPanel->loadManifest(entry);
     m_manifestPanel->selectEntry(entry);
 }
-// SN: 00092
+// SN: 00095
