@@ -8,12 +8,12 @@ for working on the PathMux project. Read this before touching any code.
 
 ## Project Overview
 
-**PathMux** is a C++17 CLI tool for Alma Linux 9.x that scans Pruveeo D90
-360° dashcam footage, groups video segments into trips, caches results as
-JSON manifests, and extracts/exports GPS tracks. Private GitHub repo at
-https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
+**PathMux** is a C++17 CLI tool for Alma Linux 9.x that scans dashcam footage,
+groups video segments into trips, caches results as JSON manifests, and
+extracts/exports GPS tracks. Phase 2 Qt6 GUI is in active development.
+Private GitHub repo at https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
 
-**Current version:** 1.0.1a (SN 00091)
+**Current version:** 1.2.0 (SN 00095)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -35,6 +35,10 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 |---|---|
 | `lib/trip_detection.cpp/.hpp` | Filesystem scan, trip grouping, ffprobe calls — `namespace Pathmux` |
 | `lib/config_manager.cpp/.hpp` | JSON manifest read/write, manifest index, settings — `namespace Pathmux` |
+| `lib/camera_profile.cpp/.hpp` | `CameraSlot`, `CameraProfile` structs, JSON load/save, `d90Default()` — `namespace Pathmux` |
+| `lib/gps_export.cpp/.hpp` | GPS extraction (exiftool LIGO), GeoJSON/GPX/KML write — `namespace Pathmux` |
+| `lib/trip_format.hpp` | Header-only CSV/XML structured output helpers; shared by pathmux and pm_ls — `namespace Pathmux` |
+| `lib/compat.hpp` | Cross-platform portability shims: popen/pclose, WEXITSTATUS, localtime_r, timegm, pathBasename |
 | `lib/platform.cpp/.hpp` | OS abstraction: home/config paths, terminal width — `namespace Pathmux::Platform` |
 | `lib/format_helpers.hpp` | Pure math/format functions (haversine, formatDistance, etc.) — `namespace Pathmux` |
 | `lib/logger.hpp` | Logging singleton — `namespace Pathmux` |
@@ -52,14 +56,39 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 | `cli/video_build.cpp/.hpp` | Video build/collage orchestration |
 | `cli/kml_prefs.cpp/.hpp` | KML export preferences |
 | `cli/locations.cpp/.hpp` | Named location management |
+| `cli/host_prefs.cpp/.hpp` | Host-specific config overlay (`HostPrefsEditor` class) |
 | `cli/ui_helpers.hpp` | Terminal box UI and input helpers (POSIX only); includes format_helpers.hpp |
 
 ### Tools (`tools/`) — standalone binaries
 
 | File | Role |
 |---|---|
-| `tools/pm_gpsinfo.cpp` | Standalone GPS info utility; `--scan-all-trips` batch lock scanner |
+| `tools/pm_probe.cpp` | Camera compatibility profiler: single file, `--card` SD root, `--wizard` setup wizard |
+| `tools/pm_gpsinfo.cpp` | GPS info utility; `--scan-all-trips` batch lock scanner; `MID:TID` addressing |
+| `tools/pm_findgpslock.cpp` | Scan raw .ts files and report GPS lock acquisition time |
+| `tools/pm_gpsexport.cpp` | Non-interactive GPS track exporter |
+| `tools/pm_ls.cpp` | Non-interactive trip lister; supports `--format` / `--fields` |
+| `tools/pm_audit.cpp` | Footage integrity checker |
 | `tools/pm_tripdebug.cpp` | Trip detection debug/inspection tool |
+
+### GUI (`gui/`) — compiled into `pathmux-gui` binary (Qt6, Phase 2)
+
+| File | Role |
+|---|---|
+| `gui/main.cpp` | Qt application entry point |
+| `gui/MainWindow.cpp/.h` | Main window: manifest list, trip grid, menus |
+| `gui/ManifestPanel.cpp/.h` | Left-panel manifest browser |
+| `gui/TripGridPanel.cpp/.h` | Right-panel trip tile grid |
+| `gui/TripTile.cpp/.h` | Individual trip card widget |
+| `gui/TripPropertiesDialog.cpp/.h` | Trip details; double-click segment opens in system viewer |
+| `gui/TripBuildDialog.cpp/.h` | Video/collage build options dialog |
+| `gui/BuildProgressDialog.cpp/.h` | Per-stage progress rows; QProcess runner; concurrent concat via std::thread |
+| `gui/ScanProgressDialog.cpp/.h` | Progress dialog for manifest scan |
+| `gui/ManifestManagerDialog.cpp/.h` | Manifests menu management dialog |
+| `gui/SettingsDialog.cpp/.h` | Settings / preferences dialog |
+| `gui/SetupWizard.cpp/.h` | First-run setup wizard |
+| `gui/AboutDialog.cpp/.h` | About dialog (Nutball-Labs logo + PathMux icon) |
+| `gui/EmptyManifestWidget.cpp/.h` | Placeholder widget when no manifests loaded |
 
 ### Other
 
@@ -83,7 +112,7 @@ bottom of the file:
 ```
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00091`
+- There is one project-wide **high-water mark** SN, currently `00095`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -131,29 +160,24 @@ bump SNs, bump version, commit, and push.
 
 ### Camera Structure
 - Dashcam writes to: `<path>/Front/`, `<path>/Rear/`, `<path>/Left/`, `<path>/Right/`
-- Filenames: `YYYYMMDD_HHMMSS_X.ts` (video) + `YYYYMMDD_HHMMSS_X.jpg` (thumbnail)
+- Filenames: `YYYYMMDD_HHMMSS_X.ts` (video) + `YYYYMMDD_HHMMSS_F_ths.jpg` (thumbnail sidecar)
 - Front camera is primary for trip detection
 - Other cameras fuzzy-matched within ±5 seconds of Front timestamps
 - Optional cameras (e.g. rear not connected): handle **both** empty-directory and
   absent-directory cases gracefully — different cameras behave differently
 
-### CameraProfile / StorageFormat Abstraction (Planned)
-- Camera format detection will be extracted from `trip_detection.cpp` into a
-  separate `CameraProfile`/`StorageFormat` layer in the library
+### CameraProfile / StorageFormat Abstraction — DONE
+- `lib/camera_profile.hpp/.cpp`: `CameraSlot`, `CameraProfile` structs; JSON load/save; `d90Default()`
 - `TripDetection` consumes the profile; the rest of the pipeline sees a normalized
   description and does not care what brand produced the footage
-- Separation goal: field bug reports for a new camera layout only require updating
-  the detection layer, not touching trip detection logic
-- What a profile captures: directory layout, filename pattern, container format,
-  number of active cameras, GPS extraction method
-- Detection approach: auto-detect by probing SD card structure; hybrid
-  (auto-detect + user confirmation) is the long-term target
-- `pm_probe --card` is the natural entry point for profile detection
-- User support model for unknown layouts: `pm_probe --card <path>` + `ls -alR`
-  pasted into a GitHub issue — gives everything needed to add support without
-  having the hardware in hand
-- See ROADMAP.md "Multi-Brand Dashcam Support" for full architecture and JSON
-  profile format spec
+- `detectTrips()` takes a `CameraProfile` param (defaults to `d90Default()`)
+- `activeProfileId` field in `AppSettings` (default `"pruveeo_d90"`)
+- `ConfigManager::getCameraProfile()` loads from `~/.config/pathmux/profiles/<id>.json`,
+  falls back to `d90Default()` if absent/invalid
+- `pm_probe --wizard` detects camera layout and saves profile to disk
+- Profile saved to: `~/.config/pathmux/profiles/<sanitized_name>.json`
+- Design: filename token is authoritative for camera ID; `scanSubdir` is scan hint only
+- `CameraProfile::slots` → renamed `cameraSlots` (Qt macro conflict — permanent)
 
 ### Trip Detection
 - Gap threshold: configurable, default 900s (15 minutes)
@@ -175,11 +199,14 @@ bump SNs, bump version, commit, and push.
 - MD5-based integrity checking via `updateManifestMd5()`
 
 ### Segment File Paths
-- `TripSegment.front/rear/left/right` fields store **absolute paths** in the
-  manifest (e.g. `/z/srcdash/ex1/Front/20260225_044424F.ts`)
+- `TripSegment::cameras` map (keyed by camera ID string, e.g. `"front"`, `"rear"`) stores
+  **absolute paths** in the manifest (e.g. `/z/srcdash/ex1/Front/20260225_044424F.ts`)
+- `TripSegment::thumbs` map similarly stores absolute thumbnail paths
+- `Trip::firstThumbs` / `Trip::lastThumbs` maps replace the old 8 named thumbnail fields
 - Do NOT prepend `sourcePath` when constructing file paths from these fields —
   the path is already complete. Use the value directly.
-- Basename extraction: `front.rfind('/')` + substring for display-only use
+- Old manifests with named `front`/`rear`/`left`/`right` fields are migrated transparently
+  on read by `config_manager`
 
 ### Base36 IDs
 - Manifests and trips get two-character base36 IDs (0-9, A-Z)
@@ -190,7 +217,7 @@ bump SNs, bump version, commit, and push.
   future batch manager; use consistently in progress output and CLI args.
 
 ### GPS Extraction
-- First camera developed **Requires ExifTool 13.51+** — EPEL version 13.10 did NOT work
+- **Requires ExifTool 13.51+** — EPEL version 13.10 did NOT work with the D90
   - Users can work with exiftool maintainer should it not work with their camera(s)
 - Extracts LIGOGPSINFO binary stream from Pruveeo D90
 - One GPS record per second: timestamp, lat, lon, alt, speed, heading, accel
@@ -198,9 +225,12 @@ bump SNs, bump version, commit, and push.
 - Starts scanning first segment to find first sample with GPS lock. Avoids the cold start lag on the GPS
 - Format string: `-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'`
 - Output stored as GeoJSON FeatureCollection: `pm_trip_<ID>_track.geojson`
+- GPS lock time: D90 firmware does NOT write records before lock — `gpsLockSeconds` uses
+  epoch arithmetic (`filenameToEpoch()` + `gpsTimestampToEpoch()`), not record index
+- GPS extraction implemented in `lib/gps_export.cpp` (`Pathmux::extractGps()`)
 
 ### GPS Export
-- GPX and KML generated from extracted track data
+- GPX and KML generated from extracted track data (`lib/gps_export.cpp`)
 - Preferences menu for kml so the user can select multiple kml options
 - `resolveOutputPath()` handles both directory and full filepath input —
   if user types `/path/to/file.kml` it uses that filename, not a directory
@@ -222,6 +252,14 @@ bump SNs, bump version, commit, and push.
 - Never mix `cin >>` with `getline` — route everything through `readCommand()`
   or `promptLine()` to avoid leftover newline issues
 
+### Cross-Platform Portability
+- `lib/compat.hpp` provides shims for: `popen`/`pclose` (Windows → `CREATE_NO_WINDOW`),
+  `WEXITSTATUS`, `localtime_r`, `timegm`, `pathBasename`
+- `timegm()` is absent in MSVC — shim provided in `compat.hpp`
+- POSIX terminal code in `ui_helpers.hpp` is CLI-only; Qt6 GUI bypasses it entirely
+- ffmpeg/exiftool dependency story per platform: RPM Fusion (Linux), Homebrew (macOS),
+  bundled installer (Windows)
+
 ---
 
 ## Hard Dependencies
@@ -230,10 +268,10 @@ bump SNs, bump version, commit, and push.
 |---|---|
 | g++ | C++17, Alma 9 base |
 | ffmpeg/ffprobe | RPM Fusion or static build — NOT in Alma base repos |
-| ExifTool 13.51+ | EPEL 13.10 does NOT work with the camera initially developed from. Verify: `exiftool -ver` |
+| ExifTool 13.51+ | EPEL 13.10 does NOT work with the D90. Verify: `exiftool -ver` |
 
 ## Future Dependencies
-- Qt6 — Phase 2 GUI
+- Qt6 — Phase 2 GUI (in active development)
 - ImageMagick — animated GIF thumbnails
 
 ---
@@ -242,18 +280,20 @@ bump SNs, bump version, commit, and push.
 
 - ~~Man page needs update for `-G` interactive flow, `--validate`, `-t` flags~~ — done v0.9.11
 - ~~GPX/KML output default should be manifest directory, not global `defaultExportDir`~~ — fixed v0.9.6a
-- `pm_gpsinfo` enhancements:
-  - ~~Fix argument order to [options] \<file.ts\> (POSIX convention)~~ — done v0.9.3
-  - ~~`--scan-all-trips`: scan first segment of every trip, report GPS lock time~~ — done v0.9.3
-  - ~~Store GPS lock time back into manifest (`gpsLockSeconds` field per trip)~~ — done post-0.9.4
-  - ~~`pm_gpsinfo MID:TID` direct addressing~~ — done post-0.9.4
-- GPS extraction to GeoJSON not yet implemented (architecture decided, code pending)
+- ~~`pm_gpsinfo` enhancements~~ — all done (POSIX arg order, `--scan-all-trips`, `gpsLockSeconds`, `MID:TID`)
 - ~~`selectTrip()` has unused `mode` parameter~~ — fixed v0.9.5a
-- ~~Duplicate `// SN:` in pm_gpsinfo.cpp header~~ — fixed v0.9.5a
-- ~~Interactive manifest browser: bare Enter at "Output directory" prompt~~ — verified clean v0.9.5a
 - ~~`--clear-cache` / `--clear-stale` UX rework~~ — done v0.9.8
 - ~~`manifests_stale.json` archive for pruned entries~~ — done v0.9.8
-- ~~Usage output `Manifest management:` section~~ — done v0.9.8
+- ~~CameraProfile abstraction layer~~ — done v1.0.0 (2026-03-21)
+- ~~`pm_probe --wizard` trial scan~~ — done (D90 + Cobra confirmed working)
+- ~~ffmpeg build progress + ETA display~~ — done v0.9.11a; Qt callback hook ready
+- ~~Distribution packaging (RPM/DEB/pkg)~~ — done v1.0.1a; packages posted to GitHub 2026-03-29
+- GPS extraction to GeoJSON — architecture done, `lib/gps_export.cpp` exists; GUI integration pending
+- Default encoder + HW profile system — CPU-safe default; community HW profile contribution model
+- Cross-platform batch jobs — Phase 2. Design fully documented in memory.
+- Batch sleep/hibernation inhibit — see `memory/shower_batch_sleep_inhibit.md`
+- README public-audience rewrite + packaging audit (RPM/DEB)
+- Qt6 GUI polish — see `memory/project_qt6_gui_design.md`; Settings, Manifests menu, wizard shipped in v1.2.0
 
 ---
 
@@ -295,9 +335,8 @@ When a communication is prefaced with either label:
 
 ## Phase Status
 
-- **Phase 1 (CLI):** Active development — see ROADMAP.md
-- **Phase 2 (Qt6 GUI):** Planned, not started
-- All CLI work on `main` branch; GUI will branch when CLI is complete
+- **Phase 1 (CLI):** Feature-complete for core functionality; ongoing polish
+- **Phase 2 (Qt6 GUI):** Active development — `gui/` directory; see `memory/project_qt6_gui_design.md`
+- All work on `main` branch
 
-
-<!-- SN: 00091 -->
+<!-- SN: 00095 -->
