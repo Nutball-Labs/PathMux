@@ -1,6 +1,6 @@
 @echo off
-set SRC=C:\Users\iceberg\Nutball-Labs\pathmux
-set BLD=C:\Users\iceberg\Nutball-Labs\pathmux\build-win
+set SRC=%~dp0
+set BLD=C:\tmp\pathmux-build-win
 set CMAKE=C:\Qt\Tools\CMake_64\bin\cmake.exe
 set VCVARS=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat
 
@@ -11,4 +11,4 @@ if errorlevel 1 exit /b 1
 
 "%CMAKE%" --build "%BLD%"
 
-REM SN: 00090
+REM SN: 00095

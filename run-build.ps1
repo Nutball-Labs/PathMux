@@ -15,9 +15,9 @@ $mingwBin     = "C:\Qt\Tools\mingw1310_64\bin"
 $windeployqt  = "$qtDir\bin\windeployqt.exe"
 $gcc          = "$mingwBin\gcc.exe"
 $gpp          = "$mingwBin\g++.exe"
-$src          = "C:\Users\iceberg\Nutball-Labs\pathmux"
-$build        = "C:\Users\iceberg\Nutball-Labs\pathmux\build-win"
-$out          = "C:\Users\iceberg\Nutball-Labs\pathmux\build_out.txt"
+$src          = $PSScriptRoot
+$build        = "C:\tmp\pathmux-build-win"   # local drive — avoids NFS file-locking failures
+$out          = "C:\tmp\pathmux-build_out.txt"
 
 # Add MinGW to PATH so Ninja can find gcc/g++ and MinGW runtime DLLs
 $env:PATH = "$mingwBin;$env:PATH"
@@ -69,4 +69,4 @@ if (-not $NoPack) {
 
 Write-Host "`nDone. Exit: $LASTEXITCODE"
 
-# SN: 00094
+# SN: 00095
