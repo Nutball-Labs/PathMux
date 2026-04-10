@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>PathMux GUI Overview</title>
+</head>
+<body>
+
+<h1>PathMux GUI Overview</h1>
+<p class="mandesc">pathmux-gui — Qt6 desktop interface for dashcam trip management</p>
+
+<h2>Main Window Layout</h2>
+
+<p>The main window is a horizontal split view:</p>
+<ul>
+<li><b>Left panel (Manifest Panel):</b> Lists all known footage sources (manifests).
+Each entry shows the footage path, number of trips, and date range.</li>
+<li><b>Right panel (Trip Grid):</b> Shows trip tiles for the selected manifest.
+Each tile displays the trip date, start time, duration, segment count, and a
+thumbnail from the trip.</li>
+</ul>
+
+<p>Drag the center divider to resize the panels.  Use Ctrl+Scroll over either panel
+to zoom the tile size.</p>
+
+<h2>Scanning Footage</h2>
+
+<p>To add a footage source:</p>
+<ol>
+<li>Use <b>Manifests &gt; Scan Source Directory</b> (or Ctrl+O).</li>
+<li>Navigate to the top-level dashcam footage directory (the one containing
+Front/, Rear/, etc. subdirectories).</li>
+<li>Click OK.  A progress dialog shows scan status.</li>
+<li>When complete, the manifest appears in the left panel and its trips appear
+in the right panel.</li>
+</ol>
+
+<h2>Viewing Trips</h2>
+
+<p>Click a manifest in the left panel to load its trips.  Each trip is shown as
+a tile in the right panel with:</p>
+<ul>
+<li>Date and start time</li>
+<li>Duration and segment count</li>
+<li>Distance (if GPS data has been extracted)</li>
+<li>GPS status indicator</li>
+<li>Thumbnail image from the trip</li>
+</ul>
+
+<p>Double-click a trip tile to open the <b>Trip Properties</b> dialog, which shows
+detailed trip information and provides access to video build and GPS export functions.</p>
+
+<h2>Trip Properties Dialog</h2>
+
+<p>The Trip Properties dialog shows:</p>
+<ul>
+<li>Trip metadata: date, start time, duration, segment count, distance</li>
+<li>GPS information: status, lock time, start/end coordinates</li>
+<li>Segment list: all video files in the trip; double-click a segment to open it
+in the system video player</li>
+</ul>
+
+<p>From the Trip Properties dialog you can:</p>
+<ul>
+<li><b>Build Video</b> — open the video build dialog to assemble per-camera MP4
+files or a 4K collage</li>
+<li><b>Export GPS</b> — export GPS tracks as GPX, KML, or GeoJSON (extracts GPS
+data if not yet done)</li>
+</ul>
+
+<h2>Video Build Dialog</h2>
+
+<p>The Video Build dialog lets you configure and run a video build for a trip:</p>
+<ul>
+<li>Toggle which camera channels to include (Front, Rear, Left, Right)</li>
+<li>Select collage resolution (4K / 1080p)</li>
+<li>Configure audio source for the collage</li>
+<li>Set the output directory</li>
+</ul>
+
+<p>Build progress is shown in a separate dialog with per-stage status rows.
+Multiple stages can run concurrently (concat runs per-camera in parallel).</p>
+
+<h2>Menus</h2>
+
+<h3>File</h3>
+<dl>
+<dt>Quit (Ctrl+Q)</dt>
+<dd>Exit the application.</dd>
+</dl>
+
+<h3>View</h3>
+<dl>
+<dt>Zoom In / Zoom Out / Reset Zoom</dt>
+<dd>Change the trip tile size.  Keyboard shortcuts: Ctrl++, Ctrl+-, Ctrl+0.
+You can also hold Ctrl and scroll the mouse wheel over either panel.</dd>
+</dl>
+
+<h3>Manifests</h3>
+<dl>
+<dt>Scan Source Directory… (Ctrl+O)</dt>
+<dd>Select a dashcam footage directory to scan and add as a new manifest.</dd>
+
+<dt>Manage Manifests…</dt>
+<dd>Open the manifest manager to rename, delete, or rescan existing manifests.</dd>
+</dl>
+
+<h3>Trips</h3>
+<dl>
+<dt>Export GPS Track…</dt>
+<dd>Export the GPS track for the selected trip (GPX, KML, or GeoJSON).</dd>
+
+<dt>Build Video…</dt>
+<dd>Open the video build dialog for the selected trip.</dd>
+
+<dt>Validate Manifest</dt>
+<dd>Check the current manifest for integrity problems (equivalent to
+<b>pathmux --validate</b>).</dd>
+</dl>
+
+<h3>Tools</h3>
+<dl>
+<dt>Settings… (Ctrl+,)</dt>
+<dd>Open the Settings dialog to configure ffmpeg path, ExifTool path, default
+export directory, camera profile, and display preferences.</dd>
+
+<dt>Setup Wizard…</dt>
+<dd>Re-run the first-run setup wizard.  Pre-populated with current settings so
+you can update specific fields (e.g. swap the encoder preset after adding a
+GPU) without reconfiguring everything.</dd>
+
+<dt>Probe SD Card…</dt>
+<dd>Run <b>pm_probe --wizard</b> against an SD card to create or update a camera
+profile.</dd>
+</dl>
+
+<h3>Help</h3>
+<dl>
+<dt>Contents (F1)</dt>
+<dd>Open this help window.</dd>
+
+<dt>About PathMux</dt>
+<dd>Show version information and credits.</dd>
+</dl>
+
+<h2>Settings Dialog</h2>
+
+<p>The Settings dialog covers:</p>
+<ul>
+<li><b>Paths:</b> ffmpeg binary, ExifTool binary, default export directory</li>
+<li><b>Camera Profile:</b> active profile ID; controls trip detection layout</li>
+<li><b>Display:</b> imperial/metric units toggle</li>
+<li><b>Encoder:</b> preset selection and individual encoder parameters
+(host-specific; saved to the host overlay file)</li>
+</ul>
+
+<h2>Setup Wizard</h2>
+
+<p>The Setup Wizard walks through the minimum configuration needed to get started:</p>
+<ol>
+<li>ffmpeg and ExifTool binary paths</li>
+<li>Default export directory for GPS tracks and video files</li>
+<li>Encoder preset (CPU / VAAPI / NVENC / QSV)</li>
+</ol>
+
+<p>The wizard can be re-run at any time from <b>Tools &gt; Setup Wizard</b>.
+It pre-populates all fields with the current saved settings, so you can update
+just the one field you need.</p>
+
+<h2>First-Run Behavior</h2>
+
+<p>On first launch (no config file found), the Setup Wizard runs automatically.
+Complete the wizard to configure your system, then use
+<b>Manifests &gt; Scan Source Directory</b> to add your first footage source.</p>
+
+<h2>GPS Cold-Start Warning</h2>
+
+<div class="warning">
+<b>Important:</b> Dashcam GPS receivers typically require 30–120 seconds to acquire
+a satellite fix after power-on.  No GPS data is recorded during this period.
+If you use GPS track data for mileage logs, tax records, or legal documentation,
+be aware that the first portion of every trip may be missing from the GPS track.
+The distance shown in PathMux is great-circle distance between first and last
+recorded fix — not total odometer distance.
+</div>
+
+<h2>See Also</h2>
+<p class="seealso">
+<a href="pathmux.html">pathmux (CLI)</a>
+<a href="pm_probe.html">pm_probe</a>
+<a href="pm_gpsexport.html">pm_gpsexport</a>
+<a href="pm_ls.html">pm_ls</a>
+</p>
+
+</body>
+</html>

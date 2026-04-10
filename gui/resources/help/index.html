@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>PathMux Help — Overview</title>
+</head>
+<body>
+
+<h1>PathMux Dashcam Explorer</h1>
+
+<p class="mandesc">Trip manager, GPS extractor, and video builder for multi-channel dashcam footage.</p>
+
+<p>
+PathMux scans dashcam footage directories, groups video segments into trips based
+on timestamp gaps, and caches the results as JSON manifests.  Trips can be browsed
+in the GUI, exported as GPX or KML tracks, and assembled into per-camera MP4 files
+or a synchronized 4K collage.
+</p>
+
+<h2>Quick Start</h2>
+
+<ol>
+<li>Run <b>Tools &gt; Setup Wizard</b> to configure ffmpeg, ExifTool, and your camera profile.</li>
+<li>Use <b>Manifests &gt; Scan Source Directory</b> to scan a dashcam footage folder.</li>
+<li>Click a manifest in the left panel to view its trips.</li>
+<li>Double-click a trip tile to open Trip Properties, build video, or export GPS.</li>
+</ol>
+
+<h2>Help Topics</h2>
+
+<table>
+<tr><th>Topic</th><th>Description</th></tr>
+<tr><td><a href="gui_overview.html">GUI Overview</a></td><td>Main window, panels, menus, keyboard shortcuts</td></tr>
+<tr><td><a href="pathmux.html">pathmux</a></td><td>CLI: scan, browse, GPS export, video build, preferences</td></tr>
+<tr><td><a href="pm_probe.html">pm_probe</a></td><td>Camera compatibility profiler and setup wizard</td></tr>
+<tr><td><a href="pm_gpsinfo.html">pm_gpsinfo</a></td><td>GPS metadata inspector; batch lock-time scanner</td></tr>
+<tr><td><a href="pm_gpsexport.html">pm_gpsexport</a></td><td>Non-interactive GPS track exporter (GPX / KML / GeoJSON)</td></tr>
+<tr><td><a href="pm_ls.html">pm_ls</a></td><td>Non-interactive trip lister; JSON output; pipe-friendly</td></tr>
+<tr><td><a href="pm_audit.html">pm_audit</a></td><td>Footage integrity checker; MD5 sample verification</td></tr>
+<tr><td><a href="pm_findgpslock.html">pm_findgpslock</a></td><td>Report GPS lock acquisition time for raw segment files</td></tr>
+<tr><td><a href="pm_tripdebug.html">pm_tripdebug</a></td><td>Trip detection debugger; inspect grouping without writing a manifest</td></tr>
+</table>
+
+<h2>GPS Cold-Start Warning</h2>
+
+<div class="warning">
+<b>Important:</b> Dashcam GPS receivers typically require 30–120 seconds to acquire a
+satellite fix after power-on.  No GPS data is recorded during this period.
+If you use GPS track data for mileage logs, tax records, or legal documentation,
+be aware that the first portion of every trip may be missing from the GPS track.
+The distance reported by PathMux is the great-circle distance between the
+first and last recorded fix, not the total odometer distance.
+</div>
+
+<h2>Supported Cameras</h2>
+
+<p>
+PathMux uses camera profiles to support different storage layouts.
+The built-in profile targets the <b>Pruveeo D90</b> 360° four-channel dashcam
+(Front, Rear, Left, Right subdirectories; MPEG-TS container; LIGO GPS stream).
+Additional profiles for other cameras can be created interactively with
+<b>pm_probe --wizard</b> or via <b>Tools &gt; Setup Wizard</b>.
+</p>
+
+<h2>Requirements</h2>
+
+<table>
+<tr><th>Tool</th><th>Notes</th></tr>
+<tr><td>ffmpeg / ffprobe</td><td>Required for video builds and duration probing</td></tr>
+<tr><td>ExifTool 13.51+</td><td>Required for GPS extraction; EPEL 13.10 does not work with the D90</td></tr>
+</table>
+
+<h2>Resources</h2>
+
+<p>
+GitHub: <b>https://github.com/Nutball-Labs/PathMux</b><br>
+Bug reports and camera compatibility requests: open an issue on GitHub.<br>
+Community encode timings (Brag Board): see the <a href="pathmux.html">pathmux</a> help page.
+</p>
+
+</body>
+</html>

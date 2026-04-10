@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>pathmux(1) — PathMux CLI</title>
+</head>
+<body>
+
+<h1>pathmux</h1>
+<p class="mandesc">Trip manager and video builder for multi-channel dashcam footage</p>
+
+<h2>Synopsis</h2>
+<div class="synopsis">
+pathmux [<i>OPTIONS</i>] [<i>PATH</i>]
+</div>
+
+<h2>Description</h2>
+
+<p>
+<b>pathmux</b> scans dashcam footage directories, groups video segments into trips
+based on timestamp gaps, and caches the results as JSON manifests.  Trips can be
+browsed interactively, exported as GPX or KML tracks, and assembled into per-camera
+MP4 files or a synchronized 4K collage.
+</p>
+<p>
+PathMux uses camera profiles to support different storage layouts.  The built-in
+profile targets the Pruveeo D90 360° four-channel dashcam (Front, Rear, Left, Right
+subdirectories; MPEG-TS container; LIGO GPS stream).  Additional profiles for other
+cameras can be created interactively with <b>pm_probe --wizard</b>.
+</p>
+<p>
+The primary camera is the anchor for trip detection; secondary cameras are
+fuzzy-matched within a configurable time window.  All timestamp comparisons use Unix
+epoch arithmetic to handle midnight and year boundaries correctly.
+</p>
+<p>
+Trip manifests are written to the scanned footage directory as
+<code>pm_manifest_&lt;id&gt;.json</code>.  If that directory is not writable,
+manifests fall back to <code>~/.config/pathmux/</code>.
+Each scanned path is assigned a two-character alphanumeric manifest ID from an
+unambiguous character set (ambiguous pairs such as O/0 and I/1 are collapsed).
+</p>
+
+<h2>Options — Scan &amp; Display</h2>
+
+<dl>
+<dt>-s <i>PATH</i>, --scan <i>PATH</i></dt>
+<dd>Scan <i>PATH</i> for dashcam footage and build a trip manifest.  If a manifest
+already exists for this path, prompts with three choices: overwrite it, delete it
+and rescan from scratch, or quit.  Prints a one-line summary per trip on completion.</dd>
+
+<dt>-t</dt>
+<dd>Print a compact one-line summary for each cached manifest, sorted by most recent
+trip date.  Shows manifest ID, footage path, trip count, and date range.
+Non-interactive; exits after printing.</dd>
+
+<dt>-T, --dump</dt>
+<dd>Print a multi-line block per manifest listing every trip: date, start time,
+duration, and segment count.  No segment file paths are shown.
+Non-interactive; exits after printing.</dd>
+
+<dt>--fulldump</dt>
+<dd>Like <b>-T</b> but includes all segment file paths for every trip and every camera.</dd>
+
+<dt>--jsondump</dt>
+<dd>Dump all manifest and trip data as a single JSON document to stdout.
+Segment paths are relative to each manifest's source path.
+Suitable for piping to <b>jq</b> or scripting.</dd>
+
+<dt>-T --format=<i>fmt</i></dt>
+<dd>Structured output modifier.  Used together with <b>-T</b>.
+Valid values: <b>json</b>, <b>csv</b>, <b>xml</b>.
+<dl>
+<dt>json</dt><dd>Equivalent to --jsondump; --fields is ignored.</dd>
+<dt>csv</dt><dd>One record per trip, comma-separated.  A header row is emitted first.
+Use --fields to select columns.</dd>
+<dt>xml</dt><dd>One &lt;trip&gt; element per trip inside a &lt;trips&gt; root.
+Use --fields to select child elements.</dd>
+</dl>
+</dd>
+
+<dt>--fields=<i>f1,f2,...</i></dt>
+<dd>Comma-separated list of fields to include in csv or xml output.  Ignored for json.
+Available fields:
+<dl>
+<dt>manifest_id, trip_id</dt><dd>Manifest and trip identifiers.</dd>
+<dt>address, date, start_time, start_epoch</dt><dd>Human-readable address (if geocoded),
+calendar date, wall-clock start time, and Unix epoch of trip start.</dd>
+<dt>duration, duration_seconds</dt><dd>Trip length as formatted string and raw seconds.</dd>
+<dt>segment_count, note</dt><dd>Number of video segments; optional free-text note.</dd>
+<dt>start_lat, start_lon, end_lat, end_lon</dt><dd>Start and end coordinates in decimal
+degrees (requires GPS extraction).</dd>
+<dt>distance_km, distance_mi</dt><dd>Great-circle distance between start and end
+coordinates.</dd>
+<dt>gps_lock_seconds</dt><dd>Seconds from segment start until first GPS fix.
+Requires GPS extraction; zero if not yet run.</dd>
+<dt>gps_track_status</dt><dd>One of <b>none</b>, <b>partial</b>, or <b>complete</b>.</dd>
+</dl>
+</dd>
+
+<dt>-I, --interactive</dt>
+<dd>Unified interactive browser.  Opens at the manifest list home screen.
+Select a manifest by ID to view its trips; select a trip by ID to view details,
+build video, or export GPS data.  Press <b>Q</b> at any prompt to return to the
+previous level or exit.</dd>
+</dl>
+
+<h2>Options — GPS &amp; Export</h2>
+
+<dl>
+<dt>-G, --gps</dt>
+<dd>Launch the interactive GPS extraction and export menu.</dd>
+</dl>
+
+<h3>Trip picker screen</h3>
+<p>Displays all trips for the selected manifest with GPS status (none / start/end /
+complete).  Available commands:</p>
+<dl>
+<dt><i>TripID</i></dt><dd>Select a single trip by its two-character ID (case-insensitive).</dd>
+<dt>A</dt><dd>Select all trips (bulk GPS extraction or export).</dd>
+<dt>E</dt><dd>Toggle verbose ExifTool error output on/off.</dd>
+<dt>M</dt><dd>Return to the manifest selection screen.</dd>
+<dt>Q</dt><dd>Quit to the calling screen or exit.</dd>
+</dl>
+
+<h3>Action menu</h3>
+<p>After selecting a trip or [A]ll:</p>
+<dl>
+<dt>G</dt><dd>Extract GPS data from footage into the manifest (no file output).</dd>
+<dt>X</dt><dd>Export a GPX track file (extracts GPS first if not yet done).</dd>
+<dt>K</dt><dd>Export a KML track file (extracts GPS first if not yet done).</dd>
+<dt>J</dt><dd>Export a GeoJSON track file (RFC 7946 FeatureCollection).</dd>
+<dt>Q</dt><dd>Return to the trip picker.</dd>
+</dl>
+
+<h3>Output directory</h3>
+<p>PathMux defaults to the footage source directory if writable.  If not writable,
+a three-choice prompt appears: use the global default export directory,
+enter a path manually, or return to the trip picker.
+Accepts a directory path or a full file path ending in .gpx, .kml, or .geojson.</p>
+
+<h2>Options — Settings</h2>
+
+<dl>
+<dt>-P, --prefs</dt>
+<dd>Launch the interactive preferences editor.  Settings are saved to
+<code>~/.config/pathmux/pathmux.json</code>.</dd>
+
+<dt>--hostprefs</dt>
+<dd>Launch the host-specific preferences editor.  Settings are saved to
+<code>~/.config/pathmux/pathmux_<i>hostname</i>.json</code> and are applied
+as an overlay on top of the base preferences.  Use this to configure encoder
+paths, hardware acceleration, output directories, and log level per host.</dd>
+
+<dt>--encoderprefs</dt>
+<dd>Launch the interactive encoder preferences editor.  The default out-of-box
+preset is <b>cpu</b> (libx264 for normalization and downscaling, libx265 for
+collage), which works on any machine without GPU configuration.  To upgrade to
+hardware acceleration, select a preset with <b>[A]</b>: <b>qsv</b>, <b>nvenc</b>,
+or <b>vaapi</b>.  Encoder settings are host-specific and saved to the host overlay
+file, not the base pathmux.json.</dd>
+
+<dt>--kmlprefs</dt>
+<dd>Launch the interactive KML visual preferences editor (track colors, line width,
+pin icons, known location overlay).</dd>
+
+<dt>--locations</dt>
+<dd>Manage known locations (Home, Work, etc.) used for KML proximity pins.</dd>
+
+<dt>--set <i>key=value</i></dt>
+<dd>Set a preference non-interactively.  Supported keys:
+<dl>
+<dt>gap=<i>N</i></dt><dd>Trip gap threshold in seconds (minimum 30).</dd>
+</dl>
+</dd>
+
+<dt>--show-config</dt>
+<dd>Dump raw configuration key/value pairs and exit.
+Useful for verifying the active ffmpeg/ExifTool paths and encoder settings.</dd>
+</dl>
+
+<h2>Options — Manifest Management</h2>
+
+<dl>
+<dt>--clear-cache</dt>
+<dd>Interactive list; pick one manifest to delete by ID.  Enter <b>Q</b> to exit.</dd>
+
+<dt>--clear-cache ALL</dt>
+<dd>Show the full manifest list, prompt for y/N confirmation, then wipe all manifests
+and the manifest index.</dd>
+
+<dt>--clear-cache ALL --force</dt>
+<dd>Wipe all manifests without any prompt.  Suitable for scripted use.</dd>
+
+<dt>--show-stale</dt>
+<dd>Display the stale manifest archive (<code>manifests_stale.json</code>).
+Stale entries are index entries whose manifest file is no longer present on disk.</dd>
+
+<dt>--clear-stale</dt>
+<dd>Clear the stale archive after a y/N confirmation prompt.</dd>
+
+<dt>--clear-stale --force</dt>
+<dd>Clear the stale archive without prompting.</dd>
+
+<dt>--validate</dt>
+<dd>Check all cached manifests for consistency problems: missing manifest files
+and MD5 checksum mismatches.  Prints a per-manifest status report.
+Exits with code 0 if all manifests are clean, 1 if any problems are found.
+Non-interactive; suitable for cron or scripted health checks.</dd>
+
+<dt>-v, --version</dt>
+<dd>Print version and exit.</dd>
+
+<dt>-h, --help</dt>
+<dd>Print a usage summary and exit.</dd>
+</dl>
+
+<h2>Video Build</h2>
+
+<p>Video builds are launched from within the interactive browser (<b>-I</b>).
+Select a manifest, then a trip, then choose <b>[V] Build video</b> from the trip
+detail screen.</p>
+
+<dl>
+<dt>GO</dt><dd>Run the configured build and return to the trip picker on completion.</dd>
+<dt>GODONE</dt><dd>Run the configured build and exit the video builder on completion.</dd>
+<dt>[T] Compute duration</dt><dd>Run ffprobe on every Front camera segment to produce
+an accurate total trip duration.  Stored in the manifest for future sessions.</dd>
+</dl>
+
+<p>A build log entry is appended to <code>pm_buildlog.json</code> in the footage
+source directory after each successful build.</p>
+
+<h2>Video Build Pipeline</h2>
+
+<p>Per-camera files use the ffmpeg concat demuxer with stream copy (<code>-c copy</code>).
+Only video and audio streams are mapped; the LIGOGPSINFO data track is discarded.</p>
+
+<p>The 4K collage is assembled as follows:</p>
+<ol>
+<li>Per segment, ffprobe measures the frame count of all four cameras.</li>
+<li>Cameras shorter than the longest are padded with a fade-to-black tail
+(<code>tpad + fade</code> filters) and silent audio (<code>apad</code>).</li>
+<li>The four normalized streams are combined with the <b>xstack</b> filter
+into a 3840×2160 frame:<br>
+<pre>[ Front ] [ Rear  ]
+[ Right ] [ Left  ]</pre>
+</li>
+<li>Audio is taken from the configured collage audio source (default: Left camera —
+the driver position in left-hand-drive countries).</li>
+<li>Output is encoded as H.265 (<code>libx265 -crf 18 -preset slow</code>) by default.
+Hardware acceleration profiles (VAAPI, NVENC) can be configured via
+<b>--encoderprefs</b>.</li>
+</ol>
+
+<p>The optional 1080p collage is a simple transcode of the finished 4K master
+(<code>scale=1920:1080</code>, <code>libx264 -crf 20 -preset fast</code>) with
+the audio stream copied without re-encoding.</p>
+
+<h2>GPS Extraction</h2>
+
+<p>GPS extraction uses ExifTool to read GPS metadata from footage segments.
+PathMux passes the configured <b>exiftoolOptions</b> string to the ExifTool binary
+and parses the output; it does not validate the ExifTool version.</p>
+
+<div class="warning">
+<b>GPS cold-start data gap warning:</b>
+Dashcam GPS receivers typically require 30–120 seconds to acquire a satellite fix
+after power-on.  No GPS data is recorded during this period.  The
+<b>gps_lock_seconds</b> field in the manifest records how long the gap was for each
+trip.  If you use GPS track data for mileage logs, tax records, or legal
+documentation, be aware that the first portion of every trip may be missing from
+the GPS track.  The distance reported by PathMux is the great-circle distance
+between the first and last recorded fix, not the total odometer distance.
+</div>
+
+<p>Altitude values from the D90 are systematically incorrect (negative) and are
+ignored.  Speed is recorded in km/h.</p>
+
+<h3>ExifTool Options Preference</h3>
+
+<p>The complete exiftool command line (excluding the binary path and input filename)
+is stored in the <b>exiftoolOptions</b> preference, editable via <b>--prefs</b>
+option <b>[O]</b>.  The default value for Pruveeo D90 footage is:</p>
+
+<pre>-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'</pre>
+
+<p>Important constraints when modifying this value:</p>
+<dl>
+<dt>Field order is fixed.</dt>
+<dd>The output parser expects exactly seven space-separated tokens per line after
+the date and time: latitude, longitude, altitude, speed, heading, accelerometer.
+Do not reorder, add, or remove fields from the -p format string without
+corresponding changes to the parser source.</dd>
+
+<dt>The -p flag and format string must be included.</dt>
+<dd>Unlike most tool preferences which store only extraction flags,
+<b>exiftoolOptions</b> must contain the complete options string including <b>-p</b>.
+This design allows the -p flag itself to be omitted entirely for cameras that
+require a different extraction approach (e.g. -json).</dd>
+
+<dt>Single quotes are required around the format string.</dt>
+<dd>Single quotes prevent the shell from expanding <b>$GPSDateTime</b> etc. as
+variables.  Double quotes would also expand <b>$GPSTrack</b>, corrupting the command.</dd>
+
+<dt>The -ee3 flag controls embedded stream extraction depth.</dt>
+<dd>Level 3 is required for MPEG-TS files from the D90 because the GPS data
+is in a private binary stream (LIGOGPSINFO) several levels deep in the container.
+-ee and -ee2 do not reach it.</dd>
+
+<dt>The -# numeric suffix on coordinate tags requests decimal degrees.</dt>
+<dd><b>$GPSLatitude#</b> and <b>$GPSLongitude#</b> output signed decimal values
+(e.g. -89.025) rather than the default DMS notation.  The parser requires decimal
+form.</dd>
+</dl>
+
+<h2>Manifest IDs</h2>
+
+<p>Manifests are assigned two-character IDs from an unambiguous alphanumeric
+character set.  Excluded characters: <b>O</b> (same as 0), <b>I</b> and <b>L</b>
+(same as 1), <b>S</b> (same as 5), <b>Z</b> (same as 2).</p>
+
+<p>IDs are always displayed in upper case.  Input is case-insensitive.
+The preferred sequence assigns a letter first character and digit second character
+(A3, A4 … Y9) giving 132 slots before spilling into letter+letter combinations.
+Deleted manifest IDs are returned to the pool and reused from the lowest available
+position.</p>
+
+<p>Trips within a manifest are also assigned two-character base36 IDs.
+A specific trip can be referenced as <i>MID</i>:<i>TID</i> (e.g. <b>CQ:73</b>)
+in tool output and future batch operations.</p>
+
+<h2>Files</h2>
+
+<dl>
+<dt>~/.config/pathmux/profiles/<i>&lt;name&gt;</i>.json</dt>
+<dd>Camera profiles created by <b>pm_probe --wizard</b>.
+The active profile is selected by setting <b>activeProfileId</b> in preferences.</dd>
+
+<dt>~/.config/pathmux/pathmux.json</dt>
+<dd>Application settings (base preferences, all hosts).</dd>
+
+<dt>~/.config/pathmux/pathmux_<i>hostname</i>.json</dt>
+<dd>Host-specific settings overlay written by <b>--hostprefs</b>.
+Merged on top of the base preferences at startup; only the current machine's
+file is loaded.</dd>
+
+<dt>~/.config/pathmux/manifests.json</dt>
+<dd>Manifest index — maps each scanned footage path to its two-character ID.</dd>
+
+<dt><i>&lt;scanned_path&gt;</i>/pm_manifest_<i>&lt;id&gt;</i>.json</dt>
+<dd>Cached trip manifest written to the scanned directory.  Written to
+<code>~/.config/pathmux/</code> if the scanned directory is not writable.</dd>
+
+<dt>~/.config/pathmux/manifests_stale.json</dt>
+<dd>Archive of stale manifest index entries.  Display with <b>--show-stale</b>;
+wipe with <b>--clear-stale</b>.</dd>
+
+<dt>~/.config/pathmux/locations.json</dt>
+<dd>Named locations (Home, Work, etc.) used for KML proximity pin overlays.</dd>
+
+<dt><i>&lt;scanned_path&gt;</i>/pm_buildlog.json</dt>
+<dd>Build provenance log appended after each successful video build.  Records
+build timestamp, manifest ID, trip ID, output path, output duration, cameras
+included, and source segments consumed.</dd>
+</dl>
+
+<h2>Exit Status</h2>
+<dl>
+<dt>0</dt><dd>Success.</dd>
+<dt>1</dt><dd>Failure (bad arguments, missing path, or ffmpeg/ExifTool error).
+<b>--validate</b> exits 1 if any manifest problems are found.</dd>
+</dl>
+
+<h2>Brag Board</h2>
+
+<p>Community-submitted 4K collage encode timings.</p>
+<p><b>Score = footage_minutes / collage_4k_minutes</b> (higher is better).</p>
+<p><b>Submission requirements:</b>
+Daytime trip only — minimum 20 minutes of footage — all four cameras
+(Front/Rear/Left/Right) included — 4K collage build.</p>
+<p><b>1.  Nutball Labs</b><br>
+i7 / 16 GB DDR5 / RTX 5060 / NVMe<br>
+42m trip — concat (4 cameras): 4m 15s — 4K collage (hevc_nvenc): 6m 58s — score: <b>6.04x</b></p>
+<p>Want your name here?  After a qualifying build, find your timings in
+<code>pm_buildlog.json</code> in your footage source directory.  Submit via a
+"Brag Board submission" issue on the PathMux GitHub tracker.</p>
+
+<h2>See Also</h2>
+<p class="seealso">
+<a href="pm_gpsinfo.html">pm_gpsinfo</a>
+<a href="pm_gpsexport.html">pm_gpsexport</a>
+<a href="pm_ls.html">pm_ls</a>
+<a href="pm_audit.html">pm_audit</a>
+<a href="pm_probe.html">pm_probe</a>
+<a href="pm_tripdebug.html">pm_tripdebug</a>
+</p>
+
+</body>
+</html>

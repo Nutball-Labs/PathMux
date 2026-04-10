@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>pm_probe(1) — Camera Profiler</title>
+</head>
+<body>
+
+<h1>pm_probe</h1>
+<p class="mandesc">Camera compatibility profiler for the PathMux suite</p>
+
+<h2>Synopsis</h2>
+<div class="synopsis">
+pm_probe [--json] <i>file.ts</i><br>
+pm_probe [--json] <i>MID</i>:<i>TID</i><br>
+pm_probe --card <i>PATH</i> [--json]<br>
+pm_probe --wizard <i>PATH</i>
+</div>
+
+<h2>Description</h2>
+
+<p>
+<b>pm_probe</b> inspects dashcam footage files and reports video characteristics,
+stream layout, and GPS metadata format.  It is primarily intended to help users
+determine whether an unsupported camera model is compatible with PathMux, and to
+collect the information needed to request support for a new camera via a GitHub issue.
+</p>
+<p>
+Single-file and <i>MID:TID</i> modes probe one segment and print a concise report.
+</p>
+<p>
+Card mode (<b>--card</b>) walks an entire dashcam storage root, identifies camera
+subdirectories, samples segment durations, and probes the first segment of the primary
+camera directory.  The report is formatted to be pasted directly into a GitHub issue.
+</p>
+
+<h2>Options</h2>
+
+<dl>
+<dt><i>file.ts</i></dt>
+<dd>Probe a single footage segment.  The path must be absolute or resolvable
+from the current directory.</dd>
+
+<dt><i>MID</i>:<i>TID</i></dt>
+<dd>Probe the first Front camera segment of a known trip identified by its
+manifest ID and trip ID.  Uses the PathMux manifest index to resolve the
+segment path.</dd>
+
+<dt>--card <i>PATH</i></dt>
+<dd><p>Fingerprint a dashcam storage root.  <i>PATH</i> should be the top-level
+directory that contains the camera subdirectories (Front/, Rear/, etc.).</p>
+<p>Candidate camera directories are identified as any first-level subdirectory
+of <i>PATH</i> that contains video files.  If no subdirectories contain video
+files but <i>PATH</i> itself does, the root is treated as a flat single-directory
+layout and camera identity is inferred from filename tokens.  Supported token
+styles include bare single-letter suffix (F, R, L, B), underscore-prefixed letter
+(_F, _R), multi-part embedded tokens (_CAM1_VID, _CAM2_VID), and prefix tokens
+where the camera identifier precedes the timestamp.</p>
+<p>Hidden files and macOS resource forks (names beginning with <b>.</b>)
+are ignored during all scans.  Up to five segments are sampled for duration
+measurements; the full probe is performed on the first segment of the primary
+camera directory.</p></dd>
+
+<dt>--json</dt>
+<dd>Emit JSON output instead of the default text report.  Suitable for
+automated processing.</dd>
+
+<dt>--wizard <i>PATH</i></dt>
+<dd><p>Interactive camera profile builder.  Walks the dashcam storage root at
+<i>PATH</i> and guides the user through:</p>
+<ul>
+<li>Camera role assignment (Front/Rear/Left/Right) — from subdirectory names
+for cameras that use a directory per channel, or from filename tokens for cameras
+that store all channels in one directory.  A two-pane interface shows the standard
+slot names on the left and the detected source paths with sample filenames on the
+right; press <b>F/R/L/B</b> to select a slot then a source number to assign it.</li>
+<li>Filename timestamp format and timestamp timezone (local or utc).</li>
+<li>Thumbnail handling — sidecar <i>_ths.jpg</i> files detected automatically;
+falls back to generate-on-demand via ffmpeg if not found.</li>
+<li>GPS method and cold-start lock offset.</li>
+<li>Profile name.</li>
+</ul>
+<p>On completion the profile is saved in CameraProfile JSON format to
+<code>~/.config/pathmux/profiles/&lt;name&gt;.json</code> and a trial scan is run
+immediately to confirm that the saved profile detects trips correctly.</p></dd>
+
+<dt>-v, --version</dt>
+<dd>Print the PathMux version string and exit.</dd>
+
+<dt>-h, --help</dt>
+<dd>Print a usage summary and exit.</dd>
+</dl>
+
+<h2>Output — Single-file Mode</h2>
+<pre>File:         /z/srcdash/ex2/Front/20260209_043838F.ts
+Container:    MPEG-TS (.ts)
+Resolution:   1920x1080
+Frame rate:   25 fps
+Pixel format: yuvj420p  (full-range)
+Color space:  bt709
+Duration:     180s
+Streams:      video(0) audio(1) data(2)
+GPS method:   LIGOGPSINFO (stream 2)
+GPS first fix: 2026:02:09 10:39:14  lat=30.419000  lon=-89.025191</pre>
+
+<h2>Output — Card Mode</h2>
+<pre>--- pm_probe SD Card Fingerprint ---
+Root:         /media/sdcard
+Camera dirs:  Front/ Rear/ Left/ Right/
+Extensions:   .jpg .ts
+Filename pattern (sample):
+  Front/20260209_043838F.ts
+  Front/20260209_044140F.ts
+Segment lengths observed: 180s 180s 180s
+Video profile (Front, first segment):
+  Resolution:   1920x1080
+  Frame rate:   25 fps
+  Pixel format: yuvj420p (full-range)
+  Color space:  bt709
+Timestamp:    filename (YYYYMMDD_HHMMSS)
+GPS method:   LIGOGPSINFO  -- GPS in private LIGO stream
+GPS first fix: 2026:02:09 10:39:14  lat=30.419000  lon=-89.025191
+
+--- Submit this report to: https://github.com/Nutball-Labs/PathMux/issues ---</pre>
+
+<h2>GPS Method Values</h2>
+
+<dl>
+<dt>LIGOGPSINFO</dt>
+<dd>The file contains a private binary data stream tagged <b>LIGO</b> in the
+container.  This is the format used by Pruveeo D90 footage.  ExifTool must support
+the LIGOGPSINFO stream format for extraction to work.  If GPS extraction fails for
+your camera, contact the ExifTool maintainer directly.</dd>
+
+<dt>Standard GPS metadata</dt>
+<dd>GPS metadata was successfully extracted by ExifTool using the configured
+extraction options, but no LIGO private data stream was detected.  The camera uses a
+standard or otherwise identifiable GPS metadata format.</dd>
+
+<dt>Not detected</dt>
+<dd>No GPS data was found.  Either the camera does not record GPS, the footage was
+recorded without a GPS fix, or the configured ExifTool options are incompatible with
+the camera's GPS format.</dd>
+</dl>
+
+<h2>Examples</h2>
+
+<dl>
+<dt>Probe a single file:</dt>
+<dd><pre>pm_probe /mnt/sdcard/Front/20260209_043838F.ts</pre></dd>
+
+<dt>Probe a trip's first segment via MID:TID:</dt>
+<dd><pre>pm_probe X1:87</pre></dd>
+
+<dt>Fingerprint an entire SD card:</dt>
+<dd><pre>pm_probe --card /mnt/sdcard</pre></dd>
+
+<dt>Machine-readable card fingerprint for a GitHub issue:</dt>
+<dd><pre>pm_probe --card /mnt/sdcard --json</pre></dd>
+
+<dt>Create a camera profile interactively and verify with a trial scan:</dt>
+<dd><pre>pm_probe --wizard /mnt/sdcard</pre></dd>
+</dl>
+
+<h2>Requesting Camera Support</h2>
+
+<p>If your dashcam is not supported, first try the wizard:</p>
+<pre>pm_probe --wizard <i>PATH</i></pre>
+<p>If the wizard does not produce a working profile, collect a fingerprint
+and open a GitHub issue:</p>
+<pre>pm_probe --card <i>PATH</i> --json &gt; camera_report.json</pre>
+<p>Open a GitHub issue at <b>https://github.com/Nutball-Labs/PathMux/issues</b>
+and attach <code>camera_report.json</code>.  Include the camera make and model
+in the issue title.</p>
+
+<h2>Files</h2>
+<dl>
+<dt>~/.config/pathmux/manifests.json</dt>
+<dd>Manifest index — used only when resolving <i>MID:TID</i> arguments.</dd>
+
+<dt>~/.config/pathmux/profiles/<i>&lt;name&gt;</i>.json</dt>
+<dd>Camera profile written by <b>--wizard</b>.  Loaded by <b>pathmux</b> when
+the active profile ID matches <i>&lt;name&gt;</i>.</dd>
+</dl>
+
+<h2>Exit Status</h2>
+<dl>
+<dt>0</dt><dd>Probe completed successfully (GPS may or may not have been found).</dd>
+<dt>1</dt><dd>Invalid arguments, file not found, or <i>MID:TID</i> not in the manifest index.</dd>
+</dl>
+
+<h2>See Also</h2>
+<p class="seealso">
+<a href="pathmux.html">pathmux</a>
+<a href="pm_gpsinfo.html">pm_gpsinfo</a>
+<a href="pm_gpsexport.html">pm_gpsexport</a>
+</p>
+
+</body>
+</html>

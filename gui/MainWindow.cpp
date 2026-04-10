@@ -8,6 +8,7 @@
 #include "SettingsDialog.h"
 #include "ManifestManagerDialog.h"
 #include "SetupWizard.h"
+#include "HelpDialog.h"
 #include <QSplitter>
 #include <QFileDialog>
 #include <QMenuBar>
@@ -119,6 +120,12 @@ void MainWindow::buildMenuBar()
     // ---- Help ----
     QMenu* helpMenu = menuBar()->addMenu("&Help");
 
+    QAction* helpAct = helpMenu->addAction("&Contents");
+    helpAct->setShortcut(QKeySequence::HelpContents);
+    connect(helpAct, &QAction::triggered, this, &MainWindow::onHelp);
+
+    helpMenu->addSeparator();
+
     QAction* aboutAct = helpMenu->addAction("&About PathMux");
     connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
 }
@@ -126,6 +133,12 @@ void MainWindow::buildMenuBar()
 void MainWindow::onAbout()
 {
     AboutDialog dlg(this);
+    dlg.exec();
+}
+
+void MainWindow::onHelp()
+{
+    HelpDialog dlg(this);
     dlg.exec();
 }
 

@@ -10,5 +10,18 @@
     <file>pathmux_256.png</file>
     <file>pathmux_512.png</file>
   </qresource>
+  <qresource prefix="/help">
+    <file>help/style.css</file>
+    <file>help/index.html</file>
+    <file>help/pathmux.html</file>
+    <file>help/pm_probe.html</file>
+    <file>help/pm_gpsinfo.html</file>
+    <file>help/pm_gpsexport.html</file>
+    <file>help/pm_ls.html</file>
+    <file>help/pm_audit.html</file>
+    <file>help/pm_findgpslock.html</file>
+    <file>help/pm_tripdebug.html</file>
+    <file>help/gui_overview.html</file>
+  </qresource>
 </RCC>
-<!-- SN: 00092 -->
+<!-- SN: 00095 -->

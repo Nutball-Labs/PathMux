@@ -1,0 +1,156 @@
+/* PathMux in-app help stylesheet — QTextBrowser compatible */
+
+body {
+    font-family: sans-serif;
+    font-size: 13px;
+    color: #1a1a1a;
+    background-color: #f8f8fa;
+    margin: 14px 20px 20px 20px;
+    line-height: 1.55;
+}
+
+h1 {
+    font-size: 20px;
+    font-weight: bold;
+    color: #002255;
+    border-bottom: 2px solid #99aacc;
+    padding-bottom: 5px;
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+h2 {
+    font-size: 15px;
+    font-weight: bold;
+    color: #003377;
+    border-bottom: 1px solid #bbccee;
+    padding-bottom: 3px;
+    margin-top: 20px;
+    margin-bottom: 6px;
+}
+
+h3 {
+    font-size: 13px;
+    font-weight: bold;
+    color: #004488;
+    margin-top: 14px;
+    margin-bottom: 4px;
+}
+
+p {
+    margin: 5px 0 8px 0;
+}
+
+pre {
+    background-color: #eef0f4;
+    border: 1px solid #c8ccda;
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 12px;
+    margin: 8px 0 10px 0;
+}
+
+code {
+    font-family: monospace;
+    font-size: 12px;
+    background-color: #e8eaf0;
+    padding: 1px 4px;
+}
+
+dl {
+    margin: 4px 0 6px 0;
+}
+
+dt {
+    font-weight: bold;
+    font-family: monospace;
+    font-size: 12px;
+    color: #111;
+    margin-top: 8px;
+    margin-bottom: 1px;
+}
+
+dd {
+    margin-left: 22px;
+    margin-bottom: 4px;
+}
+
+.synopsis {
+    background-color: #eef0f8;
+    border-left: 4px solid #8899cc;
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 12px;
+    margin: 8px 0 12px 0;
+}
+
+.warning {
+    background-color: #fffbe6;
+    border-left: 4px solid #cc9900;
+    padding: 8px 12px;
+    margin: 10px 0;
+    color: #443300;
+}
+
+.note {
+    background-color: #e8f4ff;
+    border-left: 4px solid #4488cc;
+    padding: 8px 12px;
+    margin: 10px 0;
+}
+
+.manname {
+    font-size: 22px;
+    font-weight: bold;
+    color: #001133;
+    margin-bottom: 4px;
+}
+
+.mandesc {
+    font-size: 14px;
+    color: #334466;
+    margin-bottom: 14px;
+}
+
+a {
+    color: #0044aa;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.seealso a {
+    margin-right: 10px;
+}
+
+table {
+    border-collapse: collapse;
+    margin: 8px 0 12px 0;
+    font-size: 12px;
+}
+
+th {
+    background-color: #dde4f0;
+    padding: 4px 12px;
+    text-align: left;
+    border: 1px solid #b8c4dc;
+    font-weight: bold;
+}
+
+td {
+    padding: 3px 12px;
+    border: 1px solid #ccd0e0;
+    vertical-align: top;
+}
+
+.indent {
+    margin-left: 20px;
+}
+
+.section-break {
+    border: none;
+    border-top: 1px solid #ccc;
+    margin: 16px 0;
+}

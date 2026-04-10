@@ -306,6 +306,7 @@ if(Qt6_FOUND)
         gui/SettingsDialog.cpp
         gui/ManifestManagerDialog.cpp
         gui/SetupWizard.cpp
+        gui/HelpDialog.cpp
         cli/video_build.cpp
         gui/resources/pathmux.qrc
     )

@@ -19,6 +19,7 @@ private slots:
     void onScanComplete(const Pathmux::ManifestEntry& entry);
     void onZoomChanged(double factor);
     void onAbout();
+    void onHelp();
     void onSettings();
     void onManageManifests();
     void onSetupWizard();

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>pm_findgpslock(1) — GPS Lock Finder</title>
+</head>
+<body>
+
+<h1>pm_findgpslock</h1>
+<p class="mandesc">Report GPS lock acquisition time for dashcam footage segments</p>
+
+<h2>Synopsis</h2>
+<div class="synopsis">
+pm_findgpslock [--verbose] <i>file.ts</i> [<i>file2.ts</i> ...]
+</div>
+
+<h2>Description</h2>
+
+<p>
+<b>pm_findgpslock</b> scans one or more Pruveeo D90 dashcam .ts segments and reports
+when GPS lock was acquired relative to the start of each clip.
+</p>
+
+<p>The Pruveeo D90 firmware does not write GPS records into the LIGO stream until a
+satellite fix is acquired.  The lock offset (+<i>N</i>s) is computed by comparing
+the UTC timestamp of the first valid GPS record against the local clip-start time
+encoded in the filename, using epoch arithmetic for accuracy across midnight crossings
+and DST boundaries.</p>
+
+<p>For each file, <b>pm_findgpslock</b> prints a header line with the filename and
+the clip-start time derived from the filename, followed by the lock line showing the
+offset and the first valid GPS fix.</p>
+
+<h2>Options</h2>
+
+<dl>
+<dt>-v, --version</dt>
+<dd>Print version information and exit.</dd>
+
+<dt>-h, --help</dt>
+<dd>Print a usage summary and exit.</dd>
+
+<dt>--verbose</dt>
+<dd>Pass verbose flags to ExifTool and show its stderr output during the scan.
+Useful for diagnosing extraction failures.</dd>
+</dl>
+
+<h2>Output</h2>
+
+<pre># 20260216_095422F.ts  2026-02-16 09:54:22
+  lock +107s  20260216 15:56:09    30.415534   -89.027873</pre>
+
+<p>The header line shows the filename and the clip-start time (local) derived from
+the filename.  The lock line shows:</p>
+<dl>
+<dt>lock +<i>N</i>s</dt>
+<dd>Seconds elapsed from clip start until the first valid GPS fix.</dd>
+
+<dt><i>timestamp</i></dt>
+<dd>GPS lock time in UTC (YYYYMMDD HH:MM:SS).</dd>
+
+<dt><i>lat  lon</i></dt>
+<dd>Latitude and longitude at the moment of lock, in decimal degrees.</dd>
+</dl>
+
+<p>If no valid GPS record is found in the file, the message
+<b>(no GPS lock found)</b> is printed instead.</p>
+
+<h2>Notes</h2>
+
+<p>Filename timestamps are in local time; GPS timestamps are in UTC.
+The offset computation accounts for the timezone difference via
+<code>mktime</code> (local) and <code>timegm</code> (UTC).</p>
+
+<p>A lock offset of <b>+0s</b> is theoretically possible on a warm-start trip where
+the receiver retained its last fix.  In practice the D90 typically shows 20–120
+seconds on a cold start.</p>
+
+<div class="note">
+This tool is diagnostic.  Lock times are stored automatically in the trip manifest
+by <a href="pm_gpsinfo.html">pm_gpsinfo</a> <b>--scan-all-trips</b> and surfaced in
+the interactive browser and <a href="pm_ls.html">pm_ls</a>.
+</div>
+
+<h2>Exit Status</h2>
+<dl>
+<dt>0</dt><dd>At least one file processed without error.</dd>
+<dt>1</dt><dd>Bad arguments or file not found.</dd>
+</dl>
+
+<h2>See Also</h2>
+<p class="seealso">
+<a href="pathmux.html">pathmux</a>
+<a href="pm_gpsinfo.html">pm_gpsinfo</a>
+<a href="pm_gpsexport.html">pm_gpsexport</a>
+</p>
+
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>pm_gpsexport(1) — GPS Exporter</title>
+</head>
+<body>
+
+<h1>pm_gpsexport</h1>
+<p class="mandesc">Non-interactive GPS track exporter for dashcam trips</p>
+
+<h2>Synopsis</h2>
+<div class="synopsis">
+pm_gpsexport <i>MID</i>:<i>TID</i> [--gpx <i>PATH</i>] [--kml <i>PATH</i>] [--geojson <i>PATH</i>] [--force] [--verbose]
+</div>
+
+<h2>Description</h2>
+
+<p>
+<b>pm_gpsexport</b> exports the GPS track for a dashcam trip to one or more file
+formats without navigating the interactive GPS menu (<b>pathmux -G</b>).
+It is suitable for scripting, batch export, and pipeline use.
+</p>
+
+<p>If the trip's GPS track has not yet been extracted, <b>pm_gpsexport</b> runs
+ExifTool extraction automatically and stores the result in the manifest before
+writing any output files.  Subsequent invocations for the same trip skip extraction
+and write directly from the cached track.  Extraction runs at most once per
+invocation regardless of how many output formats are requested.</p>
+
+<p>A trip is addressed by its <i>MID</i>:<i>TID</i> (e.g. <b>CQ:73</b>),
+where <i>MID</i> is the two-character manifest ID and <i>TID</i> is the
+two-character trip ID.  Both are case-insensitive; ambiguous characters are
+normalised (O→0, I→1, L→1).</p>
+
+<h2>Options</h2>
+
+<dl>
+<dt>--gpx <i>PATH</i></dt>
+<dd>Write a GPX 1.1 track file.</dd>
+
+<dt>--kml <i>PATH</i></dt>
+<dd>Write a KML 2.2 track file with a <b>gx:Track</b> element containing
+per-point timestamps, speed, and heading.</dd>
+
+<dt>--geojson <i>PATH</i></dt>
+<dd>Write a GeoJSON FeatureCollection (RFC 7946) with one LineString feature.
+Coordinates are in [longitude, latitude] order per the spec.</dd>
+</dl>
+
+<p>At least one format flag is required.  Multiple flags may be combined in a
+single invocation; GPS extraction runs only once.</p>
+
+<h3>PATH Resolution</h3>
+<dl>
+<dt>PATH omitted</dt>
+<dd>Auto-name the output file in the current directory using the trip's start
+timestamp as the stem (e.g. <code>20260209_043838.gpx</code>).</dd>
+
+<dt>PATH ends with /</dt>
+<dd>Auto-name in the specified directory.</dd>
+
+<dt>PATH is an existing directory</dt>
+<dd>Auto-name in that directory.</dd>
+
+<dt>PATH is a full file path</dt>
+<dd>Use that path exactly.  Extension is appended if missing.</dd>
+</dl>
+
+<h3>Other Options</h3>
+<dl>
+<dt>--force</dt>
+<dd>Overwrite existing output files without prompting.  Without this flag,
+<b>pm_gpsexport</b> exits with an error if an output file already exists.</dd>
+
+<dt>--verbose</dt>
+<dd>Show ExifTool stderr during GPS extraction.  Useful for diagnosing extraction
+failures or understanding minor tag warnings.  Has no effect if extraction is
+skipped (track already in manifest).</dd>
+
+<dt>-v, --version</dt>
+<dd>Print the PathMux version string and exit.</dd>
+
+<dt>-h, --help</dt>
+<dd>Print a usage summary and exit.</dd>
+</dl>
+
+<h2>Output</h2>
+
+<p>Progress messages (extraction dots, status lines) are written to <b>stderr</b>.
+Exported file paths are written to <b>stdout</b> on success, one path per line.
+This makes the output pipeable:</p>
+<pre>pm_gpsexport CQ:73 --gpx /tmp/ | xargs -I{} cp {} /media/usb/</pre>
+
+<h2>GPS Extraction</h2>
+
+<p>If GPS has not been extracted for the trip, <b>pm_gpsexport</b> runs ExifTool
+on every Front camera segment and stores the resulting track (one point per second)
+in the trip manifest.  The manifest MD5 is updated automatically so
+<b>--validate</b> does not flag the file as externally modified.</p>
+
+<p>The ExifTool binary path and options string are read from
+<code>~/.config/pathmux/pathmux.json</code>.  See the
+<a href="pathmux.html">pathmux</a> help page, section GPS Extraction, for details
+on the format string and camera compatibility.</p>
+
+<h2>Output Formats</h2>
+
+<h3>GPX 1.1</h3>
+<p>Produces a standard GPX track with one <code>&lt;trkpt&gt;</code> per GPS record.
+Each point includes latitude, longitude, an ISO 8601 timestamp, and speed in metres
+per second as a <code>&lt;extensions&gt;</code> element.  Elevation is omitted for
+Pruveeo D90 footage (altitude values are unreliable on that model).</p>
+
+<h3>KML 2.2</h3>
+<p>Produces a KML document containing start and end placemarks and a
+<b>gx:Track</b> element with per-point timestamps, coordinates, speed, and heading
+in <b>ExtendedData</b> arrays.  The track line style is solid red; start pin is
+green, end pin is red.  Compatible with Google Earth and other KML viewers.</p>
+
+<h3>GeoJSON (RFC 7946)</h3>
+<p>Produces a FeatureCollection with one Feature containing a LineString geometry.
+Properties include <b>creator</b>, <b>trip_id</b>, <b>date</b>, <b>start_time</b>,
+<b>duration</b>, <b>segment_count</b>, and <b>point_count</b>.</p>
+
+<h2>Examples</h2>
+
+<dl>
+<dt>Export GPX only, auto-named in current directory:</dt>
+<dd><pre>pm_gpsexport CQ:73 --gpx</pre></dd>
+
+<dt>Export KML to an explicit path:</dt>
+<dd><pre>pm_gpsexport CQ:73 --kml /mnt/maps/trip.kml</pre></dd>
+
+<dt>Export all three formats in one pass:</dt>
+<dd><pre>pm_gpsexport CQ:73 --gpx /tmp/ --kml /tmp/ --geojson /tmp/</pre></dd>
+
+<dt>Force overwrite of existing files:</dt>
+<dd><pre>pm_gpsexport CQ:73 --gpx /tmp/trip.gpx --force</pre></dd>
+
+<dt>Show ExifTool output during extraction:</dt>
+<dd><pre>pm_gpsexport CQ:73 --gpx /tmp/ --verbose</pre></dd>
+</dl>
+
+<h2>Files</h2>
+<dl>
+<dt>~/.config/pathmux/pathmux.json</dt>
+<dd>Application settings including <b>exiftoolPath</b> and <b>exiftoolOptions</b>.</dd>
+
+<dt>~/.config/pathmux/manifests.json</dt>
+<dd>Manifest index used for MID:TID resolution.</dd>
+
+<dt><i>&lt;footage_path&gt;</i>/pm_manifest_<i>&lt;id&gt;</i>.json</dt>
+<dd>Trip manifest.  Updated in-place after GPS extraction.</dd>
+</dl>
+
+<h2>Exit Status</h2>
+<dl>
+<dt>0</dt><dd>All requested output files written successfully.</dd>
+<dt>1</dt><dd>Failure: MID:TID not resolved, GPS extraction failed, output file exists
+without --force, or a write error occurred.</dd>
+</dl>
+
+<h2>See Also</h2>
+<p class="seealso">
+<a href="pathmux.html">pathmux</a>
+<a href="pm_gpsinfo.html">pm_gpsinfo</a>
+<a href="pm_ls.html">pm_ls</a>
+</p>
+
+</body>
+</html>
