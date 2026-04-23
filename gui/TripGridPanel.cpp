@@ -88,30 +88,33 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
     clearTiles();
     m_thumbQueue.clear();
 
-    // Build sticky header: "MR -- Z:/ex01/ -- 19 trips"
+    ConfigManager config;
+    config.loadSettings();
+    m_imperial = config.getUseImperial();
+    auto trips = config.loadTripCache(entry.manifestFile);
+
+    // Build sticky header using actual loaded count, not cached entry.tripCount,
+    // so it stays accurate after trip deletions/archives.
     {
         QString id   = QString::fromStdString(entry.id).toUpper();
         QString path = QString::fromStdString(entry.path);
-        int     n    = entry.tripCount;
+        int     n    = (int)trips.size();
         m_manifestHeader->setText(
             QString("%1 \u2014\u2014 %2 \u2014\u2014 %3 trip%4")
                 .arg(id).arg(path).arg(n).arg(n == 1 ? "" : "s"));
         m_manifestHeader->show();
     }
 
-    ConfigManager config;
-    config.loadSettings();
-    m_imperial = config.getUseImperial();
-    auto trips = config.loadTripCache(entry.manifestFile);
-
     for (const auto& t : trips) {
-        auto* tile = new TripTile(t, m_imperial, m_gridContainer);
+        auto* tile = new TripTile(t, m_imperial, entry.path, m_gridContainer);
         tile->show();
         connect(tile, &TripTile::doubleClicked,
                 [this, t]() { emit tripDoubleClicked(m_currentManifest, t); });
         connect(tile, &TripTile::buildRequested,
                 [this, t]() { onBuildRequested(t); });
-        tile->setTextZoom(m_zoomFactor);
+        connect(tile, &TripTile::tripChanged,
+                [this]() { loadManifest(m_currentManifest); });
+        tile->setZoom(m_zoomFactor);
         m_tiles.push_back(tile);
 
         // Queue thumbnails for deferred loading
@@ -138,23 +141,24 @@ void TripGridPanel::clearTiles()
 
 void TripGridPanel::layoutTiles()
 {
+    int tileW  = int(TripTile::W * m_zoomFactor);
+    int tileH  = int(TripTile::H * m_zoomFactor);
     int availW = m_scrollArea->viewport()->width();
-    int cols   = qMax(1, (availW + TILE_SPACING) /
-                            (TripTile::W + TILE_SPACING));
+    int cols   = qMax(1, (availW + TILE_SPACING) / (tileW + TILE_SPACING));
     int n      = (int)m_tiles.size();
 
     for (int i = 0; i < n; ++i) {
         int row = i / cols;
         int col = i % cols;
-        int x = TILE_SPACING + col * (TripTile::W + TILE_SPACING);
-        int y = TILE_SPACING + row * (TripTile::H + TILE_SPACING);
-        m_tiles[i]->setGeometry(x, y, TripTile::W, TripTile::H);
+        int x = TILE_SPACING + col * (tileW + TILE_SPACING);
+        int y = TILE_SPACING + row * (tileH + TILE_SPACING);
+        m_tiles[i]->setGeometry(x, y, tileW, tileH);
     }
 
     int rows   = n == 0 ? 0 : (n + cols - 1) / cols;
-    int totalH = rows * (TripTile::H + TILE_SPACING) + TILE_SPACING;
+    int totalH = rows * (tileH + TILE_SPACING) + TILE_SPACING;
     m_gridContainer->setMinimumSize(
-        cols * (TripTile::W + TILE_SPACING) + TILE_SPACING,
+        cols * (tileW + TILE_SPACING) + TILE_SPACING,
         qMax(totalH, m_scrollArea->viewport()->height()));
 }
 
@@ -227,7 +231,8 @@ void TripGridPanel::setZoom(double factor)
 void TripGridPanel::applyZoom()
 {
     for (auto* tile : m_tiles)
-        tile->setTextZoom(m_zoomFactor);
+        tile->setZoom(m_zoomFactor);
+    layoutTiles();
 }
 
 void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
@@ -247,4 +252,4 @@ void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
     }
     // "Add to Batch Queue" path: dlg.processNow() == false — handled in future release
 }
-// SN: 00093
+// SN: 00097

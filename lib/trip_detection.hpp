@@ -114,6 +114,11 @@ struct Trip {
     // "none" | "partial" | "complete"
     std::string gpsTrackStatus = "none";
 
+    // Generated video assets — absolute paths recorded in the manifest so files
+    // can live anywhere and multiple outputs per trip are supported.
+    std::vector<std::string> mapVideos;   // moving-map MP4s (map1, map2, …)
+    std::vector<std::string> dashVideos;  // dashboard MP4s  (dash1, dash2, …)
+
     // Full GPS track — one point per second extracted from all segments.
     // Empty until user requests GPS extraction.
     std::vector<GpsPoint> gpsTrack;
@@ -155,4 +160,4 @@ public:
 } // namespace Pathmux
 
 #endif
-// SN: 00089
+// SN: 00101

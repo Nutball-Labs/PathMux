@@ -64,7 +64,8 @@ bool extractGps(json& root,
                 const std::string& manifestFile,
                 const std::string& exiftoolPath,
                 const std::string& exiftoolOptions,
-                bool verbose)
+                bool verbose,
+                std::function<void(int done, int total)> progressCb)
 {
     auto& jTrip = root["trips"][tripIdx];
 
@@ -87,7 +88,11 @@ bool extractGps(json& root,
     int preTimeLockCount     = 0;  // records with valid position but unsynchronized clock
 
     for (int si = 0; si < segCount; ++si) {
-        std::string frontPath = segs[si].value("front", "-");
+        std::string frontPath = "-";
+        if (segs[si].contains("cameras") && segs[si]["cameras"].contains("front"))
+            frontPath = segs[si]["cameras"]["front"].get<std::string>();
+        else
+            frontPath = segs[si].value("front", "-");  // legacy manifest fallback
         if (frontPath == "-" || frontPath.empty()) continue;
 
         // verbose=true: let ExifTool stderr reach the terminal.
@@ -104,36 +109,36 @@ bool extractGps(json& root,
         }
 
         char linebuf[512];
-        int lineIdx = 0;
 
         while (fgets(linebuf, sizeof(linebuf), pipe)) {
             std::string line(linebuf);
             while (!line.empty() && (line.back() == '\n' || line.back() == '\r'
                                      || line.back() == ' '))
                 line.pop_back();
-            if (line.empty()) { ++lineIdx; continue; }
+            if (line.empty()) continue;
 
             std::istringstream iss(line);
             std::string datePart, timePart;
             double lat, lon, alt, speed, heading, accelX, accelY, accelZ;
 
-            // Format: "YYYY:MM:DD HH:MM:SS lat lon alt speed heading accelX accelY accelZ"
-            // Accelerometer outputs as 3 space-separated values, parsed as individual fields.
+            // Format: "YYYY:MM:DD HH:MM:SS lat lon alt speed heading [accelX accelY accelZ]"
+            // Accelerometer is optional — cameras without it (e.g. Cobra GPS) omit those fields.
             // Altitude stored as-is; D90 values are negative/incorrect but useful on other cameras.
-            if (!(iss >> datePart >> timePart >> lat >> lon >> alt >> speed >> heading
-                      >> accelX >> accelY >> accelZ)) {
-                ++lineIdx; continue;
+            if (!(iss >> datePart >> timePart >> lat >> lon >> alt >> speed >> heading)) {
+                continue;
             }
+            accelX = accelY = accelZ = 0.0;
+            iss >> accelX >> accelY >> accelZ;  // optional; leave zero if absent
 
             // Skip records with zero lat/lon — GPS position not yet locked
-            if (lat == 0.0 && lon == 0.0) { ++prePositionLockCount; ++lineIdx; continue; }
+            if (lat == 0.0 && lon == 0.0) { ++prePositionLockCount; continue; }
 
             // Skip records with unsynchronized clock (year < 2000).
             // ExifTool renders the all-zero GPS clock register as "1900:01:00";
             // other cameras/versions may emit "1970:01:01" or similar.
             // A broad threshold catches all known variants.
             int year = (datePart.size() >= 4) ? std::stoi(datePart.substr(0, 4)) : 0;
-            if (year < 2000) { ++preTimeLockCount; ++lineIdx; continue; }
+            if (year < 2000) { ++preTimeLockCount; continue; }
 
             json pt;
             pt["timestamp"] = datePart + " " + timePart;
@@ -147,11 +152,11 @@ bool extractGps(json& root,
             pt["accelZ"]    = accelZ;
             trackArray.push_back(pt);
             gotAny = true;
-            ++lineIdx;
         }
         pclose(pipe);
 
         std::cout << "." << std::flush;  // one dot per segment
+        if (progressCb) progressCb(si + 1, segCount);
     }
     std::cout << "\n";
 
@@ -458,4 +463,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 }
 
 } // namespace Pathmux
-// SN: 00089
+// SN: 00101

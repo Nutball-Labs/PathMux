@@ -13,7 +13,7 @@ groups video segments into trips, caches results as JSON manifests, and
 extracts/exports GPS tracks. Phase 2 Qt6 GUI is in active development.
 Private GitHub repo at https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
 
-**Current version:** 1.2.0 (SN 00095)
+**Current version:** 1.7.1 (SN 00102)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -112,7 +112,7 @@ bottom of the file:
 ```
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00095`
+- There is one project-wide **high-water mark** SN, currently `00102`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -200,11 +200,17 @@ bump SNs, bump version, commit, and push.
 
 ### Segment File Paths
 - `TripSegment::cameras` map (keyed by camera ID string, e.g. `"front"`, `"rear"`) stores
-  **absolute paths** in the manifest (e.g. `/z/srcdash/ex1/Front/20260225_044424F.ts`)
-- `TripSegment::thumbs` map similarly stores absolute thumbnail paths
+  **absolute paths in memory** — `loadTripCache()` always resolves to absolute before returning
+- `TripSegment::thumbs` map similarly holds resolved absolute paths in memory
 - `Trip::firstThumbs` / `Trip::lastThumbs` maps replace the old 8 named thumbnail fields
-- Do NOT prepend `sourcePath` when constructing file paths from these fields —
-  the path is already complete. Use the value directly.
+- **On-disk format (schema 3):** paths stored as **relative** to source root (e.g.
+  `Front/20260225_044424F.ts`). `saveTripCache()` strips the source root prefix via
+  `makeRelPath()`; `loadTripCache()` resolves via `resolvePathWithMap()` using the
+  manifest's `path_map` section. Do NOT prepend `sourcePath` when using values returned
+  by `loadTripCache()` — they are already absolute.
+- **`path_map`** in manifest JSON: keyed by `os_hostname` (e.g. `linux_penny`,
+  `windows_nutball1`); value is the absolute local path to the source root on that machine.
+  Enables one manifest file to serve all platforms sharing the same footage.
 - Old manifests with named `front`/`rear`/`left`/`right` fields are migrated transparently
   on read by `config_manager`
 

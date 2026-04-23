@@ -319,7 +319,9 @@ static void drawProgressLine(const std::string& label,
 // drawFinalizingLine — shown when ffmpeg stops emitting progress events
 // (e.g. writing the moov atom over NFS).  Displays the last-known percentage
 // and a spinning indicator so the user knows the process is still alive.
+// POSIX only — called from inside the #else branch below.
 // ---------------------------------------------------------------------------
+#ifndef _WIN32
 static void drawFinalizingLine(const std::string& label,
                                 int64_t doneUs, int64_t totalUs) {
     static int spinIdx = 0;
@@ -342,6 +344,7 @@ static void drawFinalizingLine(const std::string& label,
               << std::setw(3) << pctInt << "%  writing "
               << spin[spinIdx++ % 4] << "  " << std::flush;
 }
+#endif // !_WIN32
 
 // ---------------------------------------------------------------------------
 // runFfmpegWithProgress — run ffmpeg and display a live progress bar.
@@ -365,7 +368,8 @@ static void drawFinalizingLine(const std::string& label,
 // ---------------------------------------------------------------------------
 bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
                                           const std::string& label,
-                                          int totalDurationSecs) {
+                                          int totalDurationSecs,
+                                          DrawFn drawFn) {
     // GUI path: delegate to QProcess-based runner to avoid fork() in QThread.
     if (ffmpegRunner)
         return ffmpegRunner(cmd, label, totalDurationSecs);
@@ -446,6 +450,8 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
                     progressCallback(label,
                         (int)(std::min(1.0, (double)outTimeUs / totalUs) * 100),
                         speed > 0.001 ? (int)((totalUs - outTimeUs) / (speed * 1000000.0)) : 0);
+                else if (drawFn)
+                    drawFn(label, outTimeUs, totalUs, speed);
                 else
                     drawProgressLine(label, outTimeUs, totalUs, speed);
             }
@@ -455,11 +461,15 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
     }
 
     // Final: show 100% then newline.
-    if (!progressCallback)
-        drawProgressLine(label, totalUs, totalUs, speed);
-    else
+    if (!progressCallback) {
+        if (drawFn)
+            drawFn(label, totalUs, totalUs, speed);
+        else
+            drawProgressLine(label, totalUs, totalUs, speed);
+    } else {
         progressCallback(label, 100, 0);
-    std::cout << "\n";
+    }
+    if (!drawFn) std::cout << "\n";
 
     // Ensure the process has fully exited before reading its exit code.
     // progress=end is written by ffmpeg before cmd.exe itself exits, so
@@ -567,6 +577,8 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
                     progressCallback(label,
                                      (int)(std::min(1.0, (double)outTimeUs / totalUs) * 100),
                                      speed > 0.001 ? (int)((totalUs - outTimeUs) / (speed * 1000000.0)) : 0);
+                else if (drawFn)
+                    drawFn(label, outTimeUs, totalUs, speed);
                 else
                     drawProgressLine(label, outTimeUs, totalUs, speed);
             }
@@ -582,19 +594,27 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
             } else {
                 auto elapsed = std::chrono::steady_clock::now() - lastProgressTime;
                 bool stalled = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >= 2;
-                if (stalled && !progressCallback)
-                    drawFinalizingLine(label, outTimeUs, totalUs);
+                if (stalled && !progressCallback) {
+                    if (drawFn)
+                        drawFn(label, outTimeUs, totalUs, speed);
+                    else
+                        drawFinalizingLine(label, outTimeUs, totalUs);
+                }
                 usleep(50000);  // 50 ms
             }
         }
     }
 
     // Final: show 100% then newline
-    if (!progressCallback)
-        drawProgressLine(label, totalUs, totalUs, speed);
-    else
+    if (!progressCallback) {
+        if (drawFn)
+            drawFn(label, totalUs, totalUs, speed);
+        else
+            drawProgressLine(label, totalUs, totalUs, speed);
+    } else {
         progressCallback(label, 100, 0);
-    std::cout << "\n";
+    }
+    if (!drawFn) std::cout << "\n";
 
     // Wait for child to fully exit if not already reaped
     waitpid(pid, &childSt, 0);
@@ -737,12 +757,38 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
 
     int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
                                                  : trip.segDetectedDuration;
-    bool ok = runFfmpegWithProgress(cmd.str(), "concat:" + camera, totalSecs);
+
+    // Build draw function: when assigned a parallel row, use ANSI cursor
+    // positioning to update this camera's dedicated line without stomping
+    // other threads.  m_stdoutMutex serialises the move+draw+restore sequence.
+    DrawFn drawFn;
+    if (opts.parallelRow >= 0 && !ffmpegRunner) {
+        int row   = opts.parallelRow;
+        int total = opts.parallelTotalRows;
+        drawFn = [this, row, total](const std::string& lbl,
+                                    int64_t doneUs, int64_t totalUs, double spd) {
+            std::lock_guard<std::mutex> lk(m_stdoutMutex);
+            int up = total - row;
+            std::cout << "\033[" << up << "A";   // cursor up to this row
+            drawProgressLine(lbl, doneUs, totalUs, spd);  // \r + bar
+            std::cout << "\033[" << up << "B";   // cursor back down
+            std::cout << std::flush;
+        };
+    }
+
+    bool ok = runFfmpegWithProgress(cmd.str(), "concat:" + camera, totalSecs, drawFn);
+    if (!ok && !drawFn)
+        std::cerr << "  ffmpeg failed for camera: " << camera << "\n";
+    else if (!ok && drawFn) {
+        std::lock_guard<std::mutex> lk(m_stdoutMutex);
+        int up = opts.parallelTotalRows - opts.parallelRow;
+        std::cout << "\033[" << up << "A";
+        std::cout << "\r  concat:" << camera << "  FAILED\n";
+        std::cout << "\033[" << (up - 1) << "B" << std::flush;
+    }
 
     // Clean up temp file
     fs::remove(listFile);
-
-    if (!ok) std::cerr << "  ffmpeg failed for camera: " << camera << "\n";
     return ok;
 }
 
@@ -787,7 +833,29 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         if (cp("right") != "-") srcRight.push_back(cp("right"));
     }
 
-    if (srcFront.empty()) {
+    // Apply cameraRemap: redirect source segments for each collage position.
+    // Returns segments for the camera that should fill `position` in the collage.
+    auto effectiveSegs = [&](const std::string& position)
+                         -> const std::vector<std::string>& {
+        auto it = opts.cameraRemap.find(position);
+        const std::string& cam = (it != opts.cameraRemap.end()) ? it->second : position;
+        if (cam == "rear")  return srcRear;
+        if (cam == "left")  return srcLeft;
+        if (cam == "right") return srcRight;
+        return srcFront;
+    };
+
+    // Look up whether a given camera slot has an external video replacement.
+    auto extSlotPath = [&](const std::string& slot) -> std::string {
+        for (const auto& es : opts.externalSlots)
+            if (es.replaces == slot && !es.path.empty())
+                return es.path;
+        return {};
+    };
+
+    bool extReplacesFront = !extSlotPath("front").empty();
+
+    if (effectiveSegs("front").empty() && !extReplacesFront && !opts.blankSlots.count("front")) {
         std::cerr << "Error: No front-camera segments found for collage.\n";
         return false;
     }
@@ -817,12 +885,16 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
             (fs::path(tmpDir) / ("pm_tmp_col_" + name + ".txt")).string());
     };
 
-    std::string listF = makeList(srcFront, "front");
-    std::string listR = makeList(srcRear,  "rear");
-    std::string listL = makeList(srcLeft,  "left");
-    std::string listG = makeList(srcRight, "right");
+    auto isBlank = [&](const std::string& slot) {
+        return opts.blankSlots.count(slot) > 0;
+    };
 
-    if (listF.empty()) {
+    std::string listF = (extReplacesFront                  || isBlank("front")) ? "" : makeList(effectiveSegs("front"), "front");
+    std::string listR = (!extSlotPath("rear").empty()  || isBlank("rear"))  ? "" : makeList(effectiveSegs("rear"),  "rear");
+    std::string listL = (!extSlotPath("left").empty()  || isBlank("left"))  ? "" : makeList(effectiveSegs("left"),  "left");
+    std::string listG = (!extSlotPath("right").empty() || isBlank("right")) ? "" : makeList(effectiveSegs("right"), "right");
+
+    if (listF.empty() && !extReplacesFront && !isBlank("front")) {
         std::cerr << "Error: Failed to write front concat list.\n";
         return false;
     }
@@ -851,26 +923,64 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         cmd << " -init_hw_device " << opts.encode.hwDeviceType
             << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
 
-    // Input 0: front (always present)
-    cmd << " -f concat -safe 0 -i \"" << listF << "\"";
-    // Inputs 1-3: use source concat list if available, lavfi black otherwise
-    auto addInput = [&](const std::string& list) {
-        if (!list.empty())
+    // Inputs 0-3: front/rear/left/right.
+    // If external video replaces a slot, feed it directly instead of the concat list.
+    auto addInput = [&](const std::string& list, const std::string& slot) {
+        std::string ext = extSlotPath(slot);
+        if (!ext.empty()) {
+            bool doLoop = false;
+            for (const auto& es : opts.externalSlots)
+                if (es.replaces == slot) { doLoop = es.loop; break; }
+            if (doLoop) cmd << " -stream_loop -1";
+            cmd << " -i \"" << ext << "\"";
+        } else if (!list.empty()) {
             cmd << " -f concat -safe 0 -i \"" << list << "\"";
-        else
+        } else {
             cmd << " -f lavfi -i \"color=c=black:s=1920x1080:r=25,format="
                 << opts.encode.pixFmt << "\"";
+        }
     };
-    addInput(listR);
-    addInput(listL);
-    addInput(listG);
+    addInput(listF, "front");
+    addInput(listR, "rear");
+    addInput(listL, "left");
+    addInput(listG, "right");
+
+    // Overlay input: camera concat takes priority over file path.
+    bool hasOverlay = !opts.overlayCamera.empty() || !opts.mapOverlayPath.empty();
+    if (!opts.overlayCamera.empty()) {
+        const auto& ovSegs = effectiveSegs(opts.overlayCamera);
+        if (!ovSegs.empty()) {
+            std::string ovList = writeConcatList(ovSegs,
+                (fs::path(tmpDir) / "pm_tmp_col_overlay.txt").string());
+            cmd << " -f concat -safe 0 -i \"" << ovList << "\"";
+        } else {
+            hasOverlay = false;
+        }
+    } else if (!opts.mapOverlayPath.empty()) {
+        if (opts.mapOverlayLoop) cmd << " -stream_loop -1";
+        cmd << " -i \"" << opts.mapOverlayPath << "\"";
+    }
+
+    // Derive fps from the trip video profile; default to "30" if unknown.
+    // Explicit fps in the filter graph is required by hardware encoders (QSV,
+    // VAAPI) which refuse to initialise when the input frame rate is variable
+    // or unspecified.
+    std::string collageFps = trip.videoProfile.frameRate.empty()
+                             ? "30" : trip.videoProfile.frameRate;
 
     cmd << " -filter_complex \""
         <<   "[0:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v0];"
         <<   "[1:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v1];"
         <<   "[2:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v2];"
         <<   "[3:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v3];"
-        <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[vout]\""
+        <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0,"
+        <<   "fps=" << collageFps << (hasOverlay ? "[base]" : "[vout]");
+    if (hasOverlay) {
+        cmd << ";[4:v]scale=" << opts.mapOverlayWidth << ":" << opts.mapOverlayHeight
+            <<   ",format=" << opts.encode.pixFmt << "[ovl]"
+            <<   ";[base][ovl]overlay=(W-w)/2:(H-h)/2:eof_action=pass[vout]";
+    }
+    cmd << "\""
         << " -map \"[vout]\""
         << " -map " << audioIdx << ":a:0"
         << " -shortest"
@@ -1693,7 +1803,8 @@ int VideoBuilder::pickTrip(const std::vector<Trip>& trips,
 // ---------------------------------------------------------------------------
 // configureOptions — interactive build options menu.
 // ---------------------------------------------------------------------------
-VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
+VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip,
+                                            const std::string& sourcePath) {
     VideoOptions opts;
     opts.ffmpegPath          = config.getFfmpegPath();
     opts.containerFormat     = config.getVideoFormat();
@@ -1702,6 +1813,7 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
     opts.encode              = config.getEncodeSettings();
     opts.audioSource         = config.getDefaultAudioSource();
     opts.audioExtractCamera  = config.getDefaultAudioSource();  // independent default
+    opts.parallelConcats     = true;   // stream-copy is disk-bound; run cameras concurrently
 
     // Helper: is a given camera name the collage audio source?
     auto isAudioSrc = [&](const std::string& cam) {
@@ -1761,7 +1873,11 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
             t.erase(std::remove(t.begin(), t.end(), ':'), t.end());
             if (t.size() > 6) t = t.substr(0, 6);
             std::string autoBase = d + "_" + t;
-            UI::printLine("  [N]  Set Note");
+            {
+                std::string nd = trip.note.empty() ? "(none)"
+                    : trip.note.substr(0, 40) + (trip.note.size() > 40 ? "..." : "");
+                UI::printLine("  [N]  Note               " + nd);
+            }
             UI::printLine("  [O]  Output directory  "
                           + (opts.outputDir.empty() ? "(current directory)" : opts.outputDir));
             UI::printLine("  [P]  Basename         "
@@ -1910,18 +2026,35 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip) {
                 std::cout << "  Set note (Enter to cancel):\n  > ";
             } else {
                 std::cout << "  Current note:\n  " << trip.note << "\n"
-                          << "  Set note (Enter to keep, space+Enter to clear):\n  > ";
+                          << "  New note (Enter to keep, space+Enter to clear):\n  > ";
             }
-            std::string input;
-            std::getline(std::cin, input);
-            if (!input.empty() && input.find_first_not_of(' ') == std::string::npos) {
+            std::string raw;
+            std::getline(std::cin, raw);
+            bool allSpace = !raw.empty() && raw.find_first_not_of(' ') == std::string::npos;
+            // Trim leading/trailing whitespace
+            size_t s = raw.find_first_not_of(" \t\r\n");
+            size_t e = raw.find_last_not_of(" \t\r\n");
+            std::string trimmed = (s == std::string::npos) ? "" : raw.substr(s, e - s + 1);
+            // Cap at 200 chars
+            if (trimmed.size() > 200) trimmed = trimmed.substr(0, 200);
+            bool changed = false;
+            if (allSpace) {
                 trip.note.clear();
+                changed = true;
                 std::cout << "  Note cleared.\n";
-            } else if (!input.empty()) {
-                trip.note = input;
+            } else if (!trimmed.empty()) {
+                trip.note = trimmed;
+                changed = true;
                 std::cout << "  Note saved.\n";
             }
-            // else empty — keep existing, no message
+            // Persist immediately if we have a source path
+            if (changed && !sourcePath.empty()) {
+                auto allTrips = config.loadTripCache(sourcePath);
+                for (auto& t : allTrips)
+                    if (t.id == trip.id) { t.note = trip.note; break; }
+                config.saveTripCache(sourcePath, allTrips);
+            }
+            // else bare Enter — keep existing, no message
             continue;
         }
         if (ch == 'V') {
@@ -2091,19 +2224,46 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     if (anyCamera) {
         auto t0 = clock::now();
         if (opts.parallelConcats) {
-            // Stream-copy concats are low-CPU / disk-bound; run concurrently.
-            std::vector<std::thread> threads;
-            auto launch = [&](bool cond, const char* cam, const char* slot) {
-                if (cond)
-                    threads.emplace_back([this, &trip, &opts, cam, slot, &collectSegments]() {
-                        buildCameraFile(trip, cam, collectSegments(slot), opts);
-                    });
+            // CLI mode: assign ANSI rows and print initial 0% bars.
+            // GUI mode (ffmpegRunner set): just launch threads; ffmpegRunner
+            // handles progress via progressCallback — no terminal output.
+            struct CamSpec { bool go; const char* cam; const char* slot; };
+            std::vector<CamSpec> specs = {
+                {opts.buildFront, "Front", "front"},
+                {opts.buildRear,  "Rear",  "rear" },
+                {opts.buildLeft,  "Left",  "left" },
+                {opts.buildRight, "Right", "right"},
             };
-            launch(opts.buildFront, "Front", "front");
-            launch(opts.buildRear,  "Rear",  "rear");
-            launch(opts.buildLeft,  "Left",  "left");
-            launch(opts.buildRight, "Right", "right");
+            int totalRows = 0;
+            for (auto& s : specs) if (s.go) ++totalRows;
+
+            if (!ffmpegRunner) {
+                // Print initial 0% bars (each followed by \n to advance a row).
+                for (auto& s : specs) {
+                    if (!s.go) continue;
+                    drawProgressLine(std::string("concat:") + s.cam, 0, 1, 0.0);
+                    std::cout << "\n";
+                }
+                std::cout << std::flush;
+            }
+
+            std::vector<std::thread> threads;
+            int ri = 0;
+            for (auto& s : specs) {
+                if (!s.go) continue;
+                VideoOptions cOpts = opts;
+                if (!ffmpegRunner) {
+                    cOpts.parallelRow       = ri;
+                    cOpts.parallelTotalRows = totalRows;
+                }
+                ++ri;
+                threads.emplace_back([this, &trip, cOpts, cam=s.cam, slot=s.slot,
+                                      &collectSegments]() {
+                    buildCameraFile(trip, cam, collectSegments(slot), cOpts);
+                });
+            }
             for (auto& t : threads) t.join();
+            if (!ffmpegRunner) std::cout << std::flush;
         } else {
             if (opts.buildFront)
                 buildCameraFile(trip, "Front", collectSegments("front"), opts);
@@ -2228,7 +2388,7 @@ void VideoBuilder::run(ConfigManager& config) {
 
         // Configure build options — [N] may edit trip.note, [T] may set durationFFProbed
         config.reloadHostSettings();
-        VideoOptions opts = configureOptions(config, trip);
+        VideoOptions opts = configureOptions(config, trip, selManifest);
         opts.sourcePath = selManifest;
         opts.manifestId = config.getManifestIdForPath(selManifest);
 
@@ -2287,14 +2447,56 @@ void VideoBuilder::run(ConfigManager& config) {
         bool anyCamera = opts.buildFront || opts.buildRear || opts.buildLeft || opts.buildRight;
         if (anyCamera) {
             auto t0 = clock::now();
-            if (opts.buildFront)
-                buildCameraFile(trip, "Front", collectSegments("front"), opts);
-            if (opts.buildRear)
-                buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
-            if (opts.buildLeft)
-                buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
-            if (opts.buildRight)
-                buildCameraFile(trip, "Right", collectSegments("right"), opts);
+            if (opts.parallelConcats) {
+                // Assign each camera its own progress row.  Print initial 0% bars
+                // to establish the row positions, then threads update in place via
+                // ANSI cursor movement (serialised through m_stdoutMutex).
+                struct CamSpec { bool go; const char* cam; const char* slot; };
+                std::vector<CamSpec> specs = {
+                    {opts.buildFront, "Front", "front"},
+                    {opts.buildRear,  "Rear",  "rear" },
+                    {opts.buildLeft,  "Left",  "left" },
+                    {opts.buildRight, "Right", "right"},
+                };
+                int totalRows = 0;
+                for (auto& s : specs) if (s.go) ++totalRows;
+
+                if (!ffmpegRunner) {
+                    for (auto& s : specs) {
+                        if (!s.go) continue;
+                        drawProgressLine(std::string("concat:") + s.cam, 0, 1, 0.0);
+                        std::cout << "\n";
+                    }
+                    std::cout << std::flush;
+                }
+
+                std::vector<std::thread> threads;
+                int ri = 0;
+                for (auto& s : specs) {
+                    if (!s.go) continue;
+                    VideoOptions cOpts = opts;
+                    if (!ffmpegRunner) {
+                        cOpts.parallelRow       = ri;
+                        cOpts.parallelTotalRows = totalRows;
+                    }
+                    ++ri;
+                    threads.emplace_back([this, &trip, cOpts, cam=s.cam, slot=s.slot,
+                                          &collectSegments]() {
+                        buildCameraFile(trip, cam, collectSegments(slot), cOpts);
+                    });
+                }
+                for (auto& t : threads) t.join();
+                if (!ffmpegRunner) std::cout << std::flush;
+            } else {
+                if (opts.buildFront)
+                    buildCameraFile(trip, "Front", collectSegments("front"), opts);
+                if (opts.buildRear)
+                    buildCameraFile(trip, "Rear",  collectSegments("rear"),  opts);
+                if (opts.buildLeft)
+                    buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
+                if (opts.buildRight)
+                    buildCameraFile(trip, "Right", collectSegments("right"), opts);
+            }
             timings.concatSecs = elapsedSecs(t0);
         }
 
@@ -2364,4 +2566,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00094
+// SN: 00100

@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QIcon>
 #include <QPixmap>
+#include <string>
 #include "MainWindow.h"
 #include "SetupWizard.h"
 #include "config_manager.hpp"
@@ -10,6 +11,39 @@
 
 int main(int argc, char* argv[])
 {
+    // Apply UI scale BEFORE QApplication — Qt bakes DPI metrics at startup.
+    // Priority: QT_SCALE_FACTOR env var > --scale arg > uiScale in settings.
+    if (!qEnvironmentVariableIsSet("QT_SCALE_FACTOR")) {
+        double scale = 0.0;
+
+        // Check argv for --scale N or --scale=N
+        for (int i = 1; i < argc && scale == 0.0; ++i) {
+            std::string a = argv[i];
+            if (a == "--scale" && i + 1 < argc) {
+                try { scale = std::stod(argv[i + 1]); } catch (...) {}
+            } else if (a.size() > 8 && a.substr(0, 8) == "--scale=") {
+                try { scale = std::stod(a.substr(8)); } catch (...) {}
+            }
+        }
+
+        // Fall back to uiScale in settings (ConfigManager is Qt-free; safe before QApplication)
+        if (scale == 0.0) {
+            Pathmux::ConfigManager preConfig;
+            scale = preConfig.getUiScale();
+        }
+
+        if (scale > 0.5 && scale != 1.0) {
+            // Format cleanly: "1.5" not "1.500000"
+            std::string s = std::to_string(scale);
+            auto dot = s.find('.');
+            if (dot != std::string::npos) {
+                auto last = s.find_last_not_of('0');
+                s = (last > dot) ? s.substr(0, last + 1) : s.substr(0, dot + 2);
+            }
+            qputenv("QT_SCALE_FACTOR", s.c_str());
+        }
+    }
+
     QApplication app(argc, argv);
     app.setApplicationName("PathMux");
     app.setApplicationVersion(APP_VERSION);
@@ -59,4 +93,4 @@ int main(int argc, char* argv[])
     w.show();
     return app.exec();
 }
-// SN: 00095
+// SN: 00097

@@ -13,7 +13,9 @@
 #ifdef _WIN32
 #  include <io.h>      // _access
 #  define access _access
-#  define X_OK  0      // Windows has no exec bit; 0 = existence check only
+#  ifndef X_OK
+#    define X_OK  0    // Windows has no exec bit; 0 = existence check only
+#  endif
 #else
 #  include <unistd.h>
 #endif
@@ -361,4 +363,4 @@ inline std::string confirmOutputPath(const std::string& path) {
 } // namespace UI
 
 #endif
-// SN: 00089
+// SN: 00100

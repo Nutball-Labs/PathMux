@@ -3,6 +3,7 @@
 #ifndef GPS_EXPORT_HPP
 #define GPS_EXPORT_HPP
 
+#include <functional>
 #include <string>
 #include "json.hpp"
 
@@ -15,12 +16,16 @@ namespace Pathmux {
 // root["trips"][tripIdx].  Rewrites the manifest to disk and updates its
 // MD5 in the index so --validate does not flag it as externally modified.
 // Returns false if ExifTool is unavailable or produced no GPS records.
+//
+// progressCb: optional callback called after each segment completes.
+//   Args: (segmentsDone, segmentsTotal).  Null = no callback.
 bool extractGps(json& root,
                 int tripIdx,
                 const std::string& manifestFile,
                 const std::string& exiftoolPath,
                 const std::string& exiftoolOptions,
-                bool verbose = false);
+                bool verbose = false,
+                std::function<void(int done, int total)> progressCb = nullptr);
 
 // Write GPX 1.1 track file.  outPath must be fully resolved before calling.
 // Returns outPath on success, "" on failure.
@@ -38,4 +43,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 } // namespace Pathmux
 
 #endif
-// SN: 00089
+// SN: 00098

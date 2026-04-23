@@ -87,6 +87,7 @@ void ConfigManager::loadSettings() {
     settings.defaultAudioSource  = j.value("defaultAudioSource",  settings.defaultAudioSource);
     settings.logLevel            = j.value("logLevel",            settings.logLevel);
     settings.activeProfileId     = j.value("activeProfileId",     settings.activeProfileId);
+    settings.uiScale             = j.value("uiScale",             settings.uiScale);
 
     if (j.contains("encode") && j["encode"].is_object()) {
         const auto& e = j["encode"];
@@ -196,15 +197,58 @@ void ConfigManager::saveSettings() {
 // ---------------------------------------------------------------------------
 
 CameraProfile ConfigManager::getCameraProfile() const {
+    // Check user JSON file first (allows overriding a built-in).
     std::string profileFile = configDir + "profiles/"
                             + settings.activeProfileId + ".json";
     if (fs::exists(profileFile)) {
         CameraProfile p = CameraProfile::loadFromFile(profileFile);
         if (p.isValid()) return p;
         std::cerr << "Warning: profile " << profileFile
-                  << " failed validation — using D90 default.\n";
+                  << " failed validation — falling back to built-in.\n";
     }
+    // Search built-ins by profile_id.
+    for (const auto& p : CameraProfile::getBuiltinProfiles())
+        if (p.profileId == settings.activeProfileId) return p;
     return CameraProfile::d90Default();
+}
+
+std::vector<CameraProfile> ConfigManager::loadAllProfiles() const {
+    // Start with built-ins.
+    auto profiles = CameraProfile::getBuiltinProfiles();
+    std::set<std::string> seen;
+    for (const auto& p : profiles) seen.insert(p.profileId);
+
+    // Merge user JSON files; user file wins on profile_id conflict.
+    std::string profileDir = configDir + "profiles/";
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(profileDir, ec)) {
+        if (entry.path().extension() != ".json") continue;
+        try {
+            CameraProfile p = CameraProfile::loadFromFile(entry.path().string());
+            if (!p.isValid() || p.profileId.empty()) continue;
+            if (seen.count(p.profileId)) {
+                // Replace built-in with user override.
+                auto it = std::find_if(profiles.begin(), profiles.end(),
+                    [&](const CameraProfile& b){ return b.profileId == p.profileId; });
+                if (it != profiles.end()) *it = p;
+            } else {
+                profiles.push_back(p);
+                seen.insert(p.profileId);
+            }
+        } catch (...) {}
+    }
+    return profiles;
+}
+
+std::string ConfigManager::getManifestProfileId(const std::string& sourcePath) const {
+    std::string mf = const_cast<ConfigManager*>(this)->lookupManifestFilePath(sourcePath);
+    if (mf.empty()) return "";
+    std::ifstream f(mf);
+    if (!f.is_open()) return "";
+    try {
+        json j; f >> j;
+        return j.value("profile_id", "");
+    } catch (...) { return ""; }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +276,7 @@ void ConfigManager::loadHostOverlay() {
     if (j.contains("defaultExportDir")) settings.defaultExportDir = j["defaultExportDir"];
     if (j.contains("tmpDir"))          settings.tmpDir          = j["tmpDir"];
     if (j.contains("logLevel"))        settings.logLevel        = j["logLevel"];
+    if (j.contains("uiScale"))         settings.uiScale         = j["uiScale"];
 
     if (j.contains("encode") && j["encode"].is_object()) {
         const auto& e = j["encode"];
@@ -259,6 +304,7 @@ void ConfigManager::saveHostSettings() {
     j["defaultExportDir"] = settings.defaultExportDir;
     j["tmpDir"]           = settings.tmpDir;
     j["logLevel"]         = settings.logLevel;
+    j["uiScale"]          = settings.uiScale;
 
     json e;
     e["preset"]            = settings.encode.preset;
@@ -431,6 +477,82 @@ std::string ConfigManager::generateId(const std::set<std::string>& existing,
 }
 
 // ---------------------------------------------------------------------------
+// Path portability helpers (file-scope statics)
+// ---------------------------------------------------------------------------
+
+static std::string normalizeSep(const std::string& p) {
+    std::string s = p;
+    std::replace(s.begin(), s.end(), '\\', '/');
+    return s;
+}
+
+static bool isAbsolutePath(const std::string& p) {
+    if (p.empty()) return false;
+    if (p[0] == '/') return true;
+    if (p.size() >= 3 && std::isalpha((unsigned char)p[0]) &&
+        p[1] == ':' && (p[2] == '/' || p[2] == '\\')) return true;
+    return false;
+}
+
+// Strip sourceRoot prefix from absPath and normalize separators to /.
+// Returns normalized absPath unchanged if it is not under sourceRoot.
+static std::string makeRelPath(const std::string& absPath,
+                               const std::string& sourceRoot) {
+    std::string p = normalizeSep(absPath);
+    std::string r = normalizeSep(sourceRoot);
+    while (!r.empty() && r.back() == '/') r.pop_back();
+    if (!r.empty() && p.size() > r.size() &&
+        p.rfind(r, 0) == 0 && p[r.size()] == '/')
+        return p.substr(r.size() + 1);
+    return p;
+}
+
+// Resolve path against localRoot.  If path is already absolute, first try
+// substituting any other host root from pathMap so cross-platform
+// absolute paths translate correctly (e.g. Linux path read on Windows).
+static std::string resolvePathWithMap(const std::string& p,
+                                      const std::string& localRoot,
+                                      const json& pathMap) {
+    if (!isAbsolutePath(p))
+        return localRoot.empty() ? p : (localRoot + "/" + p);
+
+    std::string np = normalizeSep(p);
+    std::string nr = normalizeSep(localRoot);
+    while (!nr.empty() && nr.back() == '/') nr.pop_back();
+
+    // Already under our root — use as-is.
+    if (!nr.empty() && np.rfind(nr + "/", 0) == 0) return p;
+
+    // Try substituting another host's root from path_map.
+    for (const auto& [k, v] : pathMap.items()) {
+        if (!v.is_string()) continue;
+        std::string other = normalizeSep(v.get<std::string>());
+        while (!other.empty() && other.back() == '/') other.pop_back();
+        if (!other.empty() && np.rfind(other + "/", 0) == 0) {
+            std::string rel = np.substr(other.size() + 1);
+            return nr.empty() ? rel : (nr + "/" + rel);
+        }
+    }
+
+    return p; // can't translate — return as-is
+}
+
+// Build the path_map key for the current machine: "os_hostname".
+static std::string pathMapKey(const std::string& shortHostname) {
+#ifdef _WIN32
+    const std::string os = "windows";
+#elif defined(__APPLE__)
+    const std::string os = "macos";
+#else
+    const std::string os = "linux";
+#endif
+    std::string h = shortHostname;
+    std::transform(h.begin(), h.end(), h.begin(),
+        [](char c){ return (char)std::tolower((unsigned char)c); });
+    return os + "_" + h;
+}
+
+// ---------------------------------------------------------------------------
 // Path sanitization
 // ---------------------------------------------------------------------------
 
@@ -451,9 +573,74 @@ std::string ConfigManager::sanitizePath(const std::string& path) {
 
 std::string ConfigManager::ensureManifestId(const std::string& sourcePath) {
     auto index = loadManifestIndex();
+
+    // 1. Already in our index — done.
     for (const auto& e : index)
         if (e.path == sourcePath) return e.id;
-    // New path — assign an ID and save a minimal entry
+
+    // 2. Scan directory for existing pm_manifest_XX.json files.
+    //    Adopt the best one rather than minting a new ID, so all platforms
+    //    converge on one manifest file per footage directory.
+    std::error_code ec;
+    if (fs::exists(sourcePath, ec)) {
+        struct Candidate {
+            std::string id, file;
+            int tripCount = 0;
+            int priority  = 0; // 2=has our key, 1=new-format other host, 0=old format
+        };
+        std::vector<Candidate> candidates;
+        std::string key = pathMapKey(hostname);
+
+        // IDs already used for other paths — must not steal them.
+        std::set<std::string> indexedIds;
+        for (const auto& e : index) indexedIds.insert(normalizeId(e.id));
+
+        for (const auto& de : fs::directory_iterator(sourcePath, ec)) {
+            std::string fname = de.path().filename().string();
+            // Must match "pm_manifest_XX.json" exactly (19 chars, 2-char base36 ID)
+            if (fname.size() != 19) continue;
+            if (fname.rfind("pm_manifest_", 0) != 0) continue;
+            if (fname.substr(fname.size() - 5) != ".json") continue;
+            std::string id = fname.substr(12, 2);
+            if (!std::isalnum((unsigned char)id[0]) ||
+                !std::isalnum((unsigned char)id[1])) continue;
+            if (indexedIds.count(normalizeId(id))) continue; // ID belongs to another path
+
+            Candidate c;
+            c.id   = id;
+            c.file = de.path().string();
+            try {
+                std::ifstream ifs(c.file);
+                if (ifs.is_open()) {
+                    json j; ifs >> j;
+                    if (j.contains("trips") && j["trips"].is_array())
+                        c.tripCount = (int)j["trips"].size();
+                    if (j.contains("path_map") && j["path_map"].is_object()) {
+                        c.priority = j["path_map"].contains(key) ? 2 : 1;
+                    }
+                }
+            } catch (...) {}
+            candidates.push_back(c);
+        }
+
+        if (!candidates.empty()) {
+            std::stable_sort(candidates.begin(), candidates.end(),
+                [](const Candidate& a, const Candidate& b) {
+                    return a.priority != b.priority ? a.priority > b.priority
+                                                    : a.tripCount > b.tripCount;
+                });
+            const auto& w = candidates[0];
+            ManifestEntry newEntry;
+            newEntry.id           = w.id;
+            newEntry.path         = sourcePath;
+            newEntry.manifestFile = w.file;
+            index.push_back(newEntry);
+            saveManifestIndex(index);
+            return w.id;
+        }
+    }
+
+    // 3. Nothing adoptable — mint a fresh ID.
     std::set<std::string> existing;
     for (const auto& e : index) existing.insert(e.id);
     std::string id = generateId(existing, true);
@@ -643,6 +830,7 @@ std::vector<ManifestEntry> ConfigManager::loadManifestIndex() {
     }
 
     if (!j.contains("manifests") || !j["manifests"].is_array()) return index;
+    bool needsRewrite = false;
     for (const auto& jm : j["manifests"]) {
         ManifestEntry e;
         e.id           = jm.value("id",           "");
@@ -655,8 +843,23 @@ std::vector<ManifestEntry> ConfigManager::loadManifestIndex() {
         e.manifestMd5  = jm.value("manifest_md5", "");
         e.note         = jm.value("note",         "");
         e.nickname     = jm.value("nickname",     e.path);  // default to path
-        if (!e.path.empty()) index.push_back(e);
+        if (e.path.empty()) continue;
+        // Discard bogus entries where path is a manifest file, not a source directory.
+        // These are created when a manifest file path is mistakenly passed as a source path.
+        if (e.path.find("pm_manifest_") != std::string::npos) {
+            std::cerr << "Note: removing malformed index entry with file path as source: "
+                      << e.path << "\n";
+            // Clean up the orphaned manifest file if it exists in the config dir
+            if (!e.manifestFile.empty()) {
+                std::error_code ec;
+                fs::remove(e.manifestFile, ec);
+            }
+            needsRewrite = true;
+            continue;
+        }
+        index.push_back(e);
     }
+    if (needsRewrite) saveManifestIndex(index);
     // Sort by lastTrip descending — most recently used manifest first
     std::sort(index.begin(), index.end(), [](const ManifestEntry& a, const ManifestEntry& b) {
         return a.lastTrip > b.lastTrip;
@@ -692,6 +895,11 @@ void ConfigManager::saveManifestIndex(const std::vector<ManifestEntry>& index) {
 
 void ConfigManager::saveManifestNote(const std::string& path,
                                       const std::string& note) {
+    if (path.find("pm_manifest_") != std::string::npos) {
+        std::cerr << "Bug: saveManifestNote called with manifest file path: '"
+                  << path << "' — ignoring.\n";
+        return;
+    }
     std::string manifestFile = getManifestFilePath(path);
 
     // Read existing manifest, update note, rewrite
@@ -985,6 +1193,14 @@ std::vector<std::string> ConfigManager::getAllCachedPaths() {
 
 void ConfigManager::saveTripCache(const std::string& path,
                                    const std::vector<Trip>& trips) {
+    // Guard: reject manifest file paths passed as source directories.
+    // A manifest file path (e.g. /foo/pm_manifest_AB.json) must never be
+    // used as a source path — doing so creates a bogus duplicate index entry.
+    if (path.find("pm_manifest_") != std::string::npos) {
+        std::cerr << "Bug: saveTripCache called with manifest file path: '"
+                  << path << "' — ignoring to prevent duplicate index entry.\n";
+        return;
+    }
     std::string manifestFile = getManifestFilePath(path);
 
     // Load existing manifest to preserve note and trip IDs
@@ -992,17 +1208,24 @@ void ConfigManager::saveTripCache(const std::string& path,
     std::set<std::string> usedIds;
     for (const auto& t : existingTrips) usedIds.insert(t.id);
 
-    // Preserve existing manifest-level note
+    // Preserve existing manifest-level note, profile_id, and path_map.
     std::string existingNote;
+    std::string existingProfileId;
+    json existingPathMap = json::object();
     {
         std::ifstream nifs(manifestFile);
         if (nifs.is_open()) {
             try {
                 json existing; nifs >> existing;
-                existingNote = existing.value("note", "");
+                existingNote      = existing.value("note",       "");
+                existingProfileId = existing.value("profile_id", "");
+                if (existing.contains("path_map") && existing["path_map"].is_object())
+                    existingPathMap = existing["path_map"];
             } catch (...) {}
         }
     }
+    // Register this machine in path_map.
+    existingPathMap[pathMapKey(hostname)] = path;
 
     // Build identity hash → id map from existing trips
     std::map<std::string, std::string> hashToId;
@@ -1010,11 +1233,18 @@ void ConfigManager::saveTripCache(const std::string& path,
         if (!t.id.empty())
             hashToId[tripIdentityHash(t)] = t.id;
 
+    // profile_id: use active setting; fall back to whatever was already in the manifest.
+    std::string profileId = settings.activeProfileId.empty()
+                          ? existingProfileId
+                          : settings.activeProfileId;
+
     json root;
-    root["source_path"]   = path;
-    root["schema_version"] = 2;
-    root["note"]          = existingNote;
-    root["trips"]         = json::array();
+    root["source_path"]    = path;
+    root["profile_id"]     = profileId;
+    root["schema_version"] = 3;
+    root["path_map"]       = existingPathMap;
+    root["note"]           = existingNote;
+    root["trips"]          = json::array();
 
     std::vector<Trip> mutableTrips = trips;
     for (auto& trip : mutableTrips) {
@@ -1069,10 +1299,21 @@ void ConfigManager::saveTripCache(const std::string& path,
         }
         jTrip["gpsTrackStatus"] = trip.gpsTrackStatus;
 
+        if (!trip.mapVideos.empty()) {
+            json arr = json::array();
+            for (const auto& p : trip.mapVideos) arr.push_back(p);
+            jTrip["mapVideos"] = arr;
+        }
+        if (!trip.dashVideos.empty()) {
+            json arr = json::array();
+            for (const auto& p : trip.dashVideos) arr.push_back(p);
+            jTrip["dashVideos"] = arr;
+        }
+
         {
             json jFirst, jLast;
-            for (const auto& [k, v] : trip.firstThumbs) if (!v.empty()) jFirst[k] = v;
-            for (const auto& [k, v] : trip.lastThumbs)  if (!v.empty()) jLast[k]  = v;
+            for (const auto& [k, v] : trip.firstThumbs) if (!v.empty()) jFirst[k] = makeRelPath(v, path);
+            for (const auto& [k, v] : trip.lastThumbs)  if (!v.empty()) jLast[k]  = makeRelPath(v, path);
             if (!jFirst.empty()) jTrip["firstThumbs"] = jFirst;
             if (!jLast.empty())  jTrip["lastThumbs"]  = jLast;
         }
@@ -1116,8 +1357,8 @@ void ConfigManager::saveTripCache(const std::string& path,
             json jSeg;
             jSeg["timestamp"] = seg.timestamp;
             json jCams, jThumbs;
-            for (const auto& [k, v] : seg.cameras) jCams[k] = v;
-            for (const auto& [k, v] : seg.thumbs)  if (!v.empty()) jThumbs[k] = v;
+            for (const auto& [k, v] : seg.cameras) jCams[k] = makeRelPath(v, path);
+            for (const auto& [k, v] : seg.thumbs)  if (!v.empty()) jThumbs[k] = makeRelPath(v, path);
             jSeg["cameras"] = jCams;
             if (!jThumbs.empty()) jSeg["thumbs"] = jThumbs;
             jTrip["segments"].push_back(jSeg);
@@ -1144,9 +1385,10 @@ void ConfigManager::saveTripCache(const std::string& path,
 std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
     std::vector<Trip> trips;
 
-    // Accept either a full source path or a direct manifest file path
+    // Accept either a full source path or a direct manifest file path.
+    bool isDirectManifest = (path.find("pm_manifest_") != std::string::npos && fs::exists(path));
     std::string fullFile;
-    if (path.find("pm_manifest_") != std::string::npos && fs::exists(path)) {
+    if (isDirectManifest) {
         fullFile = path;
     } else {
         fullFile = lookupManifestFilePath(path);
@@ -1166,6 +1408,40 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
     }
 
     if (!root.contains("trips") || !root["trips"].is_array()) return trips;
+
+    // Determine local source root for path resolution.
+    // Priority: path_map[our key] → caller's source path → manifest parent dir → source_path field.
+    json pathMap = json::object();
+    if (root.contains("path_map") && root["path_map"].is_object())
+        pathMap = root["path_map"];
+
+    std::string key = pathMapKey(hostname);
+    std::string localRoot;
+    if (pathMap.contains(key) && pathMap[key].is_string()) {
+        localRoot = pathMap[key].get<std::string>();
+    } else if (!isDirectManifest) {
+        localRoot = path;
+    } else {
+        std::error_code ec;
+        fs::path parent = fs::path(fullFile).parent_path();
+        std::string parentStr = fs::canonical(parent, ec).string();
+        localRoot = (!ec && parentStr.find(configDir) == std::string::npos)
+                    ? parentStr : root.value("source_path", "");
+    }
+    while (!localRoot.empty() && (localRoot.back() == '/' || localRoot.back() == '\\'))
+        localRoot.pop_back();
+
+    // Register this machine in path_map if not already present, then save back.
+    if (!pathMap.contains(key) && !localRoot.empty()) {
+        pathMap[key] = localRoot;
+        root["path_map"] = pathMap;
+        std::ofstream regofs(fullFile);
+        if (regofs.is_open()) {
+            regofs << root.dump(2) << "\n";
+            regofs.close();
+            updateManifestMd5(fullFile);
+        }
+    }
 
     for (const auto& jTrip : root["trips"]) {
         Trip trip;
@@ -1194,24 +1470,30 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         trip.endLon         = jTrip.value("endLon",         0.0);
         trip.gpsTrackStatus = jTrip.value("gpsTrackStatus", "none");
 
+        if (jTrip.contains("mapVideos") && jTrip["mapVideos"].is_array())
+            for (const auto& v : jTrip["mapVideos"]) trip.mapVideos.push_back(v.get<std::string>());
+        if (jTrip.contains("dashVideos") && jTrip["dashVideos"].is_array())
+            for (const auto& v : jTrip["dashVideos"]) trip.dashVideos.push_back(v.get<std::string>());
+
         // Trip thumbnails — new format uses firstThumbs/lastThumbs maps.
         // Migrate old per-camera named fields transparently on read.
         if (jTrip.contains("firstThumbs") && jTrip["firstThumbs"].is_object()) {
             for (const auto& [k, v] : jTrip["firstThumbs"].items())
-                trip.firstThumbs[k] = v.get<std::string>();
+                trip.firstThumbs[k] = resolvePathWithMap(v.get<std::string>(), localRoot, pathMap);
             for (const auto& [k, v] : jTrip["lastThumbs"].items())
-                trip.lastThumbs[k] = v.get<std::string>();
+                trip.lastThumbs[k] = resolvePathWithMap(v.get<std::string>(), localRoot, pathMap);
         } else {
             // Old format — migrate D90 named fields into maps.
-            auto gt = [&](const std::string& key) { return jTrip.value(key, std::string("")); };
-            trip.firstThumbs["front"] = gt("firstFrontThumb");
-            trip.firstThumbs["rear"]  = gt("firstRearThumb");
-            trip.firstThumbs["left"]  = gt("firstLeftThumb");
-            trip.firstThumbs["right"] = gt("firstRightThumb");
-            trip.lastThumbs["front"]  = gt("lastFrontThumb");
-            trip.lastThumbs["rear"]   = gt("lastRearThumb");
-            trip.lastThumbs["left"]   = gt("lastLeftThumb");
-            trip.lastThumbs["right"]  = gt("lastRightThumb");
+            auto gt = [&](const std::string& fkey) { return jTrip.value(fkey, std::string("")); };
+            auto rv = [&](const std::string& p) { return resolvePathWithMap(p, localRoot, pathMap); };
+            trip.firstThumbs["front"] = rv(gt("firstFrontThumb"));
+            trip.firstThumbs["rear"]  = rv(gt("firstRearThumb"));
+            trip.firstThumbs["left"]  = rv(gt("firstLeftThumb"));
+            trip.firstThumbs["right"] = rv(gt("firstRightThumb"));
+            trip.lastThumbs["front"]  = rv(gt("lastFrontThumb"));
+            trip.lastThumbs["rear"]   = rv(gt("lastRearThumb"));
+            trip.lastThumbs["left"]   = rv(gt("lastLeftThumb"));
+            trip.lastThumbs["right"]  = rv(gt("lastRightThumb"));
         }
 
         if (jTrip.contains("videoProfile") && jTrip["videoProfile"].is_object()) {
@@ -1252,23 +1534,26 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
                 seg.timestamp = jSeg.value("timestamp", "");
                 // Segment cameras — new format uses "cameras" object.
                 // Migrate old D90 named fields transparently on read.
+                auto rp = [&](const std::string& p) {
+                    return resolvePathWithMap(p, localRoot, pathMap);
+                };
                 if (jSeg.contains("cameras") && jSeg["cameras"].is_object()) {
                     for (const auto& [k, v] : jSeg["cameras"].items())
-                        seg.cameras[k] = v.get<std::string>();
+                        seg.cameras[k] = rp(v.get<std::string>());
                     if (jSeg.contains("thumbs") && jSeg["thumbs"].is_object())
                         for (const auto& [k, v] : jSeg["thumbs"].items())
-                            seg.thumbs[k] = v.get<std::string>();
+                            seg.thumbs[k] = rp(v.get<std::string>());
                 } else {
                     // Old format — migrate D90 named fields.
-                    seg.cameras["front"] = jSeg.value("front",      "-");
-                    seg.cameras["rear"]  = jSeg.value("rear",
-                                           jSeg.value("back",       "-"));
-                    seg.cameras["left"]  = jSeg.value("left",       "-");
-                    seg.cameras["right"] = jSeg.value("right",      "-");
-                    seg.thumbs["front"]  = jSeg.value("frontThumb", "");
-                    seg.thumbs["rear"]   = jSeg.value("rearThumb",  "");
-                    seg.thumbs["left"]   = jSeg.value("leftThumb",  "");
-                    seg.thumbs["right"]  = jSeg.value("rightThumb", "");
+                    seg.cameras["front"] = rp(jSeg.value("front",      "-"));
+                    seg.cameras["rear"]  = rp(jSeg.value("rear",
+                                           jSeg.value("back",          "-")));
+                    seg.cameras["left"]  = rp(jSeg.value("left",       "-"));
+                    seg.cameras["right"] = rp(jSeg.value("right",      "-"));
+                    seg.thumbs["front"]  = rp(jSeg.value("frontThumb", ""));
+                    seg.thumbs["rear"]   = rp(jSeg.value("rearThumb",  ""));
+                    seg.thumbs["left"]   = rp(jSeg.value("leftThumb",  ""));
+                    seg.thumbs["right"]  = rp(jSeg.value("rightThumb", ""));
                 }
                 trip.segments.push_back(seg);
             }
@@ -1430,4 +1715,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00089
+// SN: 00102

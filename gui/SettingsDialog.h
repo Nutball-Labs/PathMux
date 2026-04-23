@@ -65,6 +65,7 @@ private:
     QComboBox* m_audioSource    = nullptr;
     QComboBox* m_logLevel       = nullptr;
     QLineEdit* m_activeProfile  = nullptr;
+    QComboBox* m_uiScale        = nullptr;
 
     // -- Encoder tab --
     QComboBox* m_preset          = nullptr;
@@ -102,4 +103,4 @@ private:
     // -- Locations tab --
     QTableWidget* m_locTable       = nullptr;
 };
-// SN: 00095
+// SN: 00097

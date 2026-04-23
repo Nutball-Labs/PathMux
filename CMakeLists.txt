@@ -108,6 +108,7 @@ add_library(pathmuxlib SHARED
     lib/config_manager.cpp
     lib/platform.cpp
     lib/gps_export.cpp
+    lib/profile_detector.cpp
 )
 
 set_target_properties(pathmuxlib PROPERTIES
@@ -300,13 +301,16 @@ if(Qt6_FOUND)
         gui/EmptyManifestWidget.cpp
         gui/ScanProgressDialog.cpp
         gui/TripPropertiesDialog.cpp
+        gui/DangerousDialog.cpp
         gui/TripBuildDialog.cpp
         gui/BuildProgressDialog.cpp
+        gui/MapProgressDialog.cpp
         gui/AboutDialog.cpp
         gui/SettingsDialog.cpp
         gui/ManifestManagerDialog.cpp
         gui/SetupWizard.cpp
         gui/HelpDialog.cpp
+        gui/LogoMorphWidget.cpp
         cli/video_build.cpp
         gui/resources/pathmux.qrc
     )
@@ -397,6 +401,39 @@ if(Qt6_FOUND)
             COMMAND "${MACDEPLOYQT_EXECUTABLE}" "$<TARGET_BUNDLE_DIR:pathmux-gui>"
             COMMENT "Running macdeployqt to fix Qt framework load paths"
         )
+    endif()
+
+    # ── Logo morph animation ─────────────────────────────────────────────────
+    # Generates gui/resources/logo_morph.mp4 from the two logo PNGs at build
+    # time.  Requires Python3 + Pillow + ffmpeg on the build machine.
+    # The MP4 is embedded in the binary via QRC (266 KB).
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    find_program(FFMPEG_BUILD_TOOL NAMES ffmpeg
+        HINTS /usr/bin /usr/local/bin /opt/homebrew/bin)
+    set(LOGO_MORPH_MP4 "${CMAKE_SOURCE_DIR}/gui/resources/logo_morph.mp4")
+    if(Python3_FOUND AND FFMPEG_BUILD_TOOL)
+        add_custom_command(
+            OUTPUT  "${LOGO_MORPH_MP4}"
+            COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/scripts/gen_logo_morph.py"
+                    "${FFMPEG_BUILD_TOOL}"
+                    "${LOGO_MORPH_MP4}"
+                    "${CMAKE_SOURCE_DIR}/gui/resources/pathmux_256.png"
+                    "${CMAKE_SOURCE_DIR}/gui/resources/Nutball-Labs_logo.png"
+            DEPENDS "${CMAKE_SOURCE_DIR}/scripts/gen_logo_morph.py"
+                    "${CMAKE_SOURCE_DIR}/gui/resources/pathmux_256.png"
+                    "${CMAKE_SOURCE_DIR}/gui/resources/Nutball-Labs_logo.png"
+            COMMENT "Generating logo_morph.mp4 (PathMux ↔ Nutball-Labs cross-fade)"
+        )
+        add_custom_target(gen_logo_morph DEPENDS "${LOGO_MORPH_MP4}")
+        add_dependencies(pathmux-gui gen_logo_morph)
+        message(STATUS "Logo morph: Python3 + ffmpeg found — logo_morph.mp4 generated at build time")
+    else()
+        if(NOT EXISTS "${LOGO_MORPH_MP4}")
+            message(WARNING "Logo morph: Python3 or ffmpeg not found and logo_morph.mp4 missing — run scripts/gen_logo_morph.py manually")
+        else()
+            message(STATUS "Logo morph: using pre-built gui/resources/logo_morph.mp4")
+        endif()
     endif()
 
     message(STATUS "Qt6 found (${Qt6_VERSION}) — pathmux-gui target enabled")
@@ -559,4 +596,4 @@ endif()
 
 include(CPack)
 
-# SN: 00095
+# SN: 00101

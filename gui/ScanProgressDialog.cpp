@@ -17,11 +17,18 @@ using namespace Pathmux;
 // ---------------------------------------------------------------------------
 class ScanWorker : public QObject {
     Q_OBJECT
+public:
+    QString profileId;   // set before moveToThread; overrides active profile if non-empty
 public slots:
     void startScan(const QString& path) {
         try {
             ConfigManager config;
             config.loadSettings();
+            if (!profileId.isEmpty()) {
+                auto s = config.getSettings();
+                s.activeProfileId = profileId.toStdString();
+                config.applySettings(s);
+            }
             CameraProfile profile = config.getCameraProfile();
             TripDetection td;
             auto trips = td.detectTrips(
@@ -74,7 +81,7 @@ ScanProgressDialog::ScanProgressDialog(QWidget* parent)
     vlay->addWidget(bbox);
 }
 
-void ScanProgressDialog::startScan(const QString& sourcePath)
+void ScanProgressDialog::startScan(const QString& sourcePath, const QString& profileId)
 {
     m_scanPath = sourcePath;
     m_pathLabel->setText(sourcePath);
@@ -82,6 +89,7 @@ void ScanProgressDialog::startScan(const QString& sourcePath)
 
     QThread*     thread = new QThread(this);
     ScanWorker*  worker = new ScanWorker;
+    worker->profileId = profileId;
     worker->moveToThread(thread);
 
     connect(thread, &QThread::started,
@@ -124,4 +132,4 @@ void ScanProgressDialog::onScanFinished(bool ok, const QString& error)
 
 // Required: Q_OBJECT in a .cpp file needs its own moc output included here
 #include "ScanProgressDialog.moc"
-// SN: 00090
+// SN: 00101

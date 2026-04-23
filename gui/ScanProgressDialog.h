@@ -13,8 +13,9 @@ class ScanProgressDialog : public QDialog {
 public:
     explicit ScanProgressDialog(QWidget* parent = nullptr);
 
-    // Call before exec() — starts the background scan thread
-    void startScan(const QString& sourcePath);
+    // Call before exec() — starts the background scan thread.
+    // profileId: if non-empty, overrides the active profile for this scan.
+    void startScan(const QString& sourcePath, const QString& profileId = {});
 
 signals:
     void scanComplete(const Pathmux::ManifestEntry& entry);
@@ -29,4 +30,4 @@ private:
     QPushButton*  m_cancelBtn;
     QString       m_scanPath;
 };
-// SN: 00090
+// SN: 00101

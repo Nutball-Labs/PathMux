@@ -7,6 +7,8 @@
 class QSplitter;
 class ManifestPanel;
 class TripGridPanel;
+class HelpDialog;
+class HelpDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -30,5 +32,6 @@ private:
     QSplitter*     m_splitter;
     ManifestPanel* m_manifestPanel;
     TripGridPanel* m_tripGridPanel;
+    HelpDialog*    m_helpDialog = nullptr;
 };
-// SN: 00095
+// SN: 00097

@@ -71,4 +71,4 @@ private slots:
     void loadNextThumbnail();
     void onBuildRequested(const Pathmux::Trip& trip);
 };
-// SN: 00093
+// SN: 00097

@@ -1,5 +1,179 @@
 # CHANGELOG
 
+## [v1.7.1 / SN: 00102] - 2026-04-23
+
+### Changed
+- **Cross-platform manifest unification** (`lib/config_manager.cpp`): footage
+  directories now share a single manifest file across all operating systems.
+  Previously each OS (Linux, Windows, macOS) created its own `pm_manifest_*.json`
+  file because each saw a different absolute path to the same footage. The new design
+  stores all segment paths as relative paths within the manifest and adds a `path_map`
+  section keyed by `os_hostname` (e.g. `linux_penny`, `windows_nutball1`). When a
+  machine opens a directory containing an existing manifest from another OS, it adopts
+  that manifest and registers its own path entry rather than creating a duplicate.
+  Cross-platform absolute paths are automatically translated via `path_map` prefix
+  substitution on load.
+- **Manifest adoption in `ensureManifestId()`**: before minting a new manifest ID,
+  the directory is scanned for existing `pm_manifest_*.json` files. The best candidate
+  (prioritising one that already contains our `os_hostname` key, then any new-format
+  manifest, then trip count) is adopted and registered in the local index.
+- **Schema version 3**: manifests written by v1.7.1 carry `"schema_version": 3`.
+  Rescan any existing footage directories to regenerate manifests in the new format.
+
+## [v1.7.0 / SN: 00101] - 2026-04-19
+
+### Added
+- **Built-in camera profiles** (`lib/camera_profile.cpp/.hpp`): D90 (Pruveeo),
+  Cobra CCDC4500, Cobra GPS (CAM1+CAM2), and Prilotte (AVI/MJPEG) profiles ship
+  with the binary. No wizard run required for these cameras.
+- **Profile auto-detection at scan time** (`lib/profile_detector.*`): camera layout
+  is fingerprinted on first scan; `profile_id` stored in the manifest so subsequent
+  loads use the correct profile without re-detection.
+- **mtime timestamp source** for cameras with no embedded metadata (Prilotte).
+- **`loadAllProfiles()`**: loads built-in profiles plus any user-created profiles
+  from `~/.config/pathmux/profiles/`; merged list presented in Settings and wizard.
+- **GPS accelerometer fields optional**: profiles without accelerometer data no longer
+  require the field; extraction and display handle absence gracefully.
+
+## [v1.5.1b / SN: 00101] - 2026-04-19
+
+### Added
+- **Logo morph animation** (`scripts/gen_logo_morph.py`, `gui/resources/logo_morph.mp4`,
+  `gui/LogoMorphWidget.cpp/.h`): 6-second PathMux ↔ Nutball-Labs cross-fade, sine ease-in-out,
+  960×540 H.264 CRF23, 30fps. 266 KB embedded in QRC. Generated at build time via CMake
+  custom command (Python3 + Pillow + ffmpeg); pre-built file used if those tools are absent.
+  `LogoMorphWidget` shows the animation live in the dialog (QElapsedTimer + 30fps QTimer, only
+  active when visible). In the actual built video the morph loops indefinitely in blank quadrants
+  via `-stream_loop -1` (`ExternalSlot::loop = true`).
+- **Logo morph as video watermark**: enabling the overlay and selecting "None" from the overlay
+  combo routes `logo_morph.mp4` to the center overlay position with `-stream_loop -1`
+  (`VideoOptions::mapOverlayLoop`). Gives a branded 960×540 center watermark on every 4K collage
+  at zero additional encode cost.
+- **Free-form quadrant camera assignment** (`gui/TripBuildDialog.cpp`, `cli/video_build.hpp/.cpp`):
+  every quadrant combo now lists all cameras present in the trip (native position marked ★),
+  plus map/dashboard files from the manifest, external browse, and None. Any camera can fill any
+  position — front in all four quadrants is valid. Backend: `VideoOptions::cameraRemap`
+  (`std::map<string,string>`) maps collage position → source camera; `effectiveSegs()` lambda in
+  `buildCollage4K` redirects the concat list accordingly. Complements (does not replace) the
+  external-slot mechanism.
+- **Overlay source combo** (`gui/TripBuildDialog.cpp`): overlay cell now has the same source combo
+  as the quadrants (all cameras, map/dash files, external browse, None). Replaces the plain
+  file-path text field.
+- **Preview Frame implemented** (`gui/TripBuildDialog.cpp`): `onPreviewFrame()` grabs one frame
+  per active quadrant via `ffmpeg -ss 2 -i … -vframes 1`, composites them into a 960×540
+  QPainter image (xstack layout), composites the overlay at centre if enabled, and shows the
+  result in a small dialog. Blank/disabled quadrants show a dark placeholder with position label.
+  Temp PNGs cleaned up on dialog close.
+- **Logo transparency**: all PathMux icon PNGs (`gui/resources/pathmux_{16..512}.png`,
+  `pathmux.iconset/icon_*.png`) and `Nutball-Labs_logo.png` converted to transparent background
+  via ImageMagick corner flood-fill (interior white — Kali's fur/paws — preserved). Logos now
+  composite cleanly on any background colour.
+
+### Changed
+- **Collage Layout grid**: changed from 3×3 to 2-column / 3-row layout. Row 0: TL/TR quadrants.
+  Row 1: overlay cell centred, spanning both columns. Row 2: BL/BR quadrants. Eliminates empty
+  corner cells and makes the spatial relationship to the actual output clearer.
+- **None slot behaviour**: selecting "None" or unchecking a quadrant now routes `logo_morph.mp4`
+  (looping) through the slot instead of a `lavfi color=black` source. Falls back to black if the
+  resource is unavailable.
+- **Overlay combo dark theme**: added `QComboBox` and `QComboBox QAbstractItemView` rules to the
+  overlay cell stylesheet; popup list was showing with white background / invisible text on hover.
+- **ExternalSlot** (`cli/video_build.hpp`): added `bool loop = false` field.
+  `addInput()` in `buildCollage4K` prepends `-stream_loop -1` when set.
+
+## [v1.5.1a / SN: 00101] - 2026-04-19
+
+### Added
+- **Collage build dialog redesigned** (`gui/TripBuildDialog.cpp/.h`): replaced stacked group
+  boxes with a tabbed layout. New **Collage Layout** tab shows a dark-themed 2×2 quadrant grid
+  matching the xstack layout (TL=Front, TR=Rear, BL=Right, BR=Left); each quadrant has a source
+  combo populated with the native camera, any map/dashboard files already in the manifest, and
+  an "External video…" browse option. Separate **Camera Files** and **Output** tabs reduce
+  clutter. Map overlay file picker now accepts any video (map or dashboard).
+- **Instrument dashboard script** (`scripts/pm_dashboard.py`): new Python script renders an
+  animated 960×540 instrument panel (compass/heading, speedometer, trip odometer, weather
+  conditions) from the GPS track in a PathMux manifest. Pipes raw RGB frames to ffmpeg.
+  Weather via Open-Meteo archive API (free, no key). Both °C/°F, km/h and mph, km and mi
+  displayed simultaneously.
+- **Dashboard tab in Trip Properties** (`gui/TripPropertiesDialog.cpp/.h`): Generate Dashboard
+  button launches `pm_dashboard.py` via the generalised `MapProgressDialog`. Output path
+  written to manifest `dashVideos` array; missing-GPS guard shows informative message.
+- **Map/dashboard video manifest tracking** (`lib/trip_detection.hpp`,
+  `lib/config_manager.cpp`): `Trip` struct gains `mapVideos` and `dashVideos` string vectors.
+  Absolute paths stored in manifest JSON on successful render; supports multiple outputs per
+  trip. Properties dialog lists manifest-tracked files with size; double-click opens in system
+  viewer. Missing files shown in gray.
+- **Non-blocking build progress dialog** (`gui/BuildProgressDialog.cpp/.h`): removed
+  `setModal(true)`; X button now cancels the build via `std::atomic<bool>` cancel flag and
+  `QProcess::kill()`.
+- **Overwrite confirmation** (`gui/TripPropertiesDialog.cpp`): Generate Map and Generate
+  Dashboard prompt before overwriting an existing output file.
+
+### Changed
+- `MapProgressDialog` generalised (`gui/MapProgressDialog.cpp/.h`): optional `scriptName`,
+  `title`, and `extraArgs` constructor parameters allow reuse for dashboard generation
+  without duplicating the class. Backward compatible.
+- Dashboard temperature always shows both °C and °F; speed shows km/h primary with mph
+  secondary; odometer shows both km and mi.
+
+## [Unreleased / SN: 00095] - 2026-04-10
+
+### Fixed
+- **CLI parallel video concats running sequentially** (`cli/video_build.cpp`): `parallelConcats`
+  flag was never set to `true` for the CLI path; root `run()` build block also lacked the
+  parallel launch structure. Both paths now launch per-camera ffmpeg jobs concurrently.
+- **CLI parallel concat progress bars overwriting a single line** (`cli/video_build.cpp`):
+  ANSI cursor-up/down sequences (`\033[NA` / `\033[NB`) with a `std::mutex` per-row guard;
+  each of the 4 concurrent ffmpeg processes updates its own terminal line independently.
+- **CLI parallel concat `system()` thread-safety hang** (`cli/video_build.cpp`): concurrent
+  `system()` calls fight over `waitpid(-1,...)`, stealing each other's child exit statuses and
+  hanging indefinitely. Replaced with `fork()`+`exec()`+`waitpid(specific_pid)` on Linux/macOS
+  and `CreateProcess`+`WaitForSingleObject` on Windows.
+- **GUI parallel concat terminal pollution** (`cli/video_build.cpp`): initial per-camera
+  progress bar print block ran unconditionally; guarded with `!ffmpegRunner` so GUI builds
+  do not write ANSI sequences to the shell that launched `pathmux-gui`.
+- **Build options `[N]` note line showed no current value** (`cli/video_build.cpp`): the
+  `[N]` menu line now displays the current note (truncated to 40 chars) like every other
+  toggle — `[N]  Note    Home from firestone`.
+- **Build options note not saved to disk until menu exit** (`cli/video_build.cpp/.hpp`,
+  `cli/find_trips.cpp`): `configureOptions()` now takes an optional `sourcePath` parameter;
+  when `[N]` saves a note it immediately calls `loadTripCache` + updates + `saveTripCache`
+  without waiting for the user to press GO/GODONE/Q.
+- **Note input not trimmed or size-limited** (`cli/video_build.cpp`): leading/trailing
+  whitespace is stripped (mirrors Qt `.trimmed()`); stored value capped at 200 chars.
+- **`TripPropertiesDialog` was read-only** (`gui/TripPropertiesDialog.cpp/.h`): replaced the
+  read-only note display with an editable `QLineEdit`; saves to manifest via `saveTripCache`
+  when the user clicks OK (only if note actually changed).
+- **Trip note not visible on tile after setting it** (`gui/TripTile.cpp/.h`): added
+  `m_noteLabel` (italic, grey `#555`, hidden when note is empty); refreshes live after
+  Properties dialog accepts without requiring a manifest reload.
+- **Tile zoom only scaled text — thumbnails and layout stayed at 1×** (`gui/TripTile.cpp/.h`,
+  `gui/TripGridPanel.cpp`): renamed `setTextZoom` → `setZoom`; now proportionally scales tile
+  size, all child label geometries and fonts, thumbnail placeholders, and the vertical divider.
+- **Duplicate manifest index entries** (`lib/config_manager.cpp`): two-part fix:
+  - `saveTripCache` and `saveManifestNote` now reject any `path` containing `pm_manifest_`
+    (a manifest file path, not a source directory) with a `std::cerr` warning and early return.
+  - `loadManifestIndex` auto-removes and rewrites bogus entries where `path` contains
+    `pm_manifest_`; also deletes the orphaned fallback manifest file in `~/.config/pathmux/`.
+    Existing stale entries (e.g. from the previous session's bug) are silently cleaned up on
+    next startup.
+
+### Added
+- **Trip ID badge on tile** (`gui/TripTile.cpp/.h`): `[XX]` displayed top-right in subdued
+  8pt font; scales with zoom.
+- **Manifest ID badge in manifest panel** (`gui/ManifestPanel.cpp`): `[XX]` right-aligned on
+  line 1 of each list item via `ManifestItemDelegate`; path elide shortened to avoid overlap.
+- **HiDPI / 4K display scaling** (`lib/config_manager.hpp/.cpp`, `gui/main.cpp`,
+  `gui/SettingsDialog.cpp/.h`):
+  - `AppSettings::uiScale` (default 1.0) stored in `pathmux.json`.
+  - `gui/main.cpp` pre-reads `uiScale` before `QApplication` is constructed (Qt bakes DPI
+    metrics at startup); sets `QT_SCALE_FACTOR` accordingly.
+  - `--scale N` / `--scale=N` command-line flag (highest priority; overrides config).
+  - "UI scale factor" combo box (100%–300%) in Settings → General tab with restart note.
+  - `QT_SCALE_FACTOR` env var still honoured if already set (not overridden).
+
+---
+
 ## [1.1.0a / SN: 00093] - 2026-04-04
 ### Fixed
 - **BuildProgressDialog: verbose mode + failure visibility** (`gui/BuildProgressDialog.cpp/.h`):
@@ -285,8 +459,8 @@
   section — community encode timing leaderboard seeded with placeholder entries;
   points users to `buildHistory` JSON block for submission.
 - **`cmake/sn_audit.cmake`**: Updated to glob `*.md` files and match HTML comment
-  SN format (`<!-- SN: -->`). All three SN formats now covered.
-- **SN stamps**: `<!-- SN: 00081 -->` added to all `.md` files in the project
+  SN format (`<!-- SN: 00097-->`). All three SN formats now covered.
+- **SN stamps**: `<!-- SN: 00097 -->` added to all `.md` files in the project
   (CHANGELOG, CLAUDE, ROADMAP, README, Session_Log, PROPOSED_UTILS,
   pathmux_project_brief, ROADMAP_MacOS, ROADMAP_WINDOWS). HTML comment —
   invisible when rendered, greppable in raw file.
@@ -1203,4 +1377,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00094 -->
+<!-- SN: 00102 -->

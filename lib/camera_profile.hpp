@@ -55,8 +55,14 @@ struct CameraSlot {
 //   "none"         — no thumbnails
 //
 // gpsMethod       — GPS data source:
-//   "exiftool_ligogps" — LIGOGPSINFO binary stream via ExifTool 13.51+
+//   "exiftool_ligogps" — LIGOGPSINFO binary stream via ExifTool 13.51+ (Pruveeo D90)
+//   "exiftool_gps0"    — standard GPS0 atom in 3GP/MOV via ExifTool (Cobra GPS, etc.)
 //   "none"             — no GPS stream
+//
+// timestampSource — how to obtain each segment's epoch timestamp:
+//   "filename"          — parse group 1 of filenameRegex via timestampFormat (default)
+//   "exiftool_metadata" — read DateTimeOriginal from file metadata via exiftool (UTC)
+//   "mtime"             — use filesystem last-write-time (segment end time)
 //
 // defaultLayout   — collage layout hint: "2x2", "3x3", "side_by_side",
 //                   "single".  Informational for now; consumed by future
@@ -70,8 +76,6 @@ struct CameraProfile {
 
     std::string filenameRegex;
     std::string timestampFormat;
-    // "filename"          — parse group 1 of filenameRegex via timestampFormat (default)
-    // "exiftool_metadata" — read DateTimeOriginal from file metadata via exiftool (UTC)
     std::string timestampSource   = "filename";
     // "utc"   — filename timestamps are in UTC; use timegm() for epoch conversion
     // "local" — filename timestamps are in local wall-clock time; use mktime()
@@ -101,11 +105,16 @@ struct CameraProfile {
     void saveToFile(const std::string& path) const;
 
     // --- Built-in profiles ---
-    // D90 default — used when no profile has been configured.
     static CameraProfile d90Default();
+    static CameraProfile cobraDefault();
+    static CameraProfile cobraGpsDefault();
+    static CameraProfile prirotteDefault();
+
+    // All built-in profiles in detection-priority order.
+    static std::vector<CameraProfile> getBuiltinProfiles();
 };
 
 } // namespace Pathmux
 
 #endif
-// SN: 00090
+// SN: 00101

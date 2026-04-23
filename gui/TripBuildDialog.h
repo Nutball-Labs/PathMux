@@ -2,18 +2,22 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 #include <QDialog>
+#include <array>
 #include <set>
 #include <string>
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
 #include "video_build.hpp"
 
+class LogoMorphWidget;
 class QCheckBox;
 class QComboBox;
 class QGroupBox;
 class QLineEdit;
 class QPushButton;
 class QRadioButton;
+class QTabWidget;
+class QWidget;
 
 class TripBuildDialog : public QDialog {
     Q_OBJECT
@@ -26,46 +30,66 @@ public:
     bool         processNow()  const;
 
 private slots:
-    void onBrowse();
+    void onBrowseOutput();
+    void onBrowseOverlay();
+    void onPreviewFrame();
 
 private:
-    QGroupBox* makeCameraGroup(const std::set<std::string>& cams);
-    QGroupBox* makeCollageGroup(const std::set<std::string>& cams);
-    QGroupBox* makeAudioGroup(const std::set<std::string>& cams);
-    QGroupBox* makeOutputGroup(const std::string& defaultExportDir);
-    QWidget*   makeActionRow();
+    QWidget* makeOverlayCell();
+    // Quadrant index → backend slot name / position label / camera label
+    // xstack layout: TL=front, TR=rear, BL=right, BR=left
+    static constexpr std::array<const char*, 4> kSlot  = {"front","rear","right","left"};
+    static constexpr std::array<const char*, 4> kPos   = {"Top Left","Top Right","Bottom Left","Bottom Right"};
+    static constexpr std::array<const char*, 4> kCam   = {"Front","Rear","Right","Left"};
+
+    QWidget*   makeCollageTab(const std::set<std::string>& cams);
+    QWidget*   makeFilesTab  (const std::set<std::string>& cams);
+    QWidget*   makeOutputTab ();
+    QWidget*   makeActionRow ();
+
+    QWidget*   makeQuadrantCell(int idx, const std::set<std::string>& cams);
+    void       updateQuadFileRow(int idx);
 
     Pathmux::ManifestEntry  m_manifest;
     Pathmux::Trip           m_trip;
     std::string             m_ffmpegPath;
     Pathmux::EncodeSettings m_encode;
 
-    // Camera files
-    QCheckBox* m_chkFront  = nullptr;
-    QCheckBox* m_chkRear   = nullptr;
-    QCheckBox* m_chkLeft   = nullptr;
-    QCheckBox* m_chkRight  = nullptr;
-    QComboBox* m_container = nullptr;
+    // ── Collage tab ──────────────────────────────────────────────────────────
+    QCheckBox*      m_quadEnabled[4]  = {};   // enable/disable each quadrant
+    QComboBox*      m_quadCombo[4]    = {};   // source selector per quadrant
+    QLineEdit*      m_quadPath[4]     = {};   // external file path per quadrant
+    QPushButton*    m_quadBrowse[4]   = {};   // browse button per quadrant
+    QWidget*        m_quadFileRow[4]  = {};   // browse row (shown only for external)
+    LogoMorphWidget* m_quadMorph[4]   = {};   // animated placeholder for None
+    QComboBox*   m_audioQuad       = nullptr;  // which quadrant provides audio
+    QPushButton* m_btnPreview      = nullptr;
+    QCheckBox*   m_chk4K           = nullptr;
+    QCheckBox*   m_chk1080         = nullptr;
+    QCheckBox*       m_chkMapOverlay       = nullptr;
+    QComboBox*       m_overlayCombo        = nullptr;
+    QLineEdit*       m_mapOverlayPath      = nullptr;
+    QPushButton*     m_mapOverlayBrowseBtn = nullptr;
+    QWidget*         m_overlayFileRow      = nullptr;
+    LogoMorphWidget* m_overlayMorph        = nullptr;
 
-    // Collage
-    QCheckBox*    m_chk4K   = nullptr;
-    QCheckBox*    m_chk1080 = nullptr;
-    QRadioButton* m_rbLeft  = nullptr;
-    QRadioButton* m_rbRight = nullptr;
-    QRadioButton* m_rbFront = nullptr;
-    QRadioButton* m_rbRear  = nullptr;
+    // ── Camera Files tab ─────────────────────────────────────────────────────
+    QCheckBox*   m_chkFront    = nullptr;
+    QCheckBox*   m_chkRear     = nullptr;
+    QCheckBox*   m_chkLeft     = nullptr;
+    QCheckBox*   m_chkRight    = nullptr;
+    QComboBox*   m_container   = nullptr;
+    QCheckBox*   m_chkAudio    = nullptr;
+    QComboBox*   m_audioCamera = nullptr;
+    QComboBox*   m_audioFormat = nullptr;
 
-    // Audio extract
-    QCheckBox* m_chkAudio    = nullptr;
-    QComboBox* m_audioCamera = nullptr;
-    QComboBox* m_audioFormat = nullptr;
+    // ── Output tab ───────────────────────────────────────────────────────────
+    QLineEdit*   m_outputDir = nullptr;
+    QLineEdit*   m_basename  = nullptr;
 
-    // Output
-    QLineEdit* m_outputDir = nullptr;
-    QLineEdit* m_basename  = nullptr;
-
-    // Action
-    QPushButton* m_btnNow   = nullptr;
-    QPushButton* m_btnQueue = nullptr;
+    // ── Action row ───────────────────────────────────────────────────────────
+    QPushButton* m_btnNow     = nullptr;
+    QPushButton* m_btnQueue   = nullptr;
+    QCheckBox*   m_chkVerbose = nullptr;
 };
-// SN: 00094
+// SN: 00101

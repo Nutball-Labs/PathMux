@@ -24,8 +24,8 @@ const CameraSlot* CameraProfile::slotByName(const std::string& slotName) const {
 }
 
 bool CameraProfile::isValid() const {
-    // timestampFormat is required only when timestamps come from filenames.
-    bool needsFmt = (timestampSource != "exiftool_metadata");
+    // timestampFormat only required when timestamps are parsed from the filename.
+    bool needsFmt = (timestampSource == "filename");
     if (cameraSlots.empty() || filenameRegex.empty() || (needsFmt && timestampFormat.empty()))
         return false;
     for (const auto& s : cameraSlots)
@@ -160,5 +160,108 @@ CameraProfile CameraProfile::d90Default() {
     return p;
 }
 
+// ---------------------------------------------------------------------------
+// cobraDefault — Cobra CCDC4500 single-camera dashcam.
+// Flat layout: all files in DCIM/100_DSC/.
+// Filename: YYYYMMDD_NNNN_CAM1_VID.MOV (sequential counter, not HHMMSS).
+// Timestamp: DateTimeOriginal from QuickTime audio track (UTC).
+// ---------------------------------------------------------------------------
+CameraProfile CameraProfile::cobraDefault() {
+    CameraProfile p;
+    p.name            = "Cobra CCDC4500";
+    p.profileId       = "cobra";
+    p.filenameRegex   = R"((\d{8}_\d{4})_CAM1_VID\.[mM][oO][vV])";
+    p.timestampSource = "exiftool_metadata";
+    p.containerExt    = ".MOV";
+    p.thumbnailMethod = "none";
+    p.gpsMethod       = "none";
+    p.defaultLayout   = "single";
+
+    CameraSlot front;
+    front.name = "front"; front.displayName = "Front";
+    front.filenameToken = ""; front.scanSubdir = "100_DSC"; front.isPrimary = true;
+
+    p.cameraSlots = { front };
+    return p;
+}
+
+// ---------------------------------------------------------------------------
+// cobraGpsDefault — Cobra dual-camera dashcam with GPS.
+// Flat layout: CAM1 (front) and CAM2 (rear) both in DCIM/100_DSC/.
+// Filename: YYYYMMDD_NNNN_CAMx_VID.MOV — camera ID in filename token.
+// Timestamp: DateTimeOriginal from QuickTime audio track (UTC).
+// GPS: standard gps0 atom via ExifTool (no accelerometer on this camera).
+// ---------------------------------------------------------------------------
+CameraProfile CameraProfile::cobraGpsDefault() {
+    CameraProfile p;
+    p.name            = "Cobra GPS";
+    p.profileId       = "cobra_gps";
+    p.filenameRegex   = R"((\d{8}_\d{4})_(CAM[12])_VID\.[mM][oO][vV])";
+    p.timestampSource = "exiftool_metadata";
+    p.containerExt    = ".MOV";
+    p.thumbnailMethod = "none";
+    p.gpsMethod       = "exiftool_gps0";
+    p.defaultLayout   = "side_by_side";
+
+    CameraSlot front;
+    front.name = "front"; front.displayName = "Front";
+    front.filenameToken = "CAM1"; front.scanSubdir = "100_DSC"; front.isPrimary = true;
+
+    CameraSlot rear;
+    rear.name = "rear"; rear.displayName = "Rear";
+    rear.filenameToken = "CAM2"; rear.scanSubdir = "100_DSC";
+
+    p.cameraSlots = { front, rear };
+    return p;
+}
+
+// ---------------------------------------------------------------------------
+// prirotteDefault — Prilotte dual-camera AVI dashcam.
+// Subdirectory per camera: DCIM/DCIMA/ (front), DCIM/DCIMB/ (mid, optional),
+//   DCIM/DCIMC/ (rear).  Camera letter embedded in filename: MOVA####.avi.
+// Timestamp: filesystem mtime (no embedded metadata in AVI/RIFF headers).
+//   mtime = segment end time; 2-minute segments.
+// No GPS on this camera.
+// ---------------------------------------------------------------------------
+CameraProfile CameraProfile::prirotteDefault() {
+    CameraProfile p;
+    p.name              = "Prilotte";
+    p.profileId         = "prilotte";
+    p.filenameRegex     = R"(MOV([ABC])(\d{4})\.avi)";
+    p.timestampSource   = "mtime";
+    p.timestampCaptureGroup = 2;
+    p.tokenCaptureGroup     = 1;
+    p.containerExt      = ".avi";
+    p.thumbnailMethod   = "none";
+    p.gpsMethod         = "none";
+    p.defaultLayout     = "side_by_side";
+
+    CameraSlot front;
+    front.name = "front"; front.displayName = "Front";
+    front.filenameToken = "A"; front.scanSubdir = "DCIMA"; front.isPrimary = true;
+
+    CameraSlot rear;
+    rear.name = "rear"; rear.displayName = "Rear";
+    rear.filenameToken = "C"; rear.scanSubdir = "DCIMC";
+
+    p.cameraSlots = { front, rear };
+    return p;
+}
+
+// ---------------------------------------------------------------------------
+// getBuiltinProfiles — all factory-embedded profiles, detection-priority order.
+// More specific profiles (more cameras, unique layout) listed before generic ones
+// so the detector picks the best match when signatures overlap (e.g. Cobra GPS
+// before plain Cobra, since the GPS model's regex also matches single-camera cards).
+// ---------------------------------------------------------------------------
+std::vector<CameraProfile> CameraProfile::getBuiltinProfiles() {
+    return {
+        d90Default(),
+        cobraGpsDefault(),   // before cobraDefault — more specific (2-cam regex)
+        cobraDefault(),
+        prirotteDefault(),
+    };
+}
+
 } // namespace Pathmux
-// SN: 00090
+// SN: 00101

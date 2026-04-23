@@ -9,9 +9,11 @@
 #include <QPushButton>
 #include <QDialogButtonBox>
 #include <QScrollArea>
+#include <QTextEdit>
 #include <QThread>
 #include <QScrollBar>
 #include <QProcess>
+#include <atomic>
 #include <set>
 #include <cctype>
 #ifdef _WIN32
@@ -66,6 +68,8 @@ class BuildWorker : public QObject {
 public:
     BuildWorker(const Trip& trip, const VideoOptions& opts)
         : m_trip(trip), m_opts(opts) {}
+
+    void cancel() { m_cancel.store(true); }
 
 public slots:
     void start() {
@@ -137,12 +141,33 @@ public slots:
 
             QByteArray buf;
             QByteArray errBuf;
+            QByteArray errParseBuf;   // consumed line-by-line for verbose emit
             while (proc.state() != QProcess::NotRunning) {
+                if (m_cancel.load()) {
+                    proc.kill();
+                    proc.waitForFinished(3000);
+                    emit finished(false, "Cancelled");
+                    return false;
+                }
                 proc.waitForReadyRead(100);
-                buf    += proc.readAllStandardOutput();
+                buf += proc.readAllStandardOutput();
                 // Drain stderr each iteration — if the stderr pipe fills up
                 // ffmpeg blocks writing to it and the process never exits.
-                errBuf += proc.readAllStandardError();
+                QByteArray newErr = proc.readAllStandardError();
+                errBuf     += newErr;
+                errParseBuf += newErr;
+
+                // Verbose: emit complete stderr lines in real time.
+                if (m_opts.verbose) {
+                    int nl;
+                    while ((nl = errParseBuf.indexOf('\n')) >= 0) {
+                        QByteArray line = errParseBuf.left(nl).trimmed();
+                        errParseBuf.remove(0, nl + 1);
+                        if (!line.isEmpty())
+                            emit progress(QString::fromStdString(label), -3, 0,
+                                          QString::fromUtf8(line));
+                    }
+                }
 
                 int nl;
                 while ((nl = buf.indexOf('\n')) >= 0) {
@@ -174,10 +199,27 @@ public slots:
             }
 
             // Drain remaining stdout and collect stderr for error reporting.
-            buf    += proc.readAllStandardOutput();
-            errBuf += proc.readAllStandardError();
+            buf += proc.readAllStandardOutput();
+            QByteArray finalErr = proc.readAllStandardError();
+            errBuf     += finalErr;
+            errParseBuf += finalErr;
             QByteArray& errOut = errBuf;
             proc.waitForFinished(-1);
+
+            // Flush any remaining verbose stderr lines (no trailing newline case).
+            if (m_opts.verbose) {
+                int nl;
+                while ((nl = errParseBuf.indexOf('\n')) >= 0) {
+                    QByteArray line = errParseBuf.left(nl).trimmed();
+                    errParseBuf.remove(0, nl + 1);
+                    if (!line.isEmpty())
+                        emit progress(QString::fromStdString(label), -3, 0,
+                                      QString::fromUtf8(line));
+                }
+                if (!errParseBuf.trimmed().isEmpty())
+                    emit progress(QString::fromStdString(label), -3, 0,
+                                  QString::fromUtf8(errParseBuf.trimmed()));
+            }
 
             bool success = proc.exitStatus() == QProcess::NormalExit
                         && proc.exitCode() == 0;
@@ -216,8 +258,9 @@ signals:
     void finished(bool ok, const QString& error);
 
 private:
-    Trip         m_trip;
-    VideoOptions m_opts;
+    Trip               m_trip;
+    VideoOptions       m_opts;
+    std::atomic<bool>  m_cancel{false};
 };
 
 // ---------------------------------------------------------------------------
@@ -229,9 +272,7 @@ BuildProgressDialog::BuildProgressDialog(const Trip& trip,
     : QDialog(parent), m_trip(trip), m_opts(opts)
 {
     setWindowTitle("Building Video");
-    setModal(true);
     setMinimumWidth(560);
-    setWindowFlags(windowFlags() & ~Qt::WindowCloseButtonHint);
 
     auto* vlay = new QVBoxLayout(this);
     vlay->setSpacing(10);
@@ -286,6 +327,20 @@ BuildProgressDialog::BuildProgressDialog(const Trip& trip,
     m_stageLayout->addStretch();   // pushes rows to top; rows insert before stretch
     m_scrollArea->setWidget(stageContainer);
     vlay->addWidget(m_scrollArea);
+
+    // Verbose output log — only shown when opts.verbose is set.
+    if (m_opts.verbose) {
+        auto* logLabel = new QLabel("Build Output:", this);
+        logLabel->setStyleSheet("font-size: 8pt; font-weight: bold;");
+        vlay->addWidget(logLabel);
+
+        m_verboseLog = new QTextEdit(this);
+        m_verboseLog->setReadOnly(true);
+        m_verboseLog->setFont(QFont("monospace", 7));
+        m_verboseLog->setMinimumHeight(140);
+        m_verboseLog->setMaximumHeight(220);
+        vlay->addWidget(m_verboseLog);
+    }
 
     // Final status line (shows "Build complete" or error)
     m_finalLabel = new QLabel("Waiting for first stage...", this);
@@ -398,17 +453,19 @@ void BuildProgressDialog::startBuild()
     // Show all expected stage rows before the first progress signal arrives.
     populateExpectedRows();
 
-    QThread*     thread = new QThread(this);
-    BuildWorker* worker = new BuildWorker(m_trip, m_opts);
-    worker->moveToThread(thread);
+    m_worker = new BuildWorker(m_trip, m_opts);
+    QThread* thread = new QThread(this);
+    m_worker->moveToThread(thread);
 
-    connect(thread, &QThread::started,      worker, &BuildWorker::start);
-    connect(worker, &BuildWorker::progress, this,   &BuildProgressDialog::onProgress,
+    connect(thread,   &QThread::started,      m_worker, &BuildWorker::start);
+    connect(m_worker, &BuildWorker::progress, this,     &BuildProgressDialog::onProgress,
             Qt::QueuedConnection);
-    connect(worker, &BuildWorker::finished, this,   &BuildProgressDialog::onFinished);
-    connect(worker, &BuildWorker::finished, thread, &QThread::quit);
-    connect(thread, &QThread::finished,     worker, &QObject::deleteLater);
+    connect(m_worker, &BuildWorker::finished, this,     &BuildProgressDialog::onFinished);
+    connect(m_worker, &BuildWorker::finished, thread,   &QThread::quit);
+    connect(thread,   &QThread::finished,     m_worker, &QObject::deleteLater);
+    connect(thread,   &QThread::finished,     thread,   &QObject::deleteLater);
 
+    m_buildRunning = true;
     thread->start();
 }
 
@@ -419,11 +476,29 @@ void BuildProgressDialog::startBuild()
 void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
                                      const QString& msg)
 {
-    // pct == -2: debug/verbose — show the command being run in the footer.
+    // pct == -3: verbose log line — append to log panel only, no footer update.
+    if (pct == -3) {
+        if (m_verboseLog && !msg.isEmpty()) {
+            m_verboseLog->append(msg);
+            auto* sb = m_verboseLog->verticalScrollBar();
+            sb->setValue(sb->maximum());
+        }
+        return;
+    }
+
+    // pct == -2: command being run — show briefly in footer; also log it.
     if (pct == -2) {
         if (!msg.isEmpty()) {
             m_finalLabel->setText(msg);
             m_finalLabel->setStyleSheet("color: #999999; font-size: 7pt; font-style: italic;");
+            if (m_verboseLog) {
+                m_verboseLog->append(
+                    QString("\n\u25ba %1\n%2")
+                        .arg(stageDisplayName(label))
+                        .arg(msg));
+                auto* sb = m_verboseLog->verticalScrollBar();
+                sb->setValue(sb->maximum());
+            }
         }
         return;
     }
@@ -448,6 +523,13 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
             errText += ": " + msg;
         m_finalLabel->setText(errText);
         m_finalLabel->setStyleSheet("color: #cc0000; font-style: italic;");
+        if (m_verboseLog && !msg.isEmpty()) {
+            m_verboseLog->append(
+                QString("<span style='color:#cc0000'>\u2717 %1</span>")
+                    .arg(msg.toHtmlEscaped()));
+            auto* sb = m_verboseLog->verticalScrollBar();
+            sb->setValue(sb->maximum());
+        }
         return;
     }
 
@@ -537,9 +619,20 @@ void BuildProgressDialog::onFinished(bool ok, const QString& error)
         m_finalLabel->setStyleSheet("color: #cc0000; font-weight: bold;");
     }
 
+    m_buildRunning = false;
     m_closeBtn->setEnabled(true);
     emit buildComplete(ok);
 }
 
+void BuildProgressDialog::closeEvent(QCloseEvent* event)
+{
+    if (m_buildRunning && m_worker) {
+        m_worker->cancel();
+        // Let the worker finish cancelling; onFinished() will clear m_buildRunning.
+        // Accept now — the window closes immediately, the worker cleans up on its thread.
+    }
+    event->accept();
+}
+
 #include "BuildProgressDialog.moc"
-// SN: 00094
+// SN: 00101

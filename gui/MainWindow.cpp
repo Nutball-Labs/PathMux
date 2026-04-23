@@ -9,12 +9,18 @@
 #include "ManifestManagerDialog.h"
 #include "SetupWizard.h"
 #include "HelpDialog.h"
+#include "profile_detector.hpp"
 #include <QSplitter>
 #include <QFileDialog>
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
 #include <QKeySequence>
+#include <QSizeGrip>
+#include <QAbstractButton>
+#include <QPushButton>
+#include <QMessageBox>
+#include <QInputDialog>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -34,6 +40,12 @@ MainWindow::MainWindow(QWidget* parent)
 
     setCentralWidget(m_splitter);
     buildMenuBar();
+
+    // Add a visible size grip so the bottom-right corner is easy to grab on
+    // HiDPI displays where the WM resize border is physically tiny.
+    // QSizeGrip auto-positions itself at the bottom-right corner of its parent
+    // top-level window and tracks resizes — no manual placement needed.
+    new QSizeGrip(this);
 
     connect(m_manifestPanel, &ManifestPanel::manifestSelected,
             m_tripGridPanel, &TripGridPanel::loadManifest);
@@ -91,9 +103,6 @@ void MainWindow::buildMenuBar()
     // ---- Trips ----
     QMenu* tripsMenu = menuBar()->addMenu("&Trips");
 
-    QAction* exportGpsAct = tripsMenu->addAction("&Export GPS Track\u2026");
-    exportGpsAct->setEnabled(false);   // placeholder
-
     QAction* buildVideoAct = tripsMenu->addAction("&Build Video\u2026");
     buildVideoAct->setEnabled(false);  // placeholder
 
@@ -138,8 +147,16 @@ void MainWindow::onAbout()
 
 void MainWindow::onHelp()
 {
-    HelpDialog dlg(this);
-    dlg.exec();
+    if (!m_helpDialog) {
+        m_helpDialog = new HelpDialog(this);
+        m_helpDialog->setAttribute(Qt::WA_DeleteOnClose);
+        connect(m_helpDialog, &QObject::destroyed, this, [this]() {
+            m_helpDialog = nullptr;
+        });
+    }
+    m_helpDialog->show();
+    m_helpDialog->raise();
+    m_helpDialog->activateWindow();
 }
 
 void MainWindow::onSettings()
@@ -183,6 +200,81 @@ void MainWindow::onSetupWizard()
     }
 }
 
+// Resolve which camera profile to use for a fresh scan of dir.
+// Checks for a stored profile_id in an existing manifest first;
+// if absent, runs auto-detection and prompts the user to confirm.
+// Returns the chosen profile_id, or "" to cancel.
+static QString resolveProfileForScan(const QString& dir, QWidget* parent)
+{
+    Pathmux::ConfigManager config;
+    config.loadSettings();
+
+    // If this directory already has a manifest with a recorded profile, use it silently.
+    std::string stored = config.getManifestProfileId(dir.toStdString());
+    if (!stored.empty())
+        return QString::fromStdString(stored);
+
+    // Auto-detect from the directory contents.
+    auto allProfiles = config.loadAllProfiles();
+    auto match = Pathmux::detectProfile(dir.toStdString(), allProfiles);
+
+    if (match.hasMatch()) {
+        QString name    = QString::fromStdString(match.profile.name);
+        QString pid     = QString::fromStdString(match.profile.profileId);
+        QString ambig   = match.isAmbiguous ? " (best guess)" : "";
+        QString msg     = QString("Detected camera profile:\n\n  %1 (%2)%3\n\n"
+                                  "%4 primary file(s) matched.\n\n"
+                                  "Use this profile for the scan?")
+                          .arg(name).arg(pid).arg(ambig)
+                          .arg(match.primaryFiles);
+
+        QMessageBox box(parent);
+        box.setWindowTitle("Camera Profile");
+        box.setText(msg);
+        auto* useBtn    = box.addButton("Use This Profile", QMessageBox::AcceptRole);
+        auto* chooseBtn = box.addButton("Choose Different...", QMessageBox::ActionRole);
+        box.addButton("Cancel", QMessageBox::RejectRole);
+        box.exec();
+
+        if (box.clickedButton() == static_cast<QAbstractButton*>(useBtn))
+            return pid;
+        if (box.clickedButton() != static_cast<QAbstractButton*>(chooseBtn))
+            return {};   // cancelled
+        // fall through to "Choose Different" list
+    } else {
+        QMessageBox box(parent);
+        box.setWindowTitle("Camera Profile");
+        box.setText("No known camera profile matched this directory.\n\n"
+                    "You can choose a profile manually, or run the\n"
+                    "Setup Wizard to create one for this camera.");
+        auto* chooseBtn = box.addButton("Choose Profile...", QMessageBox::ActionRole);
+        box.addButton("Cancel", QMessageBox::RejectRole);
+        box.exec();
+        if (box.clickedButton() != static_cast<QAbstractButton*>(chooseBtn))
+            return {};
+        // fall through to list
+    }
+
+    // Build a list of all known profiles for the user to pick from.
+    QStringList items;
+    for (const auto& p : allProfiles)
+        items << QString("%1 (%2)").arg(
+                   QString::fromStdString(p.name),
+                   QString::fromStdString(p.profileId));
+
+    bool ok = false;
+    QString chosen = QInputDialog::getItem(
+        parent, "Select Camera Profile", "Profile:", items, 0, false, &ok);
+    if (!ok || chosen.isEmpty()) return {};
+
+    // Extract profile_id from "Name (id)" format.
+    int lp = chosen.lastIndexOf('(');
+    int rp = chosen.lastIndexOf(')');
+    if (lp >= 0 && rp > lp)
+        return chosen.mid(lp + 1, rp - lp - 1);
+    return {};
+}
+
 void MainWindow::onScanRequested()
 {
     QString dir = QFileDialog::getExistingDirectory(
@@ -190,10 +282,13 @@ void MainWindow::onScanRequested()
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (dir.isEmpty()) return;
 
+    QString profileId = resolveProfileForScan(dir, this);
+    if (profileId.isNull()) return;   // user cancelled
+
     ScanProgressDialog dlg(this);
     connect(&dlg, &ScanProgressDialog::scanComplete,
             this, &MainWindow::onScanComplete);
-    dlg.startScan(dir);
+    dlg.startScan(dir, profileId);
     dlg.exec();
 }
 
@@ -205,11 +300,16 @@ void MainWindow::onZoomChanged(double factor)
 
 void MainWindow::onRebuildRequested(const Pathmux::ManifestEntry& entry)
 {
-    // Rescan the known path — no directory picker needed.
+    // Rescan using the profile stored in the existing manifest — no prompt needed.
+    Pathmux::ConfigManager config;
+    config.loadSettings();
+    QString profileId = QString::fromStdString(
+        config.getManifestProfileId(entry.path));
+
     ScanProgressDialog dlg(this);
     connect(&dlg, &ScanProgressDialog::scanComplete,
             this, &MainWindow::onScanComplete);
-    dlg.startScan(QString::fromStdString(entry.path));
+    dlg.startScan(QString::fromStdString(entry.path), profileId);
     dlg.exec();
 }
 
@@ -221,4 +321,4 @@ void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
     m_tripGridPanel->loadManifest(entry);
     m_manifestPanel->selectEntry(entry);
 }
-// SN: 00095
+// SN: 00101

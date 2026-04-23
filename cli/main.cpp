@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
 #include <sstream>
 #include <filesystem>
+#include "../json.hpp"
 #include "find_trips.hpp"
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
+#include "profile_detector.hpp"
 #include "gpx_export.hpp"
 #include "prefs.hpp"
 #include "host_prefs.hpp"
@@ -273,15 +276,97 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // --- Camera profile detection ---
+        // If the manifest already has a profile_id recorded, use it without asking.
+        // Otherwise probe the directory and present the best guess for confirmation.
+        CameraProfile scanProfile = config.getCameraProfile();
+        {
+            std::string existingManifest = config.lookupManifestFilePath(scanPath);
+            std::string recordedProfile;
+            if (!existingManifest.empty()) {
+                std::ifstream mf(existingManifest);
+                if (mf.is_open()) {
+                    try {
+                        nlohmann::json mj; mf >> mj;
+                        recordedProfile = mj.value("profile_id", "");
+                    } catch (...) {}
+                }
+            }
+
+            if (!recordedProfile.empty()) {
+                // Re-use the profile that was used when this directory was first scanned.
+                auto s = config.getSettings();
+                s.activeProfileId = recordedProfile;
+                config.applySettings(s);
+                scanProfile = config.getCameraProfile();
+            } else {
+                // Probe the directory and suggest the best match.
+                auto allProfiles = config.loadAllProfiles();
+                auto match = Pathmux::detectProfile(scanPath, allProfiles);
+
+                if (match.hasMatch()) {
+                    std::cout << "\n  Detected camera: " << match.profile.name
+                              << " (" << match.profile.profileId << ")";
+                    if (match.isAmbiguous)
+                        std::cout << "  [best guess — ambiguous]";
+                    std::cout << "\n\n"
+                              << "  [Y]  Use this profile\n"
+                              << "  [L]  List all profiles to choose\n"
+                              << "  [Q]  Quit\n\n"
+                              << "  Choice [Y]: ";
+                    std::string choice;
+                    std::getline(std::cin, choice);
+                    if (choice == "Q" || choice == "q") { std::cout << "  Scan cancelled.\n"; return 0; }
+
+                    if (choice == "L" || choice == "l") {
+                        std::cout << "\n  Available profiles:\n";
+                        for (int i = 0; i < (int)allProfiles.size(); ++i)
+                            std::cout << "  [" << (i+1) << "]  " << allProfiles[i].name
+                                      << " (" << allProfiles[i].profileId << ")\n";
+                        std::cout << "\n  Select profile number: ";
+                        std::string sel;
+                        std::getline(std::cin, sel);
+                        try {
+                            int idx = std::stoi(sel) - 1;
+                            if (idx >= 0 && idx < (int)allProfiles.size()) {
+                                auto s = config.getSettings();
+                                s.activeProfileId = allProfiles[idx].profileId;
+                                config.applySettings(s);
+                                scanProfile = allProfiles[idx];
+                            } else {
+                                std::cerr << "  Invalid selection.\n"; return 1;
+                            }
+                        } catch (...) { std::cerr << "  Invalid selection.\n"; return 1; }
+                    } else {
+                        // Y or Enter — accept detected profile
+                        auto s = config.getSettings();
+                        s.activeProfileId = match.profile.profileId;
+                        config.applySettings(s);
+                        scanProfile = match.profile;
+                    }
+                } else {
+                    std::cout << "\n  No known camera profile matched this directory.\n"
+                              << "  Run: pm_probe --wizard " << scanPath << "\n"
+                              << "  to create a profile, then re-scan.\n\n"
+                              << "  Scan with current profile ("
+                              << config.getActiveProfileId() << ") anyway? [y/N]: ";
+                    std::string choice;
+                    std::getline(std::cin, choice);
+                    if (choice != "y" && choice != "Y") { std::cout << "  Scan cancelled.\n"; return 0; }
+                }
+            }
+        }
+
         std::cout << "Scanning: " << scanPath
-                  << "  (gap=" << config.getGapThreshold() << "s)\n";
+                  << "  (profile=" << config.getActiveProfileId()
+                  << "  gap=" << config.getGapThreshold() << "s)\n";
         auto trips = detector.detectTrips(scanPath,
-                                          config.getCameraProfile(),
+                                          scanProfile,
                                           config.getGapThreshold(),
                                           config.getFuzzyWindow(),
                                           config.getFfprobePath(),
                                           config.getExiftoolPath(),
-                                              config.getExiftoolOptions());
+                                          config.getExiftoolOptions());
         if (!trips.empty()) {
             config.saveTripCache(scanPath, trips);
             auto saved = config.loadTripCache(scanPath);

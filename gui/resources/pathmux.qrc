@@ -9,8 +9,9 @@
     <file>pathmux_128.png</file>
     <file>pathmux_256.png</file>
     <file>pathmux_512.png</file>
+    <file>logo_morph.mp4</file>
   </qresource>
-  <qresource prefix="/help">
+  <qresource prefix="/">
     <file>help/style.css</file>
     <file>help/index.html</file>
     <file>help/pathmux.html</file>
@@ -24,4 +25,4 @@
     <file>help/gui_overview.html</file>
   </qresource>
 </RCC>
-<!-- SN: 00095 -->
+<!-- SN: 00101 -->

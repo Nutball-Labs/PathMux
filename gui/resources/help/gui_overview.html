@@ -21,7 +21,7 @@ Each tile displays the trip date, start time, duration, segment count, and a
 thumbnail from the trip.</li>
 </ul>
 
-<p>Drag the center divider to resize the panels.  Use Ctrl+Scroll over either panel
+<p>Drag the center divider to resize the panels. Use Ctrl+Scroll over either panel
 to zoom the tile size.</p>
 
 <h2>Scanning Footage</h2>
@@ -31,14 +31,21 @@ to zoom the tile size.</p>
 <li>Use <b>Manifests &gt; Scan Source Directory</b> (or Ctrl+O).</li>
 <li>Navigate to the top-level dashcam footage directory (the one containing
 Front/, Rear/, etc. subdirectories).</li>
-<li>Click OK.  A progress dialog shows scan status.</li>
+<li>Click OK. A progress dialog shows scan status.</li>
 <li>When complete, the manifest appears in the left panel and its trips appear
 in the right panel.</li>
 </ol>
 
+<p>Each footage directory contains a single <code>pm_manifest_XX.json</code> file
+shared by all platforms. If the same footage is accessible from Linux, Windows,
+and macOS (for example, on a NAS or shared drive), each platform registers its
+local path automatically when it opens the directory — no manual configuration
+required. Segment file paths are stored relative to the source root so the manifest
+works correctly regardless of drive letter or mount point.</p>
+
 <h2>Viewing Trips</h2>
 
-<p>Click a manifest in the left panel to load its trips.  Each trip is shown as
+<p>Click a manifest in the left panel to load its trips. Each trip is shown as
 a tile in the right panel with:</p>
 <ul>
 <li>Date and start time</li>
@@ -48,39 +55,98 @@ a tile in the right panel with:</p>
 <li>Thumbnail image from the trip</li>
 </ul>
 
-<p>Double-click a trip tile to open the <b>Trip Properties</b> dialog, which shows
-detailed trip information and provides access to video build and GPS export functions.</p>
+<p>Double-click a trip tile to open the <b>Trip Properties</b> dialog.</p>
 
 <h2>Trip Properties Dialog</h2>
 
-<p>The Trip Properties dialog shows:</p>
+<p>The Trip Properties dialog is tabbed:</p>
 <ul>
-<li>Trip metadata: date, start time, duration, segment count, distance</li>
-<li>GPS information: status, lock time, start/end coordinates</li>
-<li>Segment list: all video files in the trip; double-click a segment to open it
-in the system video player</li>
+<li><b>Info:</b> Trip metadata — date, start time, duration, segment count, distance.
+Segment list; double-click a segment to open it in the system video player.</li>
+<li><b>GPS:</b> GPS status, lock time, start/end coordinates. Extract GPS button runs
+ExifTool against the footage. Export buttons produce GPX, KML, and GeoJSON files.</li>
+<li><b>Map:</b> Generate a GPS-synced overhead moving map as an MP4. The map video
+is stored alongside the footage and tracked in the manifest. Double-click a listed
+file to open it in the system viewer.</li>
+<li><b>Dashboard:</b> Generate an animated instrument dashboard video (speed, heading,
+trip odometer, weather). Weather data from Open-Meteo archive API — no account or key
+required. Requires GPS to be extracted first.</li>
 </ul>
 
-<p>From the Trip Properties dialog you can:</p>
-<ul>
-<li><b>Build Video</b> — open the video build dialog to assemble per-camera MP4
-files or a 4K collage</li>
-<li><b>Export GPS</b> — export GPS tracks as GPX, KML, or GeoJSON (extracts GPS
-data if not yet done)</li>
-</ul>
+<p>Map and Dashboard generation show a progress dialog. Both prompt before overwriting
+an existing output file.</p>
 
 <h2>Video Build Dialog</h2>
 
-<p>The Video Build dialog lets you configure and run a video build for a trip:</p>
+<p>Open via <b>Build Video</b> in Trip Properties, or <b>Trips &gt; Build Video</b>
+from the main menu.</p>
+
+<h3>Collage Layout tab</h3>
+
+<p>Shows a dark-themed 2×2 grid matching the collage output layout:</p>
 <ul>
-<li>Toggle which camera channels to include (Front, Rear, Left, Right)</li>
-<li>Select collage resolution (4K / 1080p)</li>
-<li>Configure audio source for the collage</li>
-<li>Set the output directory</li>
+<li>Top-Left = Front camera</li>
+<li>Top-Right = Rear camera</li>
+<li>Bottom-Left = Right camera</li>
+<li>Bottom-Right = Left camera</li>
 </ul>
 
-<p>Build progress is shown in a separate dialog with per-stage status rows.
-Multiple stages can run concurrently (concat runs per-camera in parallel).</p>
+<p>Each quadrant has a <b>checkbox</b> (top label) and a <b>source combo</b>. The
+checkbox unchecked or "None" selected → that quadrant plays the PathMux/Nutball-Labs
+logo morph animation in the built video (a 6-second looping cross-fade, not a black
+frame). The combo lists:</p>
+<ul>
+<li>All cameras present in the trip — any camera can fill any position. The native
+camera for that position is marked ★. Putting the Front camera in all four quadrants
+is valid.</li>
+<li>Any map or dashboard MP4 files already generated for this trip.</li>
+<li>External video… — browse to any video file on disk.</li>
+<li>None (logo morph) — plays the branded animation.</li>
+</ul>
+
+<p>The <b>centre overlay cell</b> (between the quadrants) configures an optional
+video composited at 960×540 centred over the 4K output. Same source options as the
+quadrants. Selecting None with the overlay enabled uses the logo morph as a looping
+branded watermark on the finished video.</p>
+
+<p>Below the grid:</p>
+<ul>
+<li><b>Collage audio from:</b> which quadrant provides the audio track.</li>
+<li><b>Build:</b> 4K (3840×2160 H.265) and/or 1080p downscale checkboxes.</li>
+<li><b>Preview Frame…</b> — grabs one frame per active slot via ffmpeg and shows
+a 960×540 composite preview of the collage layout before you commit to a full build.
+Takes a few seconds per slot.</li>
+</ul>
+
+<h3>Camera Files tab</h3>
+
+<p>Controls individual per-camera output files (independent of the collage):</p>
+<ul>
+<li>Front / Rear / Left / Right checkboxes — each produces a single concatenated
+MP4 for that camera.</li>
+<li>Container format (mp4, mkv, mov).</li>
+<li>Audio extract — pull the audio track from a chosen camera to a standalone
+m4a, mp3, or aac file.</li>
+</ul>
+
+<h3>Output tab</h3>
+
+<p>Set the destination directory and an optional basename prefix. If left blank,
+the output directory defaults to the footage source path and filenames are prefixed
+with the trip date and time.</p>
+
+<h3>Action row</h3>
+
+<p><b>Process Now</b> starts the build immediately. <b>Add to Batch Queue</b> queues
+the build job for later execution, including on other machines that share the same
+footage via a network path. The <b>Verbose output</b> checkbox streams all ffmpeg
+stderr to the progress dialog log panel — useful for diagnosing encode failures.</p>
+
+<h2>Build Progress Dialog</h2>
+
+<p>Shows one row per build stage. Per-camera concat stages run concurrently.
+Click the X button at any time to cancel — the current ffmpeg process is
+killed cleanly and all remaining stages are skipped.</p>
 
 <h2>Menus</h2>
 
@@ -93,7 +159,7 @@ Multiple stages can run concurrently (concat runs per-camera in parallel).</p>
 <h3>View</h3>
 <dl>
 <dt>Zoom In / Zoom Out / Reset Zoom</dt>
-<dd>Change the trip tile size.  Keyboard shortcuts: Ctrl++, Ctrl+-, Ctrl+0.
+<dd>Change the trip tile size. Keyboard shortcuts: Ctrl++, Ctrl+-, Ctrl+0.
 You can also hold Ctrl and scroll the mouse wheel over either panel.</dd>
 </dl>
 
@@ -123,10 +189,10 @@ You can also hold Ctrl and scroll the mouse wheel over either panel.</dd>
 <dl>
 <dt>Settings… (Ctrl+,)</dt>
 <dd>Open the Settings dialog to configure ffmpeg path, ExifTool path, default
-export directory, camera profile, and display preferences.</dd>
+export directory, camera profile, encoder preset, and UI scale.</dd>
 
 <dt>Setup Wizard…</dt>
-<dd>Re-run the first-run setup wizard.  Pre-populated with current settings so
+<dd>Re-run the first-run setup wizard. Pre-populated with current settings so
 you can update specific fields (e.g. swap the encoder preset after adding a
 GPU) without reconfiguring everything.</dd>
 
@@ -150,7 +216,8 @@ profile.</dd>
 <ul>
 <li><b>Paths:</b> ffmpeg binary, ExifTool binary, default export directory</li>
 <li><b>Camera Profile:</b> active profile ID; controls trip detection layout</li>
-<li><b>Display:</b> imperial/metric units toggle</li>
+<li><b>Display:</b> imperial/metric units toggle; UI scale factor (1.0–3.0,
+requires restart)</li>
 <li><b>Encoder:</b> preset selection and individual encoder parameters
 (host-specific; saved to the host overlay file)</li>
 </ul>
@@ -165,8 +232,7 @@ profile.</dd>
 </ol>
 
 <p>The wizard can be re-run at any time from <b>Tools &gt; Setup Wizard</b>.
-It pre-populates all fields with the current saved settings, so you can update
-just the one field you need.</p>
+It pre-populates all fields with the current saved settings.</p>
 
 <h2>First-Run Behavior</h2>
 
@@ -178,7 +244,7 @@ Complete the wizard to configure your system, then use
 
 <div class="warning">
 <b>Important:</b> Dashcam GPS receivers typically require 30–120 seconds to acquire
-a satellite fix after power-on.  No GPS data is recorded during this period.
+a satellite fix after power-on. No GPS data is recorded during this period.
 If you use GPS track data for mileage logs, tax records, or legal documentation,
 be aware that the first portion of every trip may be missing from the GPS track.
 The distance shown in PathMux is great-circle distance between first and last
@@ -195,3 +261,4 @@ recorded fix — not total odometer distance.
 
 </body>
 </html>
+<!-- SN: 00102 -->

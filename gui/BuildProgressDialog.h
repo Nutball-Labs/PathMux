@@ -2,16 +2,20 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 #include <QDialog>
+#include <QCloseEvent>
 #include <QVector>
 #include <QMap>
 #include <QString>
 #include "trip_detection.hpp"
 #include "video_build.hpp"
 
+class BuildWorker;
+
 class QLabel;
 class QProgressBar;
 class QPushButton;
 class QScrollArea;
+class QTextEdit;
 class QVBoxLayout;
 
 // One row in the stage stack — name, bar, live status (ETA → ✓ when done)
@@ -30,6 +34,9 @@ public:
                                  const VideoOptions&  opts,
                                  QWidget*             parent = nullptr);
     void startBuild();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 signals:
     void buildComplete(bool ok);
@@ -55,5 +62,9 @@ private:
     QLabel*           m_outputDirLabel = nullptr;  // shows resolved output path
     QLabel*           m_finalLabel     = nullptr;
     QPushButton*      m_closeBtn       = nullptr;
+    QTextEdit*        m_verboseLog     = nullptr;  // non-null only when opts.verbose
+
+    BuildWorker*      m_worker        = nullptr;
+    bool              m_buildRunning  = false;
 };
-// SN: 00094
+// SN: 00101

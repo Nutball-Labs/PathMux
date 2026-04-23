@@ -36,16 +36,33 @@ public:
         QRect r = opt.rect.adjusted(10, 4, -10, -4);
         int lineH = opt.fontMetrics.height();
 
-        // Line 1: nickname — bold, elided in the middle
+        // Line 1: nickname (left, bold, elided middle) + ID badge (right)
         QFont f1 = opt.font;
         f1.setBold(true);
         p->setFont(f1);
         p->setPen(selected ? opt.palette.highlightedText().color()
                            : opt.palette.text().color());
+
+        QString idStr  = idx.data(Qt::UserRole + 2).toString(); // e.g. "[PM]"
+        int     idW    = idStr.isEmpty() ? 0
+                       : opt.fontMetrics.horizontalAdvance(idStr) + 6;
+        QRect   line1R = r.adjusted(0, 0, 0, -(lineH + 4));
+
+        // Draw ID right-aligned first
+        if (idW > 0) {
+            QColor idCol = selected ? opt.palette.highlightedText().color()
+                                    : opt.palette.placeholderText().color();
+            p->setPen(idCol);
+            p->drawText(line1R, Qt::AlignBottom | Qt::AlignRight, idStr);
+            p->setPen(selected ? opt.palette.highlightedText().color()
+                               : opt.palette.text().color());
+        }
+
+        // Draw path left-aligned with room for the ID
         QString nick   = idx.data(Qt::DisplayRole).toString();
-        QString elided = opt.fontMetrics.elidedText(nick, Qt::ElideMiddle, r.width());
-        p->drawText(r.adjusted(0, 0, 0, -(lineH + 4)),
-                    Qt::AlignBottom | Qt::AlignLeft, elided);
+        QString elided = opt.fontMetrics.elidedText(
+            nick, Qt::ElideMiddle, line1R.width() - idW);
+        p->drawText(line1R, Qt::AlignBottom | Qt::AlignLeft, elided);
 
         // Line 2: trip count — small, subdued
         QFont f2 = opt.font;
@@ -178,6 +195,9 @@ void ManifestPanel::populateList()
             QString("%1 trip%2").arg(e.tripCount).arg(e.tripCount == 1 ? "" : "s"));
         item->setData(Qt::UserRole + 1,
             QString::fromStdString(e.manifestFile));
+        QString id = QString::fromStdString(e.id).toUpper();
+        item->setData(Qt::UserRole + 2,
+            id.isEmpty() ? QString() : QString("[%1]").arg(id));
     }
 }
 
@@ -251,4 +271,4 @@ void ManifestPanel::applyListZoom()
     m_list->setFont(f);
     m_list->update();
 }
-// SN: 00092
+// SN: 00097

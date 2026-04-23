@@ -7,7 +7,9 @@
 #include <vector>
 #include <array>
 #include <functional>
+#include <map>
 #include <mutex>
+#include <set>
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
 
@@ -94,9 +96,46 @@ struct VideoOptions {
     // Empty = use auto-generated date_time prefix.
     std::string basenameOverride;
 
+    // Slots to render as black frames regardless of available footage.
+    // Populated from unchecked quadrants or "None" selection in the build dialog.
+    std::set<std::string> blankSlots;
+
+    // Camera remap: key = collage position slot, value = camera to use instead.
+    // e.g. {"left": "front"} puts front-camera segments in the BR position.
+    // Natural (identity) mappings need not be listed.
+    std::map<std::string,std::string> cameraRemap;
+
+    // External video sources — each entry replaces one camera slot in the collage.
+    // Multiple entries allowed (e.g. dashboard + moving map as separate quadrants).
+    struct ExternalSlot {
+        std::string path;      // path to the video file
+        std::string replaces;  // camera slot name: "front"|"rear"|"left"|"right"
+        bool loop = false;     // -stream_loop -1 (for logo morph and other cyclic sources)
+    };
+    std::vector<ExternalSlot> externalSlots;
+
+    // Map overlay — composites a video centered over the 4K xstack output.
+    // Default 960×540; eof_action=pass: overlay disappears when it ends.
+    // overlayCamera: if non-empty, concat that camera's segments as the overlay
+    // instead of a pre-built file. Takes priority over mapOverlayPath.
+    std::string mapOverlayPath;
+    std::string overlayCamera;       // "front"|"rear"|"left"|"right"
+    bool        mapOverlayLoop   = false;  // -stream_loop -1 on overlay input
+    int         mapOverlayWidth  = 960;
+    int         mapOverlayHeight = 540;
+
     // Run per-camera concat stages concurrently (stream-copy, low CPU).
-    // Disabled in CLI to avoid interleaved terminal output.
     bool parallelConcats = false;
+
+    // Verbose build output — when true, all ffmpeg stderr is streamed to the
+    // progress dialog log panel in real time instead of being discarded.
+    bool verbose = false;
+
+    // Multi-line ANSI progress for parallel concats.
+    // parallelRow    — this camera's 0-based row index (-1 = off, use plain \r bar).
+    // parallelTotalRows — total rows reserved; used to compute cursor-up distance.
+    int parallelRow       = -1;
+    int parallelTotalRows = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -132,7 +171,8 @@ public:
                        int totalSecs)> ffmpegRunner;
 
     // Called from find_trips interactive browser.
-    VideoOptions configureOptions(ConfigManager& config, Trip& trip);
+    VideoOptions configureOptions(ConfigManager& config, Trip& trip,
+                                  const std::string& sourcePath = {});
     void buildTrip(Trip& trip, const VideoOptions& opts);
 
 private:
@@ -186,6 +226,9 @@ private:
     std::vector<std::pair<std::string,std::string>> renamedFiles;
     std::mutex m_renamedMutex;
 
+    // Serialises stdout writes when parallel concat threads are active.
+    std::mutex m_stdoutMutex;
+
     // --- Helpers ---
     // Write a ffmpeg concat list file to a temp path, return the path.
     std::string writeConcatList(const std::vector<std::string>& files,
@@ -211,11 +254,18 @@ private:
     // Run an ffmpeg command with a live progress bar.
     // label            — stage name shown in bar / passed to progressCallback
     // totalDurationSecs — expected output duration; used for % and ETA.
+    // drawFn           — optional custom draw function; when set, replaces
+    //                    drawProgressLine() for row-positioned parallel output.
+    //                    Receives (label, doneUs, totalUs, speed).
+    //                    When drawFn is set, the trailing \n is suppressed so
+    //                    the caller controls cursor position.
     // Falls back to runFfmpeg() if duration is unknown, debug mode is active,
     // or the platform doesn't support named pipes.
+    using DrawFn = std::function<void(const std::string&, int64_t, int64_t, double)>;
     bool runFfmpegWithProgress(const std::string& cmd,
                                const std::string& label,
-                               int totalDurationSecs);
+                               int totalDurationSecs,
+                               DrawFn drawFn = {});
 
     // Interactive trip picker — shows lastPath trips, offers manifest switch.
     // Returns selected trip index or -1 to abort.
@@ -229,4 +279,4 @@ private:
 };
 
 #endif
-// SN: 00092
+// SN: 00100

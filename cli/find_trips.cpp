@@ -300,7 +300,7 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
                 std::cout << "  Note: " << selected->note << "\n";
 
             config.reloadHostSettings();
-            VideoOptions opts = videoBuilder.configureOptions(config, *selected);
+            VideoOptions opts = videoBuilder.configureOptions(config, *selected, entry.path);
             opts.sourcePath = entry.path;
             opts.manifestId = config.getManifestIdForPath(entry.path);
 
@@ -659,4 +659,4 @@ void FindTrips::formatDump(ConfigManager& config,
     }
 }
 
-// SN: 00089
+// SN: 00097

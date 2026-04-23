@@ -110,6 +110,9 @@ struct AppSettings {
     // Camera profile
     std::string activeProfileId  = "pruveeo_d90"; // matches profile JSON filename stem
 
+    // GUI display scale (set before QApplication; requires restart to take effect)
+    double uiScale = 1.0;
+
     // Internal
     int  schemaVersion       = 1;
 };
@@ -193,10 +196,19 @@ public:
     const EncodeSettings& getEncodeSettings() const { return settings.encode; }
     std::string        getLogLevel()           const { return settings.logLevel; }
     std::string        getActiveProfileId()    const { return settings.activeProfileId; }
+    double             getUiScale()            const { return settings.uiScale; }
 
     // Load the active camera profile from disk.
     // Returns d90Default() if the profile file is absent or invalid.
     CameraProfile      getCameraProfile()      const;
+
+    // All known profiles: built-ins merged with any user JSON files in
+    // ~/.config/pathmux/profiles/.  User files win on profile_id conflict.
+    std::vector<CameraProfile> loadAllProfiles() const;
+
+    // Read the profile_id stored in an existing manifest for sourcePath.
+    // Returns "" if no manifest exists or it contains no profile_id.
+    std::string getManifestProfileId(const std::string& sourcePath) const;
 
     // --- Host-specific settings (pathmux_<hostname>.json) ---
     // Host file overlays base prefs for this machine only.
@@ -217,7 +229,11 @@ public:
             e.normEncoder = "h264_qsv"; e.collageEncoder = "hevc_qsv";
             e.downEncoder = "h264_qsv"; e.pixFmt = "nv12";
             e.normQuality = "24"; e.collageQuality = "20"; e.downQuality = "22";
-            e.extraNormArgs = ""; e.extraCollageArgs = ""; e.extraDownArgs = "";
+            // -low_power 0: disable low-power mode, which is unsupported on many
+            // Intel iGPUs (Optiplex, NUC, etc.) and causes initialisation failure.
+            e.extraNormArgs   = "-low_power 0";
+            e.extraCollageArgs = "-low_power 0";
+            e.extraDownArgs   = "-low_power 0";
         } else if (preset == "nvenc") {
             e.hwDevice = "cuda"; e.hwDeviceType = "cuda";
             e.normEncoder = "h264_nvenc"; e.collageEncoder = "hevc_nvenc";
@@ -307,6 +323,10 @@ public:
     // Public so find_trips can use it for inline [V] validate display.
     static std::string fileMd5(const std::string& filePath);
 
+    // Read-only manifest file path lookup (no index side effects).
+    // Returns "" if not in index. Handles old-style filename migration.
+    std::string  lookupManifestFilePath(const std::string& sourcePath);
+
 private:
     std::string  configDir;
     std::string  settingsFile;      // ~/.config/pathmux/pathmux.json
@@ -325,10 +345,6 @@ private:
     // Ensure sourcePath has a manifest ID; create minimal index entry if new.
     // Returns the 2-char ID. Write operations only — has index side effects.
     std::string  ensureManifestId(const std::string& sourcePath);
-
-    // Read-only manifest file path lookup (no index side effects).
-    // Returns "" if not in index. Handles old-style filename migration.
-    std::string  lookupManifestFilePath(const std::string& sourcePath);
 
     // Generate a unique 2-char base36 ID not already in the given set.
     // Manifest IDs prefer alpha first char; trip IDs prefer digit first char.
@@ -352,4 +368,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00090
+// SN: 00101

@@ -262,6 +262,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
         auto& targetMap = slotFiles[slot.name];
         for (const auto& entry : fs::directory_iterator(scanDir)) {
+            if (entry.is_directory()) continue;   // skip Archive/ and any other subdirs
             std::string filename = entry.path().filename().string();
             if (filename.empty() || filename[0] == '.') continue;
 
@@ -279,6 +280,14 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
             std::time_t epoch;
             if (profile.timestampSource == "exiftool_metadata") {
                 epoch = exiftoolTimestamp(entry.path().string(), exiftoolPath);
+            } else if (profile.timestampSource == "mtime") {
+                // mtime = segment end time; use as ordering key.
+                // Clock-cast via offset between file_clock and system_clock (C++17).
+                auto ft  = fs::last_write_time(entry.path());
+                auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                    ft - fs::file_time_type::clock::now()
+                       + std::chrono::system_clock::now());
+                epoch = std::chrono::system_clock::to_time_t(sys);
             } else {
                 epoch = stringToTimestamp(match[tsGrp].str(), profile.timestampFormat,
                                          profile.timestampTimezone == "utc");
@@ -431,4 +440,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 }
 
 } // namespace Pathmux
-// SN: 00090
+// SN: 00097

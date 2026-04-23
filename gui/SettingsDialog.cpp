@@ -110,6 +110,13 @@ void SettingsDialog::buildGeneralTab(QTabWidget* tabs)
     m_useImperial = new QCheckBox("Use imperial units (mi, mph, ft)");
     form->addRow("Units:", m_useImperial);
 
+    m_uiScale = new QComboBox;
+    m_uiScale->addItems({"1.0 (100% — default)", "1.25 (125%)", "1.5 (150%)",
+                          "1.75 (175%)", "2.0 (200%)", "2.5 (250%)", "3.0 (300%)"});
+    form->addRow("UI scale factor:", m_uiScale);
+    form->addRow("", new QLabel("<i>Scales the entire GUI for HiDPI / 4K displays. "
+                                "Restart required for changes to take effect.</i>"));
+
     auto* sep2 = new QFrame; sep2->setFrameShape(QFrame::HLine); form->addRow(sep2);
 
     // Output
@@ -398,6 +405,15 @@ void SettingsDialog::loadFromConfig()
     m_audioSource->setCurrentIndex(comboFind(m_audioSource, QString::fromStdString(s.defaultAudioSource)));
     m_logLevel->setCurrentIndex(comboFind(m_logLevel, QString::fromStdString(s.logLevel)));
     m_activeProfile->setText(QString::fromStdString(s.activeProfileId));
+    {
+        // Match stored scale to combo item by prefix (e.g. "1.5" matches "1.5 (150%)")
+        QString scaleStr = QString::number(s.uiScale, 'g', 4);
+        int idx = 0;
+        for (int i = 0; i < m_uiScale->count(); ++i) {
+            if (m_uiScale->itemText(i).startsWith(scaleStr)) { idx = i; break; }
+        }
+        m_uiScale->setCurrentIndex(idx);
+    }
 
     // Encoder
     m_preset->setCurrentIndex(comboFind(m_preset, QString::fromStdString(s.encode.preset)));
@@ -467,6 +483,13 @@ void SettingsDialog::saveToConfig()
     s.defaultAudioSource  = m_audioSource->currentText().toStdString();
     s.logLevel            = m_logLevel->currentText().toStdString();
     s.activeProfileId     = m_activeProfile->text().toStdString();
+    {
+        // Combo text like "1.5 (150%)" — extract the leading number
+        QString scaleText = m_uiScale->currentText().split(' ').first();
+        bool ok = false;
+        double sv = scaleText.toDouble(&ok);
+        s.uiScale = (ok && sv > 0.5) ? sv : 1.0;
+    }
 
     // Encoder
     s.encode.preset         = m_preset->currentText().toStdString();
@@ -627,4 +650,4 @@ void SettingsDialog::onAccepted()
     saveToConfig();
     accept();
 }
-// SN: 00095
+// SN: 00097

@@ -68,7 +68,7 @@ static QString detectTool(const QString& name)
 #endif
 #ifdef _WIN32
     // Common Windows locations for these tools
-    for (const QString& dir : {
+    for (const QString dir : {
         "C:/Windows/System32",
         "C:/Program Files/ffmpeg/bin",
         "C:/ffmpeg/bin"}) {
@@ -429,4 +429,4 @@ void SetupWizard::applyToConfig(ConfigManager& config)
     config.saveSettings();
     config.saveHostSettings();
 }
-// SN: 00095
+// SN: 00100

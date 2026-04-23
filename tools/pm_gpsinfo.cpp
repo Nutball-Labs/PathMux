@@ -137,6 +137,7 @@ static std::string xmlEscape(const std::string& s) {
 // printUsage
 // ---------------------------------------------------------------------------
 static void printUsage(const char* argv0) {
+    (void)argv0;
     std::cerr
         << "Usage: pm_gpsinfo [options] <file.ts | MID:TID>\n"
         << "       pm_gpsinfo --scan-all-trips [options]\n\n"
