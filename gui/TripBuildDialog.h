@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 #include <QDialog>
+#include <QString>
 #include <array>
 #include <set>
 #include <string>
@@ -36,11 +37,7 @@ private slots:
 
 private:
     QWidget* makeOverlayCell();
-    // Quadrant index → backend slot name / position label / camera label
-    // xstack layout: TL=front, TR=rear, BL=right, BR=left
-    static constexpr std::array<const char*, 4> kSlot  = {"front","rear","right","left"};
-    static constexpr std::array<const char*, 4> kPos   = {"Top Left","Top Right","Bottom Left","Bottom Right"};
-    static constexpr std::array<const char*, 4> kCam   = {"Front","Rear","Right","Left"};
+    QWidget* makeHudRow();
 
     QWidget*   makeCollageTab(const std::set<std::string>& cams);
     QWidget*   makeFilesTab  (const std::set<std::string>& cams);
@@ -49,6 +46,13 @@ private:
 
     QWidget*   makeQuadrantCell(int idx, const std::set<std::string>& cams);
     void       updateQuadFileRow(int idx);
+
+    // Quadrant → slot mapping built from the embedded camera profile at construct time.
+    // Indices 0-3 map to TL, TR, BL, BR.  Empty string = no camera assigned to that quad.
+    static constexpr std::array<const char*, 4> kPos =
+        {"Top Left", "Top Right", "Bottom Left", "Bottom Right"};
+    std::array<std::string, 4> m_kSlot = {};  // backend slot name (e.g. "front")
+    std::array<QString,     4> m_kCam  = {};  // display name      (e.g. "Front")
 
     Pathmux::ManifestEntry  m_manifest;
     Pathmux::Trip           m_trip;
@@ -73,11 +77,15 @@ private:
     QWidget*         m_overlayFileRow      = nullptr;
     LogoMorphWidget* m_overlayMorph        = nullptr;
 
+    // HUD overlay (full-screen, VP9 alpha)
+    QCheckBox*   m_chkHudOverlay   = nullptr;
+    QComboBox*   m_hudCombo        = nullptr;
+    QLineEdit*   m_hudPath         = nullptr;
+    QPushButton* m_hudBrowseBtn    = nullptr;
+    QWidget*     m_hudFileRow      = nullptr;
+
     // ── Camera Files tab ─────────────────────────────────────────────────────
-    QCheckBox*   m_chkFront    = nullptr;
-    QCheckBox*   m_chkRear     = nullptr;
-    QCheckBox*   m_chkLeft     = nullptr;
-    QCheckBox*   m_chkRight    = nullptr;
+    QCheckBox*   m_chkCam[4]   = {}; // indexed by quadrant, matches m_kSlot
     QComboBox*   m_container   = nullptr;
     QCheckBox*   m_chkAudio    = nullptr;
     QComboBox*   m_audioCamera = nullptr;
@@ -92,4 +100,4 @@ private:
     QPushButton* m_btnQueue   = nullptr;
     QCheckBox*   m_chkVerbose = nullptr;
 };
-// SN: 00101
+// SN: 00104

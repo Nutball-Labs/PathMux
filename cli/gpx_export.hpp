@@ -27,7 +27,6 @@ struct ExportOptions {
     std::string kmlPath;        // --kmlpath <dir>   output directory for KML
     std::string kmlFile;        // --kmlfile <name>  explicit KML filename
     std::string exiftoolPath;    // from config -- path to exiftool binary
-    std::string exiftoolOptions; // from config -- e.g. "-ee3"
     std::string defaultExportDir; // from config -- default output directory
     bool        force = false;  // --force           overwrite without prompting
 };
@@ -82,4 +81,4 @@ private:
 };
 
 #endif
-// SN: 00089
+// SN: 00104

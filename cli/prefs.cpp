@@ -52,10 +52,6 @@ bool PrefsEditor::run(ConfigManager& config) {
                       + fmtPath(working.defaultExportDir));
         UI::printLine("[E]  ExifTool path             "
                       + (working.exiftoolPath.empty() ? "exiftool" : working.exiftoolPath));
-        UI::printLine("[O]  ExifTool options          "
-                      + (working.exiftoolOptions.empty()
-                         ? "-ee3 -p '$GPSDateTime ...' (default)"
-                         : working.exiftoolOptions));
         UI::printLine("[F]  FFmpeg path               "
                       + (working.ffmpegPath.empty() ? "ffmpeg" : working.ffmpegPath));
         UI::printLine("[G]  Timestamp format          " + working.timestampFormat);
@@ -116,21 +112,6 @@ bool PrefsEditor::run(ConfigManager& config) {
                 "ExifTool path", working.exiftoolPath.empty()
                                  ? "exiftool" : working.exiftoolPath);
             UI::confirmExecutable(working.exiftoolPath);
-            changed = true;
-        }
-        else if (ch == 'O') {
-            std::string cur = working.exiftoolOptions.empty()
-                ? "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSSpeed# $GPSTrack#'"
-                : working.exiftoolOptions;
-            std::cout << "  Current: " << cur << "\n\n"
-                      << "  This is the COMPLETE options string appended to the exiftool binary path.\n"
-                      << "  It must include extraction flags AND the -p format string.\n"
-                      << "  The -p format string field order is fixed — the parser expects:\n"
-                      << "    GPSDateTime  GPSLatitude#  GPSLongitude#  GPSSpeed#  GPSTrack#\n"
-                      << "  Do not change field order or remove fields.\n"
-                      << "  Single quotes around the format string are required.\n"
-                      << "  Default works for Pruveeo D90 and most consumer dashcams.\n\n";
-            working.exiftoolOptions = UI::promptString("ExifTool options", cur);
             changed = true;
         }
         else if (ch == 'F') {
@@ -427,4 +408,4 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00090
+// SN: 00104

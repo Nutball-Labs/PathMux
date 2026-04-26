@@ -76,9 +76,10 @@ Path to the ExifTool binary.  Defaults to
 .BR PATH ).
 .TP
 .BI \-\-exiftool\-opts " OPTIONS"
-Override the ExifTool options string.  Defaults to the value stored in
-.I ~/.config/pathmux/pathmux.json
-.RB ( exiftoolOptions ).
+Override the ExifTool options string.  Defaults to the
+.B gps_exiftool_args
+value from the camera profile embedded in the manifest,
+or the built-in profile default if no manifest profile is present.
 .TP
 .B \-v ", " \-\-version
 Print the PathMux version string and exit.
@@ -101,6 +102,18 @@ for UTC) to handle timezone differences correctly.
 The result is stored as
 .B gpsLockSeconds
 in the trip manifest.
+.PP
+.B Automatic computation (v1.9.0+):
+When GPS is extracted from the GUI (Trip Properties \(-> GPS tab),
+.B gpsLockSeconds
+is computed and stored automatically as part of the extraction run.
+Running
+.B \-\-scan\-all\-trips
+is no longer required for GUI-extracted trips.
+Use
+.B \-\-scan\-all\-trips
+for batch operations or to refresh lock times on trips extracted with an
+older version of PathMux.
 .PP
 A
 .B gpsLockSeconds
@@ -177,9 +190,8 @@ See
 .TP
 .I ~/.config/pathmux/pathmux.json
 Application settings including
-.B exiftoolPath
-and
-.BR exiftoolOptions .
+.BR exiftoolPath .
+GPS extraction arguments are stored in the camera profile, not in global settings.
 .TP
 .I ~/.config/pathmux/manifests.json
 Manifest index used by MID:TID resolution and
@@ -199,4 +211,4 @@ resolved).
 .BR exiftool (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-.\" SN: 00089
+.\" SN: 00104

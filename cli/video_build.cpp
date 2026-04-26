@@ -945,7 +945,8 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     addInput(listL, "left");
     addInput(listG, "right");
 
-    // Overlay input: camera concat takes priority over file path.
+    // Center overlay input (map/dashboard): camera concat takes priority over file path.
+    // This is always input index 4 when present.
     bool hasOverlay = !opts.overlayCamera.empty() || !opts.mapOverlayPath.empty();
     if (!opts.overlayCamera.empty()) {
         const auto& ovSegs = effectiveSegs(opts.overlayCamera);
@@ -961,6 +962,17 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         cmd << " -i \"" << opts.mapOverlayPath << "\"";
     }
 
+    // Full-screen HUD input: always after the center overlay (index 4 or 5).
+    // -c:v libvpx-vp9 forces the software VP9 decoder, which is the only ffmpeg
+    // decoder that reads the separate alpha bitstream stored in the WebM container.
+    // Hardware VP9 decoders (qsv, nvdec, etc.) silently drop the alpha track,
+    // producing opaque yuv420p output that covers everything in the overlay.
+    bool hasHud = !opts.hudOverlayPath.empty();
+    if (hasHud) {
+        if (opts.hudOverlayLoop) cmd << " -stream_loop -1";
+        cmd << " -c:v libvpx-vp9 -i \"" << opts.hudOverlayPath << "\"";
+    }
+
     // Derive fps from the trip video profile; default to "30" if unknown.
     // Explicit fps in the filter graph is required by hardware encoders (QSV,
     // VAAPI) which refuse to initialise when the input frame rate is variable
@@ -968,18 +980,38 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     std::string collageFps = trip.videoProfile.frameRate.empty()
                              ? "30" : trip.videoProfile.frameRate;
 
+    // Input index after the 4 camera slots: overlay=4, HUD=4 or 5.
+    int hudIdx = 4 + (hasOverlay ? 1 : 0);
+
     cmd << " -filter_complex \""
         <<   "[0:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v0];"
         <<   "[1:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v1];"
         <<   "[2:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v2];"
         <<   "[3:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v3];"
         <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0,"
-        <<   "fps=" << collageFps << (hasOverlay ? "[base]" : "[vout]");
+        <<   "fps=" << collageFps;
+
+    // After xstack the working label is [base] if anything else follows, else [vout].
+    bool needsIntermediate = hasOverlay || hasHud;
+    cmd << (needsIntermediate ? "[base]" : "[vout]");
+
     if (hasOverlay) {
+        // Center overlay: scale to inset size, strip alpha (map/dashboard are opaque).
+        // Output label: [afterovl] if HUD follows, else [vout].
         cmd << ";[4:v]scale=" << opts.mapOverlayWidth << ":" << opts.mapOverlayHeight
             <<   ",format=" << opts.encode.pixFmt << "[ovl]"
-            <<   ";[base][ovl]overlay=(W-w)/2:(H-h)/2:eof_action=pass[vout]";
+            <<   ";[base][ovl]overlay=(W-w)/2:(H-h)/2:eof_action=pass"
+            <<   (hasHud ? "[afterovl]" : "[vout]");
     }
+
+    if (hasHud) {
+        // Full-screen HUD: preserve yuva420p so the overlay filter uses the alpha channel.
+        // Composited over the full 3840×2160 output — no scaling.
+        std::string hudBase = hasOverlay ? "afterovl" : "base";
+        cmd << ";[" << hudIdx << ":v]format=yuva420p[hud]"
+            <<   ";[" << hudBase << "][hud]overlay=0:0:eof_action=pass[vout]";
+    }
+
     cmd << "\""
         << " -map \"[vout]\""
         << " -map " << audioIdx << ":a:0"
@@ -2566,4 +2598,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00100
+// SN: 00104

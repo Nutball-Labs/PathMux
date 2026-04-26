@@ -28,7 +28,13 @@ struct CameraSlot {
     std::string displayName;
     std::string filenameToken;
     std::string scanSubdir;
+    // Fallback subdirs tried in order if scanSubdir exists but yields no matching files.
+    // Handles cameras that ship cards with different directory layouts (e.g. Cobra GPS:
+    // some cards use 100_DSC/, others wrap it under DCIM/100_DSC/).
+    std::vector<std::string> scanSubdirCandidates;
     bool        isPrimary = false;
+    // Collage quadrant position: 0=TL 1=TR 2=BL 3=BR; -1=auto (fill in slot order)
+    int         quadrant  = -1;
 };
 
 // ---------------------------------------------------------------------------
@@ -88,6 +94,11 @@ struct CameraProfile {
     std::string containerExt;
     std::string thumbnailMethod = "replace_ext";
     std::string gpsMethod       = "none";
+    // Full exiftool option string for GPS extraction (everything except the
+    // binary path and the file path appended at the end).  Camera-specific —
+    // must not be a global application setting.  Empty = use the legacy
+    // Falls back to D90 built-in default when absent (legacy manifests).
+    std::string gpsExiftoolArgs;
     std::string defaultLayout   = "2x2";
 
     // Returns the name of the primary slot, or "" if none designated.
@@ -117,4 +128,4 @@ struct CameraProfile {
 } // namespace Pathmux
 
 #endif
-// SN: 00101
+// SN: 00104

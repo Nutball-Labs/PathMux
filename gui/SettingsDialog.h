@@ -9,6 +9,7 @@ class QTabWidget;
 class QLineEdit;
 class QComboBox;
 class QCheckBox;
+class QDoubleSpinBox;
 class QSpinBox;
 class QTableWidget;
 class QLabel;
@@ -47,6 +48,7 @@ private:
     void buildEncoderTab(QTabWidget*);
     void buildHostTab(QTabWidget*);
     void buildKmlTab(QTabWidget*);
+    void buildHudTab(QTabWidget*);
     void buildLocationsTab(QTabWidget*);
 
     void loadFromConfig();
@@ -86,7 +88,6 @@ private:
     QLabel*    m_hostFileLabel   = nullptr;
     QLineEdit* m_hostFfmpeg      = nullptr;
     QLineEdit* m_hostExiftool    = nullptr;
-    QLineEdit* m_hostExiftoolOpts = nullptr;
     QLineEdit* m_hostExportDir   = nullptr;
     QLineEdit* m_hostTmpDir      = nullptr;
     QComboBox* m_hostLogLevel    = nullptr;
@@ -100,7 +101,12 @@ private:
     QLineEdit* m_endPinUrl         = nullptr;
     QCheckBox* m_showKnownLocs     = nullptr;
 
+    // -- HUD tab --
+    QDoubleSpinBox* m_hudFontScale = nullptr;
+    QDoubleSpinBox* m_hudLineScale = nullptr;
+    QLineEdit*      m_hudColor     = nullptr;
+
     // -- Locations tab --
     QTableWidget* m_locTable       = nullptr;
 };
-// SN: 00097
+// SN: 00104

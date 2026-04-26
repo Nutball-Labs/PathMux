@@ -18,25 +18,36 @@ using namespace Pathmux;
 class ScanWorker : public QObject {
     Q_OBJECT
 public:
-    QString profileId;   // set before moveToThread; overrides active profile if non-empty
+    QString profileId;   // hint from caller (from getManifestProfileId); used only when no manifest exists yet
 public slots:
     void startScan(const QString& path) {
         try {
             ConfigManager config;
             config.loadSettings();
-            if (!profileId.isEmpty()) {
-                auto s = config.getSettings();
-                s.activeProfileId = profileId.toStdString();
-                config.applySettings(s);
+            std::string stdPath = path.toStdString();
+
+            // If a manifest already exists, use its embedded profile so the same
+            // camera layout is applied consistently on every rescan.  On first scan
+            // (no manifest yet) fall back to the profileId hint from the caller.
+            CameraProfile profile;
+            if (!config.lookupManifestFilePath(stdPath).empty()) {
+                profile = config.getManifestProfile(stdPath);
+            } else {
+                if (!profileId.isEmpty()) {
+                    auto s = config.getSettings();
+                    s.activeProfileId = profileId.toStdString();
+                    config.applySettings(s);
+                }
+                profile = config.getCameraProfile();
             }
-            CameraProfile profile = config.getCameraProfile();
+
             TripDetection td;
             auto trips = td.detectTrips(
-                path.toStdString(), profile,
+                stdPath, profile,
                 config.getGapThreshold(),
                 config.getFuzzyWindow(),
                 config.getFfprobePath());
-            config.saveTripCache(path.toStdString(), trips);
+            config.saveTripCache(stdPath, trips, profile);
             emit finished(true, "");
         } catch (const std::exception& ex) {
             emit finished(false, QString::fromLatin1(ex.what()));
@@ -132,4 +143,4 @@ void ScanProgressDialog::onScanFinished(bool ok, const QString& error)
 
 // Required: Q_OBJECT in a .cpp file needs its own moc output included here
 #include "ScanProgressDialog.moc"
-// SN: 00101
+// SN: 00104

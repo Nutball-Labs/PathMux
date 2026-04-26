@@ -70,16 +70,24 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
     p.tokenCaptureGroup       = j.value("token_capture_group",     2);
     p.containerExt    = j.value("container_ext",     "");
     p.thumbnailMethod = j.value("thumbnail_method", "replace_ext");
-    p.gpsMethod       = j.value("gps_method",       "none");
+    p.gpsMethod       = j.value("gps_method",        "none");
+    p.gpsExiftoolArgs = j.value("gps_exiftool_args", "");
     p.defaultLayout   = j.value("default_layout",   "2x2");
 
-    for (const auto& js : j.value("cameraSlots", json::array())) {
+    // Accept both "cameraSlots" (current) and "slots" (legacy, pre-Qt-macro-rename).
+    const json& slotArr = j.contains("cameraSlots") ? j["cameraSlots"]
+                        : j.value("slots", json::array());
+    for (const auto& js : slotArr) {
         CameraSlot s;
         s.name          = js.value("name",           "");
         s.displayName   = js.value("display",        "");
         s.filenameToken = js.value("filename_token", "");
         s.scanSubdir    = js.value("scan_subdir",    "");
         s.isPrimary     = js.value("is_primary",     false);
+        s.quadrant      = js.value("quadrant",        -1);
+        if (js.contains("scan_subdir_candidates") && js["scan_subdir_candidates"].is_array())
+            for (const auto& c : js["scan_subdir_candidates"])
+                if (c.is_string()) s.scanSubdirCandidates.push_back(c.get<std::string>());
         if (!s.name.empty()) p.cameraSlots.push_back(s);
     }
     return p;
@@ -98,7 +106,9 @@ void CameraProfile::saveToFile(const std::string& path) const {
     if (tokenCaptureGroup     != 2) j["token_capture_group"]     = tokenCaptureGroup;
     j["container_ext"]     = containerExt;
     j["thumbnail_method"] = thumbnailMethod;
-    j["gps_method"]       = gpsMethod;
+    j["gps_method"]        = gpsMethod;
+    if (!gpsExiftoolArgs.empty())
+        j["gps_exiftool_args"] = gpsExiftoolArgs;
     j["default_layout"]   = defaultLayout;
 
     json slotArr = json::array();
@@ -109,6 +119,13 @@ void CameraProfile::saveToFile(const std::string& path) const {
         js["filename_token"] = s.filenameToken;
         js["scan_subdir"]    = s.scanSubdir;
         js["is_primary"]     = s.isPrimary;
+        if (s.quadrant >= 0)
+            js["quadrant"]   = s.quadrant;
+        if (!s.scanSubdirCandidates.empty()) {
+            json cands = json::array();
+            for (const auto& c : s.scanSubdirCandidates) cands.push_back(c);
+            js["scan_subdir_candidates"] = cands;
+        }
         slotArr.push_back(js);
     }
     j["cameraSlots"] = slotArr;
@@ -136,25 +153,31 @@ CameraProfile CameraProfile::d90Default() {
     p.timestampFormat    = "%Y%m%d_%H%M%S";
     p.timestampTimezone  = "utc";
     p.containerExt    = ".ts";
-    p.thumbnailMethod = "ths_sidecar";
-    p.gpsMethod       = "exiftool_ligogps";
-    p.defaultLayout   = "2x2";
+    p.thumbnailMethod  = "ths_sidecar";
+    p.gpsMethod        = "exiftool_ligogps";
+    p.gpsExiftoolArgs  = "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude#"
+                         " $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'";
+    p.defaultLayout    = "2x2";
 
     CameraSlot front;
     front.name = "front"; front.displayName = "Front";
-    front.filenameToken = "_F"; front.scanSubdir = "Front"; front.isPrimary = true;
+    front.filenameToken = "_F"; front.scanSubdir = "Front";
+    front.isPrimary = true; front.quadrant = 0; // TL
 
     CameraSlot rear;
     rear.name = "rear"; rear.displayName = "Rear";
     rear.filenameToken = "_R"; rear.scanSubdir = "Rear";
+    rear.quadrant = 1; // TR
 
     CameraSlot left;
     left.name = "left"; left.displayName = "Left";
     left.filenameToken = "_L"; left.scanSubdir = "Left";
+    left.quadrant = 3; // BR
 
     CameraSlot right;
     right.name = "right"; right.displayName = "Right";
     right.filenameToken = "_B"; right.scanSubdir = "Right";
+    right.quadrant = 2; // BL
 
     p.cameraSlots = { front, rear, left, right };
     return p;
@@ -179,7 +202,9 @@ CameraProfile CameraProfile::cobraDefault() {
 
     CameraSlot front;
     front.name = "front"; front.displayName = "Front";
-    front.filenameToken = ""; front.scanSubdir = "100_DSC"; front.isPrimary = true;
+    front.filenameToken = ""; front.scanSubdir = "100_DSC";
+    front.scanSubdirCandidates = {"DCIM/100_DSC"};
+    front.isPrimary = true; front.quadrant = 0; // TL
 
     p.cameraSlots = { front };
     return p;
@@ -199,17 +224,23 @@ CameraProfile CameraProfile::cobraGpsDefault() {
     p.filenameRegex   = R"((\d{8}_\d{4})_(CAM[12])_VID\.[mM][oO][vV])";
     p.timestampSource = "exiftool_metadata";
     p.containerExt    = ".MOV";
-    p.thumbnailMethod = "none";
-    p.gpsMethod       = "exiftool_gps0";
-    p.defaultLayout   = "side_by_side";
+    p.thumbnailMethod  = "none";
+    p.gpsMethod        = "exiftool_gps0";
+    p.gpsExiftoolArgs  = "-ee -p '$GPSDateTime $GPSLatitude# $GPSLongitude#"
+                         " $GPSAltitude# $GPSSpeed# $GPSTrack#'";
+    p.defaultLayout    = "side_by_side";
 
     CameraSlot front;
     front.name = "front"; front.displayName = "Front";
-    front.filenameToken = "CAM1"; front.scanSubdir = "100_DSC"; front.isPrimary = true;
+    front.filenameToken = "CAM1"; front.scanSubdir = "100_DSC";
+    front.scanSubdirCandidates = {"DCIM/100_DSC"};
+    front.isPrimary = true; front.quadrant = 0; // TL
 
     CameraSlot rear;
     rear.name = "rear"; rear.displayName = "Rear";
     rear.filenameToken = "CAM2"; rear.scanSubdir = "100_DSC";
+    rear.scanSubdirCandidates = {"DCIM/100_DSC"};
+    rear.quadrant = 1; // TR
 
     p.cameraSlots = { front, rear };
     return p;
@@ -238,11 +269,13 @@ CameraProfile CameraProfile::prirotteDefault() {
 
     CameraSlot front;
     front.name = "front"; front.displayName = "Front";
-    front.filenameToken = "A"; front.scanSubdir = "DCIMA"; front.isPrimary = true;
+    front.filenameToken = "A"; front.scanSubdir = "DCIM/DCIMA";
+    front.isPrimary = true; front.quadrant = 0; // TL
 
     CameraSlot rear;
     rear.name = "rear"; rear.displayName = "Rear";
-    rear.filenameToken = "C"; rear.scanSubdir = "DCIMC";
+    rear.filenameToken = "C"; rear.scanSubdir = "DCIM/DCIMC";
+    rear.quadrant = 1; // TR
 
     p.cameraSlots = { front, rear };
     return p;
@@ -264,4 +297,4 @@ std::vector<CameraProfile> CameraProfile::getBuiltinProfiles() {
 }
 
 } // namespace Pathmux
-// SN: 00101
+// SN: 00104

@@ -114,7 +114,7 @@ struct VideoOptions {
     };
     std::vector<ExternalSlot> externalSlots;
 
-    // Map overlay — composites a video centered over the 4K xstack output.
+    // Map/dashboard overlay — composites a video centered over the 4K xstack output.
     // Default 960×540; eof_action=pass: overlay disappears when it ends.
     // overlayCamera: if non-empty, concat that camera's segments as the overlay
     // instead of a pre-built file. Takes priority over mapOverlayPath.
@@ -123,6 +123,12 @@ struct VideoOptions {
     bool        mapOverlayLoop   = false;  // -stream_loop -1 on overlay input
     int         mapOverlayWidth  = 960;
     int         mapOverlayHeight = 540;
+
+    // HUD overlay — full-screen transparent composite (VP9/yuva420p WebM).
+    // Composited AFTER the center overlay so it floats above everything.
+    // format=yuva420p is preserved; alpha is applied by the overlay filter.
+    std::string hudOverlayPath;
+    bool        hudOverlayLoop = false;  // -stream_loop -1 (loop if shorter than trip)
 
     // Run per-camera concat stages concurrently (stream-copy, low CPU).
     bool parallelConcats = false;
@@ -279,4 +285,4 @@ private:
 };
 
 #endif
-// SN: 00100
+// SN: 00104

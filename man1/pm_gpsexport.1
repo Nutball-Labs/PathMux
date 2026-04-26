@@ -111,7 +111,7 @@ automatically so
 .B \-\-validate
 does not flag the file as externally modified.
 .PP
-The ExifTool binary path and options string are read from
+The ExifTool binary path is read from
 .IR ~/.config/pathmux/pathmux.json .
 See
 .BR pathmux (1)
@@ -165,9 +165,8 @@ Show ExifTool output during extraction:
 .TP
 .I ~/.config/pathmux/pathmux.json
 Application settings including
-.B exiftoolPath
-and
-.BR exiftoolOptions .
+.BR exiftoolPath .
+GPS extraction arguments are stored in the camera profile embedded in the manifest.
 .TP
 .I ~/.config/pathmux/manifests.json
 Manifest index used for MID:TID resolution.
@@ -191,4 +190,6 @@ or a write error occurred.
 .BR exiftool (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-.\" SN: 00089
+.\" SN: 00104
+
+." SN: 00104

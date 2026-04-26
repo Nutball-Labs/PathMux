@@ -307,6 +307,7 @@ if(Qt6_FOUND)
         gui/MapProgressDialog.cpp
         gui/AboutDialog.cpp
         gui/SettingsDialog.cpp
+        gui/CameraProfilesDialog.cpp
         gui/ManifestManagerDialog.cpp
         gui/SetupWizard.cpp
         gui/HelpDialog.cpp
@@ -596,4 +597,4 @@ endif()
 
 include(CPack)
 
-# SN: 00101
+# SN: 00104

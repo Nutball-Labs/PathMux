@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "TripBuildDialog.h"
 #include "LogoMorphWidget.h"
+#include <algorithm>
 #include <filesystem>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -27,6 +28,7 @@
 #include <QPainter>
 #include <QProcess>
 #include <QMessageBox>
+#include <QSignalBlocker>
 
 using namespace Pathmux;
 
@@ -86,6 +88,47 @@ TripBuildDialog::TripBuildDialog(const ManifestEntry& manifest,
     config.loadSettings();
     m_ffmpegPath = config.getFfmpegPath();
     m_encode     = config.getEncodeSettings();
+
+    // Build quadrant→slot mapping from the embedded camera profile.
+    // Slots with an explicit quadrant field are placed first; remaining slots
+    // fill unoccupied positions in declaration order.
+    {
+        CameraProfile profile = config.getManifestProfile(manifest.path);
+        // Initialise to empty (no assignment)
+        for (int i = 0; i < 4; ++i) {
+            m_kSlot[i] = "";
+            m_kCam[i]  = QString(kPos[i]);
+        }
+        // Two passes: assigned quadrants first, then unassigned fill gaps.
+        struct Entry { int q; std::string name; QString disp; };
+        std::vector<Entry> entries;
+        std::vector<Entry> unassigned;
+        for (const auto& s : profile.cameraSlots) {
+            QString disp = QString::fromStdString(
+                s.displayName.empty() ? s.name : s.displayName);
+            if (s.quadrant >= 0 && s.quadrant < 4)
+                entries.push_back({s.quadrant, s.name, disp});
+            else
+                unassigned.push_back({-1, s.name, disp});
+        }
+        std::sort(entries.begin(), entries.end(),
+                  [](const Entry& a, const Entry& b){ return a.q < b.q; });
+        // Fill unassigned into remaining positions in order
+        std::set<int> used;
+        for (const auto& e : entries) used.insert(e.q);
+        int next = 0;
+        for (auto& u : unassigned) {
+            while (next < 4 && used.count(next)) ++next;
+            if (next >= 4) break;
+            u.q = next;
+            used.insert(next++);
+            entries.push_back(u);
+        }
+        std::sort(entries.begin(), entries.end(),
+                  [](const Entry& a, const Entry& b){ return a.q < b.q; });
+        for (const auto& e : entries)
+            if (e.q >= 0 && e.q < 4) { m_kSlot[e.q] = e.name; m_kCam[e.q] = e.disp; }
+    }
 
     auto* vbox = new QVBoxLayout(this);
     vbox->setSpacing(8);
@@ -156,16 +199,27 @@ QWidget* TripBuildDialog::makeCollageTab(const std::set<std::string>& cams)
 
     vbox->addWidget(gridFrame);
 
+    // ── HUD overlay (full-screen, below grid) ────────────────────────────────
+    vbox->addWidget(makeHudRow());
+
     // ── Audio source ─────────────────────────────────────────────────────────
     auto* audioRow   = new QHBoxLayout;
     auto* audioLabel = new QLabel("Collage audio from:", w);
     m_audioQuad      = new QComboBox(w);
     for (int i = 0; i < 4; ++i)
         m_audioQuad->addItem(
-            QString("%1 (%2)").arg(kPos[i]).arg(kCam[i]));
-    m_audioQuad->setCurrentIndex(3);
-    if (!cams.count("left") && cams.count("front"))
-        m_audioQuad->setCurrentIndex(0);
+            QString("%1 (%2)").arg(kPos[i]).arg(m_kCam[i]));
+    // Default audio to left camera (driver's position in LHD countries).
+    // Fallback: first present camera if no left slot exists in the profile.
+    {
+        int leftQuad = -1, firstPresent = -1;
+        for (int i = 0; i < 4; ++i) {
+            if (m_kSlot[i].empty() || !cams.count(m_kSlot[i])) continue;
+            if (firstPresent < 0) firstPresent = i;
+            if (m_kSlot[i] == "left") { leftQuad = i; break; }
+        }
+        m_audioQuad->setCurrentIndex(leftQuad >= 0 ? leftQuad : std::max(firstPresent, 0));
+    }
     audioRow->addWidget(audioLabel);
     audioRow->addWidget(m_audioQuad);
     audioRow->addStretch();
@@ -211,7 +265,10 @@ QWidget* TripBuildDialog::makeOverlayCell()
     cell->setStyleSheet(
         "QFrame#overlayCell { background: #161628; border: 1px dashed #5050a0;"
         " border-radius: 4px; min-width: 160px; }"
-        "QCheckBox { color: #a0a0d0; font-size: 8pt; border: none; }"
+        "QCheckBox { color: #e8e8ff; font-size: 9pt; font-weight: bold; border: none; spacing: 6px; }"
+        "QCheckBox::indicator { width: 15px; height: 15px; border: 2px solid #6060b0; border-radius: 3px; }"
+        "QCheckBox::indicator:checked { border-color: #a0a0ff; background-color: #3838a0; }"
+        "QCheckBox::indicator:hover { border-color: #9090cc; }"
         "QLabel    { color: #505090; font-size: 7pt; border: none; }"
         "QLineEdit { background: #202038; color: #c0c0e0;"
         "  border: 1px solid #404070; border-radius: 3px;"
@@ -234,6 +291,7 @@ QWidget* TripBuildDialog::makeOverlayCell()
 
     auto* title = new QLabel("OVERLAY", cell);
     title->setAlignment(Qt::AlignCenter);
+    title->setStyleSheet("color: #9090cc; font-size: 8pt; font-weight: bold; letter-spacing: 1px;");
     vbox->addWidget(title);
 
     m_chkMapOverlay = new QCheckBox("Enable", cell);
@@ -245,9 +303,9 @@ QWidget* TripBuildDialog::makeOverlayCell()
 
     auto cams = presentCameras(m_trip);
     for (int k = 0; k < 4; ++k) {
-        if (!cams.count(kSlot[k])) continue;
-        m_overlayCombo->addItem(QString("Camera: %1").arg(kCam[k]),
-                                camData(kSlot[k]));
+        if (m_kSlot[k].empty() || !cams.count(m_kSlot[k])) continue;
+        m_overlayCombo->addItem(QString("Camera: %1").arg(m_kCam[k]),
+                                camData(m_kSlot[k].c_str()));
     }
     for (const auto& p : m_trip.mapVideos) {
         QFileInfo fi(QString::fromStdString(p));
@@ -257,6 +315,11 @@ QWidget* TripBuildDialog::makeOverlayCell()
     for (const auto& p : m_trip.dashVideos) {
         QFileInfo fi(QString::fromStdString(p));
         m_overlayCombo->addItem("Dashboard: " + fi.fileName(),
+                                fileData(fi.absoluteFilePath()));
+    }
+    for (const auto& p : m_trip.hudVideos) {
+        QFileInfo fi(QString::fromStdString(p));
+        m_overlayCombo->addItem("HUD: " + fi.fileName(),
                                 fileData(fi.absoluteFilePath()));
     }
     m_overlayCombo->addItem("External video\u2026", QString(kBrowse));
@@ -333,6 +396,132 @@ QWidget* TripBuildDialog::makeOverlayCell()
 }
 
 // ---------------------------------------------------------------------------
+// HUD overlay row — full-screen VP9 alpha composite below the grid
+// ---------------------------------------------------------------------------
+QWidget* TripBuildDialog::makeHudRow()
+{
+    auto* row  = new QWidget(this);
+    row->setObjectName("hudRow");
+    row->setStyleSheet(
+        "QWidget#hudRow { background: #141426; border: 1px solid #303058; border-radius: 4px; }"
+        "QWidget { background: transparent; border: none; }"
+        "QCheckBox { color: #e8e8ff; font-size: 9pt; font-weight: bold; spacing: 6px; }"
+        "QCheckBox::indicator { width: 15px; height: 15px; border: 2px solid #6060b0; border-radius: 3px; }"
+        "QCheckBox::indicator:checked { border-color: #a0a0ff; background-color: #3838a0; }"
+        "QCheckBox::indicator:hover { border-color: #9090cc; }"
+        "QLabel    { color: #606090; font-size: 8pt; }"
+        "QComboBox { background: #202038; color: #c0c0e0;"
+        "  border: 1px solid #404070; border-radius: 3px; padding: 2px 4px; }"
+        "QComboBox::drop-down { border: none; }"
+        "QComboBox QAbstractItemView {"
+        "  background: #202038; color: #c0c0e0;"
+        "  selection-background-color: #3030a0; selection-color: #e0e0f0;"
+        "  border: 1px solid #404070; }"
+        "QLineEdit { background: #202038; color: #c0c0e0;"
+        "  border: 1px solid #404070; border-radius: 3px; padding: 1px 3px; font-size: 8pt; }"
+        "QPushButton { background: #252540; color: #a0a0c8;"
+        "  border: 1px solid #404070; border-radius: 3px; font-size: 8pt; }"
+    );
+    auto* hbox = new QHBoxLayout(row);
+    hbox->setContentsMargins(8, 5, 8, 5);
+    hbox->setSpacing(8);
+
+    m_chkHudOverlay = new QCheckBox("HUD overlay (full-screen):", row);
+    hbox->addWidget(m_chkHudOverlay);
+
+    m_hudCombo = new QComboBox(row);
+    m_hudCombo->setMinimumWidth(180);
+    for (const auto& p : m_trip.hudVideos) {
+        QFileInfo fi(QString::fromStdString(p));
+        m_hudCombo->addItem("HUD: " + fi.fileName(),
+                            fileData(fi.absoluteFilePath()));
+    }
+    m_hudCombo->addItem("External video…", QString(kBrowse));
+    m_hudCombo->addItem("None", QString(kNone));
+    // Pre-select first HUD video if any exist
+    if (!m_trip.hudVideos.empty())
+        m_hudCombo->setCurrentIndex(0);
+    else
+        m_hudCombo->setCurrentIndex(m_hudCombo->count() - 1);  // None
+    hbox->addWidget(m_hudCombo);
+
+    // External file row
+    m_hudFileRow = new QWidget(row);
+    m_hudFileRow->setStyleSheet("QWidget { background: transparent; border: none; }");
+    auto* fileL = new QHBoxLayout(m_hudFileRow);
+    fileL->setContentsMargins(0, 0, 0, 0);
+    fileL->setSpacing(3);
+    m_hudPath = new QLineEdit(m_hudFileRow);
+    m_hudPath->setPlaceholderText("HUD .webm…");
+    m_hudBrowseBtn = new QPushButton("…", m_hudFileRow);
+    m_hudBrowseBtn->setFixedWidth(22);
+    connect(m_hudBrowseBtn, &QPushButton::clicked, this, [this]() {
+        QString f = QFileDialog::getOpenFileName(
+            this, "Select HUD Video",
+            m_hudPath->text().isEmpty() ? QString() : m_hudPath->text(),
+            "WebM / Video (*.webm *.mp4 *.mkv);;All Files (*)");
+        if (!f.isEmpty()) m_hudPath->setText(f);
+    });
+    fileL->addWidget(m_hudPath, 1);
+    fileL->addWidget(m_hudBrowseBtn);
+    m_hudFileRow->hide();
+    hbox->addWidget(m_hudFileRow, 1);
+
+    hbox->addStretch();
+
+    // Note label
+    auto* note = new QLabel("VP9 alpha · 3840×2160", row);
+    hbox->addWidget(note);
+
+    // Combo logic: show file row only for External
+    auto updateHudCombo = [=](int) {
+        QString d = m_hudCombo->currentData().toString();
+        m_hudFileRow->setVisible(d == kBrowse);
+    };
+    connect(m_hudCombo, &QComboBox::currentIndexChanged, updateHudCombo);
+    updateHudCombo(m_hudCombo->currentIndex());
+
+    // Enable/disable controls with checkbox
+    auto updateHudEnabled = [this](bool on) {
+        m_hudCombo->setEnabled(on);
+        m_hudFileRow->setEnabled(on);
+    };
+
+    // Checkbox always starts unchecked — user opts in explicitly.
+    // If they enable it with no HUD available, warn them.
+    updateHudEnabled(false);
+    connect(m_chkHudOverlay, &QCheckBox::toggled, this, [this, updateHudEnabled](bool on) {
+        if (on && m_trip.hudVideos.empty() &&
+            (!m_hudPath || m_hudPath->text().trimmed().isEmpty())) {
+            QMessageBox msgBox(this);
+            msgBox.setWindowTitle("No HUD Video Available");
+            msgBox.setIcon(QMessageBox::Warning);
+            msgBox.setText("No HUD video has been generated for this trip yet.");
+            msgBox.setInformativeText(
+                "Go to Trip Properties → HUD tab to generate one first, "
+                "then come back to enable it here.\n\n"
+                "You can also select an external WebM file via the combo.");
+            QPushButton* btnBuild =
+                msgBox.addButton("Build HUD First", QMessageBox::RejectRole);
+            msgBox.addButton("Continue Without HUD", QMessageBox::AcceptRole);
+            msgBox.setDefaultButton(btnBuild);
+            msgBox.exec();
+            if (msgBox.clickedButton() == btnBuild) {
+                QSignalBlocker blk(m_chkHudOverlay);
+                m_chkHudOverlay->setChecked(false);
+                updateHudEnabled(false);
+                return;
+            }
+            // "Continue Without HUD" — stays checked, combo at None,
+            // buildOptions() will produce an empty hudOverlayPath (no-op).
+        }
+        updateHudEnabled(on);
+    });
+
+    return row;
+}
+
+// ---------------------------------------------------------------------------
 // Single quadrant cell widget
 // ---------------------------------------------------------------------------
 QWidget* TripBuildDialog::makeQuadrantCell(int idx,
@@ -364,18 +553,18 @@ QWidget* TripBuildDialog::makeQuadrantCell(int idx,
     auto* combo      = m_quadCombo[idx];
     vbox->addWidget(combo);
 
-    // All present cameras — any camera can fill any quadrant
-    // kSlot order: front, rear, right, left (matches kCam display names)
-    const char* nativeCam = kSlot[idx];
+    // All present cameras — any camera can fill any quadrant.
+    // Native camera for this quadrant (from profile) is starred.
+    const std::string& nativeCam = m_kSlot[idx];
     int nativeItemIdx = -1;
     for (int k = 0; k < 4; ++k) {
-        if (!cams.count(kSlot[k])) continue;
-        QString label = QString("Camera: %1").arg(kCam[k]);
-        if (strcmp(kSlot[k], nativeCam) == 0) {
+        if (m_kSlot[k].empty() || !cams.count(m_kSlot[k])) continue;
+        QString label = QString("Camera: %1").arg(m_kCam[k]);
+        if (m_kSlot[k] == nativeCam) {
             nativeItemIdx = combo->count();
             label += " \u2605";  // star marks the native/default camera for this position
         }
-        combo->addItem(label, camData(kSlot[k]));
+        combo->addItem(label, camData(m_kSlot[k].c_str()));
     }
 
     // Map files from manifest
@@ -388,6 +577,12 @@ QWidget* TripBuildDialog::makeQuadrantCell(int idx,
     for (const auto& p : m_trip.dashVideos) {
         QFileInfo fi(QString::fromStdString(p));
         combo->addItem("Dashboard: " + fi.fileName(), fileData(fi.absoluteFilePath()));
+    }
+
+    // HUD files from manifest
+    for (const auto& p : m_trip.hudVideos) {
+        QFileInfo fi(QString::fromStdString(p));
+        combo->addItem("HUD: " + fi.fileName(), fileData(fi.absoluteFilePath()));
     }
 
     // External video (browse)
@@ -488,10 +683,12 @@ QWidget* TripBuildDialog::makeFilesTab(const std::set<std::string>& cams)
         return cb;
     };
 
-    m_chkFront = makeCheck("front", "Front", 0, 0);
-    m_chkRear  = makeCheck("rear",  "Rear",  0, 1);
-    m_chkLeft  = makeCheck("left",  "Left",  1, 0);
-    m_chkRight = makeCheck("right", "Right", 1, 1);
+    int row = 0, col = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (m_kSlot[i].empty()) continue;
+        m_chkCam[i] = makeCheck(m_kSlot[i], m_kCam[i], row, col);
+        if (++col > 1) { col = 0; ++row; }
+    }
 
     auto* fmtLabel = new QLabel("Container:", camGrp);
     m_container    = new QComboBox(camGrp);
@@ -517,8 +714,9 @@ QWidget* TripBuildDialog::makeFilesTab(const std::set<std::string>& cams)
     optRow->addSpacing(20);
     auto* camLabel = new QLabel("Camera:", audGrp);
     m_audioCamera  = new QComboBox(audGrp);
-    for (const char* s : {"left", "right", "front", "rear"})
-        if (cams.count(s)) m_audioCamera->addItem(QString::fromLatin1(s));
+    for (int i = 0; i < 4; ++i)
+        if (!m_kSlot[i].empty() && cams.count(m_kSlot[i]))
+            m_audioCamera->addItem(m_kCam[i], QString::fromStdString(m_kSlot[i]));
     auto* fmtLbl2  = new QLabel("Format:", audGrp);
     m_audioFormat  = new QComboBox(audGrp);
     m_audioFormat->addItems({"m4a", "mp3", "aac"});
@@ -705,8 +903,10 @@ void TripBuildDialog::onPreviewFrame()
         { cellW, cellH, cellW, cellH },  // [3] BR = left
     };
 
-    QPixmap composite(outW, outH);
-    composite.fill(QColor(0x1e, 0x1e, 0x2e));
+    // ARGB32 so QPainter can alpha-blend the HUD overlay onto camera frames.
+    QImage compositeImg(outW, outH, QImage::Format_ARGB32_Premultiplied);
+    compositeImg.fill(QColor(0x1e, 0x1e, 0x2e));
+    QPixmap composite = QPixmap::fromImage(compositeImg);
     QPainter painter(&composite);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
 
@@ -780,6 +980,43 @@ void TripBuildDialog::onPreviewFrame()
         QFile::remove(tmpOv);
     }
 
+    // ── HUD preview (full-frame, alpha-preserved) ────────────────────────────
+    auto hudPreviewPath = [&]() -> QString {
+        if (!m_chkHudOverlay || !m_chkHudOverlay->isChecked()) return {};
+        QString d = m_hudCombo ? m_hudCombo->currentData().toString() : QString(kNone);
+        if (d == kNone) return {};
+        if (d.startsWith("file:")) return d.mid(5);
+        if (d == kBrowse && m_hudPath) return m_hudPath->text().trimmed();
+        return {};
+    }();
+
+    if (!hudPreviewPath.isEmpty()) {
+        QString tmpHud = "/tmp/pm_preview_hud.png";
+        // Grab with alpha preserved (-pix_fmt rgba keeps the alpha channel in PNG)
+        QStringList hudArgs = {
+            "-y", "-ss", "2",
+            "-c:v", "libvpx-vp9",   // force software VP9 decoder — only one that reads alpha track
+            "-i", hudPreviewPath,
+            "-vframes", "1",
+            "-vf", "format=rgba",
+            "-f", "image2",
+            tmpHud
+        };
+        QProcess hudProc;
+        hudProc.start(QString::fromStdString(m_ffmpegPath), hudArgs);
+        if (hudProc.waitForFinished(10'000) && hudProc.exitCode() == 0) {
+            QPixmap hudFrame(tmpHud);
+            if (!hudFrame.isNull()) {
+                // Scale HUD to match the preview canvas (it's a full-frame overlay)
+                QPixmap hud = hudFrame.scaled(outW, outH,
+                                              Qt::IgnoreAspectRatio,
+                                              Qt::SmoothTransformation);
+                painter.drawPixmap(0, 0, hud);  // alpha from PNG is applied automatically
+            }
+        }
+        QFile::remove(tmpHud);
+    }
+
     painter.end();
 
     // ── Show in a simple dialog ───────────────────────────────────────────────
@@ -824,10 +1061,16 @@ VideoOptions TripBuildDialog::buildOptions() const
     VideoOptions opts;
 
     // ── Per-camera files ─────────────────────────────────────────────────────
-    opts.buildFront      = m_chkFront && m_chkFront->isChecked();
-    opts.buildRear       = m_chkRear  && m_chkRear->isChecked();
-    opts.buildLeft       = m_chkLeft  && m_chkLeft->isChecked();
-    opts.buildRight      = m_chkRight && m_chkRight->isChecked();
+    // Per-camera files: map dynamic slot names to VideoOptions build flags
+    opts.buildFront = opts.buildRear = opts.buildLeft = opts.buildRight = false;
+    for (int i = 0; i < 4; ++i) {
+        if (!m_chkCam[i] || !m_chkCam[i]->isChecked()) continue;
+        const std::string& s = m_kSlot[i];
+        if      (s == "front") opts.buildFront = true;
+        else if (s == "rear")  opts.buildRear  = true;
+        else if (s == "left")  opts.buildLeft  = true;
+        else if (s == "right") opts.buildRight = true;
+    }
     opts.containerFormat = m_container ? m_container->currentText().toStdString() : "mp4";
 
     // ── Collage ──────────────────────────────────────────────────────────────
@@ -837,7 +1080,7 @@ VideoOptions TripBuildDialog::buildOptions() const
     // Quadrant source assignments → external slot replacements / blank slots
     for (int i = 0; i < 4; ++i) {
         if (!m_quadCombo[i]) continue;
-        std::string slotName = kSlot[i];
+        std::string slotName = m_kSlot[i];
 
         // Disabled checkbox or "None" combo → logo morph loop (falls back to black)
         bool disabled = m_quadEnabled[i] && !m_quadEnabled[i]->isChecked();
@@ -881,14 +1124,24 @@ VideoOptions TripBuildDialog::buildOptions() const
     if (m_audioQuad) {
         int qi = m_audioQuad->currentIndex();
         if (qi >= 0 && qi < 4)
-            opts.audioSource = kSlot[qi];
+            opts.audioSource = m_kSlot[qi];
     }
 
     // ── Audio extract ────────────────────────────────────────────────────────
     opts.buildAudio = m_chkAudio && m_chkAudio->isChecked();
     if (opts.buildAudio && m_audioCamera && m_audioFormat) {
-        opts.audioExtractCamera = m_audioCamera->currentText().toStdString();
+        opts.audioExtractCamera = m_audioCamera->currentData().toString().toStdString();
         opts.audioExtractFormat = m_audioFormat->currentText().toStdString();
+    }
+
+    // ── HUD overlay (full-screen, VP9 alpha) ─────────────────────────────────
+    if (m_chkHudOverlay && m_chkHudOverlay->isChecked() && m_hudCombo) {
+        QString data = m_hudCombo->currentData().toString();
+        if (data.startsWith("file:"))
+            opts.hudOverlayPath = data.mid(5).toStdString();
+        else if (data == kBrowse && m_hudPath)
+            opts.hudOverlayPath = m_hudPath->text().trimmed().toStdString();
+        // kNone → leave hudOverlayPath empty (no HUD)
     }
 
     // ── Map overlay ──────────────────────────────────────────────────────────
@@ -941,4 +1194,4 @@ bool TripBuildDialog::processNow() const
 {
     return m_btnNow && m_btnNow->isChecked();
 }
-// SN: 00101
+// SN: 00104

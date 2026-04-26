@@ -8,8 +8,8 @@
 
 // 1. Define discrete version components
 #define VERSION_MAJOR 1
-#define VERSION_MINOR 7
-#define VERSION_PATCH 1
+#define VERSION_MINOR 9
+#define VERSION_PATCH 0
 #define VERSION_BUILD 1
 #define VERSION_SUFFIX ""
 
@@ -44,4 +44,4 @@ static const char PATHMUX_LICENSE_NOTICE[] __attribute__((used)) =
     "|   ... Kali does NOT approve.\n";
 
 #endif
-// SN: 00102
+// SN: 00104

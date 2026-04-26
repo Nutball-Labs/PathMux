@@ -9,6 +9,7 @@
 #include "ManifestManagerDialog.h"
 #include "SetupWizard.h"
 #include "HelpDialog.h"
+#include "CameraProfilesDialog.h"
 #include "profile_detector.hpp"
 #include <QSplitter>
 #include <QFileDialog>
@@ -121,6 +122,9 @@ void MainWindow::buildMenuBar()
     QAction* wizardAct = toolsMenu->addAction("Setup &Wizard\u2026");
     connect(wizardAct, &QAction::triggered, this, &MainWindow::onSetupWizard);
 
+    QAction* profilesAct = toolsMenu->addAction("Camera &Profiles\u2026");
+    connect(profilesAct, &QAction::triggered, this, &MainWindow::onCameraProfiles);
+
     toolsMenu->addSeparator();
 
     QAction* probeAct = toolsMenu->addAction("&Probe SD Card\u2026");
@@ -179,6 +183,12 @@ void MainWindow::onManageManifests()
     dlg.exec();
 }
 
+void MainWindow::onCameraProfiles()
+{
+    CameraProfilesDialog dlg(this);
+    dlg.exec();
+}
+
 void MainWindow::onSetupWizard()
 {
     // Pre-populate wizard with current settings so existing users see their
@@ -217,6 +227,32 @@ static QString resolveProfileForScan(const QString& dir, QWidget* parent)
     // Auto-detect from the directory contents.
     auto allProfiles = config.loadAllProfiles();
     auto match = Pathmux::detectProfile(dir.toStdString(), allProfiles);
+
+    // Mixed-content warning: multiple camera profiles found in the same path.
+    if (match.isMixedContent) {
+        QString names;
+        for (const auto& p : match.mixedProfiles)
+            names += QString("• %1 (%2)\n")
+                     .arg(QString::fromStdString(p.name))
+                     .arg(QString::fromStdString(p.profileId));
+        QMessageBox warn(parent);
+        warn.setIcon(QMessageBox::Warning);
+        warn.setWindowTitle("Mixed Footage Warning");
+        warn.setText(
+            "Multiple camera profiles were detected in this directory:\n\n"
+            + names +
+            "\nScanning a path with mixed dashcam footage will produce "
+            "incorrect trip groupings.\n\n"
+            "It is strongly recommended to scan each camera’s "
+            "footage directory separately.");
+        auto* continueBtn = warn.addButton("Continue Anyway", QMessageBox::DestructiveRole);
+        warn.addButton("Cancel", QMessageBox::RejectRole);
+        warn.setDefaultButton(
+            qobject_cast<QPushButton*>(warn.button(QMessageBox::Cancel)));
+        warn.exec();
+        if (warn.clickedButton() != static_cast<QAbstractButton*>(continueBtn))
+            return {};
+    }
 
     if (match.hasMatch()) {
         QString name    = QString::fromStdString(match.profile.name);
@@ -321,4 +357,4 @@ void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
     m_tripGridPanel->loadManifest(entry);
     m_manifestPanel->selectEntry(entry);
 }
-// SN: 00101
+// SN: 00104

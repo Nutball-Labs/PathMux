@@ -100,7 +100,7 @@ on every Front camera segment and stores the resulting track (one point per seco
 in the trip manifest.  The manifest MD5 is updated automatically so
 <b>--validate</b> does not flag the file as externally modified.</p>
 
-<p>The ExifTool binary path and options string are read from
+<p>The ExifTool binary path is read from
 <code>~/.config/pathmux/pathmux.json</code>.  See the
 <a href="pathmux.html">pathmux</a> help page, section GPS Extraction, for details
 on the format string and camera compatibility.</p>
@@ -146,7 +146,8 @@ Properties include <b>creator</b>, <b>trip_id</b>, <b>date</b>, <b>start_time</b
 <h2>Files</h2>
 <dl>
 <dt>~/.config/pathmux/pathmux.json</dt>
-<dd>Application settings including <b>exiftoolPath</b> and <b>exiftoolOptions</b>.</dd>
+<dd>Application settings including <b>exiftoolPath</b>.  GPS extraction arguments
+are stored in the camera profile embedded in the manifest.</dd>
 
 <dt>~/.config/pathmux/manifests.json</dt>
 <dd>Manifest index used for MID:TID resolution.</dd>
@@ -171,3 +172,5 @@ without --force, or a write error occurred.</dd>
 
 </body>
 </html>
+
+<!-- SN: 00104 -->

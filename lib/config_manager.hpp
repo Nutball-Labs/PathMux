@@ -84,7 +84,6 @@ struct AppSettings {
 
     // External tool paths ("" = search system PATH)
     std::string exiftoolPath;          // default: "exiftool"
-    std::string exiftoolOptions;       // default: "-ee3"
     std::string ffmpegPath;            // default: "ffmpeg"
 
     // Output
@@ -112,6 +111,11 @@ struct AppSettings {
 
     // GUI display scale (set before QApplication; requires restart to take effect)
     double uiScale = 1.0;
+
+    // HUD overlay appearance
+    double      hudFontScale = 1.0;      // multiplier applied to all HUD font sizes
+    double      hudLineScale = 1.0;      // multiplier applied to all HUD line widths
+    std::string hudColor     = "#00ff41"; // phosphor green; any CSS hex color
 
     // Internal
     int  schemaVersion       = 1;
@@ -166,11 +170,6 @@ public:
     std::string        getExiftoolPath()  const {
         return settings.exiftoolPath.empty() ? "exiftool" : settings.exiftoolPath;
     }
-    std::string        getExiftoolOptions() const {
-        return settings.exiftoolOptions.empty()
-            ? "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'"
-            : settings.exiftoolOptions;
-    }
     std::string        getFfmpegPath()    const {
         return settings.ffmpegPath.empty()   ? "ffmpeg"   : settings.ffmpegPath;
     }
@@ -197,6 +196,9 @@ public:
     std::string        getLogLevel()           const { return settings.logLevel; }
     std::string        getActiveProfileId()    const { return settings.activeProfileId; }
     double             getUiScale()            const { return settings.uiScale; }
+    double             getHudFontScale()       const { return settings.hudFontScale; }
+    double             getHudLineScale()       const { return settings.hudLineScale; }
+    std::string        getHudColor()           const { return settings.hudColor; }
 
     // Load the active camera profile from disk.
     // Returns d90Default() if the profile file is absent or invalid.
@@ -210,9 +212,14 @@ public:
     // Returns "" if no manifest exists or it contains no profile_id.
     std::string getManifestProfileId(const std::string& sourcePath) const;
 
+    // Return the full camera profile embedded in the manifest for sourcePath.
+    // If the manifest has a "camera_profile" object, deserialise and return it.
+    // Falls back to profile_id lookup, then getCameraProfile() if neither present.
+    CameraProfile getManifestProfile(const std::string& sourcePath) const;
+
     // --- Host-specific settings (pathmux_<hostname>.json) ---
     // Host file overlays base prefs for this machine only.
-    // Fields: encode.*, ffmpegPath, exiftoolPath, exiftoolOptions,
+    // Fields: encode.*, ffmpegPath, exiftoolPath,
     //         defaultExportDir, tmpDir, logLevel.
     std::string        getHostname()        const { return hostname; }
     std::string        getHostSettingsFile() const { return hostSettingsFile; }
@@ -280,8 +287,14 @@ public:
     std::string    getManifestFilePath(const std::string& sourcePath);
 
     bool               isCached(const std::string& path);
+    // profile: the camera profile used for this scan.  When non-empty it is
+    // embedded in the manifest as "camera_profile" so downstream operations
+    // never need to consult the global settings file.  Pass CameraProfile{}
+    // (the default) for non-scan writes (GPS update, note save, etc.) — the
+    // existing embedded profile is preserved.
     void               saveTripCache(const std::string& path,
-                                     const std::vector<Trip>& trips);
+                                     const std::vector<Trip>& trips,
+                                     const CameraProfile& profile = CameraProfile{});
     std::vector<Trip>  loadTripCache(const std::string& path);
     void               clearCache(const std::string& path, bool force = false);
 
@@ -368,4 +381,4 @@ private:
 } // namespace Pathmux
 
 #endif
-// SN: 00101
+// SN: 00104

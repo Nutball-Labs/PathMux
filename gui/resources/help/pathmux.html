@@ -261,8 +261,9 @@ the audio stream copied without re-encoding.</p>
 <h2>GPS Extraction</h2>
 
 <p>GPS extraction uses ExifTool to read GPS metadata from footage segments.
-PathMux passes the configured <b>exiftoolOptions</b> string to the ExifTool binary
-and parses the output; it does not validate the ExifTool version.</p>
+PathMux reads GPS extraction arguments from the camera profile embedded in the
+manifest (<b>gps_exiftool_args</b>) and passes them to the ExifTool binary.
+It does not validate the ExifTool version.</p>
 
 <div class="warning">
 <b>GPS cold-start data gap warning:</b>
@@ -278,43 +279,37 @@ between the first and last recorded fix, not the total odometer distance.
 <p>Altitude values from the D90 are systematically incorrect (negative) and are
 ignored.  Speed is recorded in km/h.</p>
 
-<h3>ExifTool Options Preference</h3>
+<h3>GPS Arguments — Per-Camera Profile</h3>
 
-<p>The complete exiftool command line (excluding the binary path and input filename)
-is stored in the <b>exiftoolOptions</b> preference, editable via <b>--prefs</b>
-option <b>[O]</b>.  The default value for Pruveeo D90 footage is:</p>
+<p>GPS extraction arguments are stored in the camera profile, not in global
+preferences.  Each profile carries a <b>gps_exiftool_args</b> field that holds the
+complete ExifTool option string for that camera's GPS format.  At scan time this is
+baked into the manifest, so every GPS operation on that footage automatically uses
+the correct command regardless of the active global profile setting.</p>
 
-<pre>-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'</pre>
-
-<p>Important constraints when modifying this value:</p>
+<p>Built-in profiles and their GPS arguments:</p>
 <dl>
-<dt>Field order is fixed.</dt>
-<dd>The output parser expects exactly seven space-separated tokens per line after
-the date and time: latitude, longitude, altitude, speed, heading, accelerometer.
-Do not reorder, add, or remove fields from the -p format string without
-corresponding changes to the parser source.</dd>
+<dt>Pruveeo D90 (<code>pruveeo_d90</code>)</dt>
+<dd><pre>-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'</pre>
+LIGOGPSINFO binary stream embedded in MPEG-TS. Requires <code>-ee3</code> to reach
+the private stream.  Accelerometer data available.</dd>
 
-<dt>The -p flag and format string must be included.</dt>
-<dd>Unlike most tool preferences which store only extraction flags,
-<b>exiftoolOptions</b> must contain the complete options string including <b>-p</b>.
-This design allows the -p flag itself to be omitted entirely for cameras that
-require a different extraction approach (e.g. -json).</dd>
-
-<dt>Single quotes are required around the format string.</dt>
-<dd>Single quotes prevent the shell from expanding <b>$GPSDateTime</b> etc. as
-variables.  Double quotes would also expand <b>$GPSTrack</b>, corrupting the command.</dd>
-
-<dt>The -ee3 flag controls embedded stream extraction depth.</dt>
-<dd>Level 3 is required for MPEG-TS files from the D90 because the GPS data
-is in a private binary stream (LIGOGPSINFO) several levels deep in the container.
--ee and -ee2 do not reach it.</dd>
-
-<dt>The -# numeric suffix on coordinate tags requests decimal degrees.</dt>
-<dd><b>$GPSLatitude#</b> and <b>$GPSLongitude#</b> output signed decimal values
-(e.g. -89.025) rather than the default DMS notation.  The parser requires decimal
-form.</dd>
+<dt>Cobra GPS (<code>cobra_gps</code>)</dt>
+<dd><pre>-ee -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack#'</pre>
+Standard GPS0 atom in MOV/3GP container.  <code>-ee</code> (depth 1) is sufficient.
+No accelerometer data on this camera.</dd>
 </dl>
 
+<p>To customise GPS arguments for a specific camera, use
+<b>Tools &gt; Camera Profiles</b>, select the profile, click <b>Fork as Custom</b>,
+edit the <b>gps_exiftool_args</b> field in the JSON file, and rescan the footage
+directory to embed the updated profile.</p>
+
+<p>The output parser expects the following space-separated fields per line (after
+the date and time token): <i>latitude</i>, <i>longitude</i>, <i>altitude</i>,
+<i>speed&nbsp;(km/h)</i>, <i>heading&nbsp;(degrees)</i>.
+Accelerometer fields (<i>accelX accelY accelZ</i>) are optional and are omitted for
+cameras that do not record them.  Field order is fixed.</p>
 <h2>Manifest IDs</h2>
 
 <p>Manifests are assigned two-character IDs from an unambiguous alphanumeric
@@ -399,3 +394,5 @@ i7 / 16 GB DDR5 / RTX 5060 / NVMe<br>
 
 </body>
 </html>
+
+<!-- SN: 00104 -->

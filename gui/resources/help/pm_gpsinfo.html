@@ -82,8 +82,9 @@ Cannot be combined with a file path or MID:TID argument.</dd>
 <dd>Path to the ExifTool binary.  Defaults to <b>exiftool</b> (resolved via PATH).</dd>
 
 <dt>--exiftool-opts <i>OPTIONS</i></dt>
-<dd>Override the ExifTool options string.  Defaults to the value stored in
-<code>~/.config/pathmux/pathmux.json</code> (<b>exiftoolOptions</b>).</dd>
+<dd>Override the ExifTool options string.  Defaults to the <b>gps_exiftool_args</b>
+value from the camera profile embedded in the manifest, or the built-in profile
+default if no manifest profile is present.</dd>
 
 <dt>-v, --version</dt>
 <dd>Print the PathMux version string and exit.</dd>
@@ -102,6 +103,12 @@ satellite fix is acquired, so there are no pre-lock zero-position records in the
 against the clip-start time encoded in the filename (local time), using epoch
 arithmetic to handle timezone differences correctly.
 The result is stored as <b>gpsLockSeconds</b> in the trip manifest.</p>
+
+<p><b>Automatic computation (v1.9.0+):</b> When GPS is extracted from the GUI (Trip
+Properties → GPS tab), <b>gpsLockSeconds</b> is computed and stored automatically as
+part of the extraction. Running <b>--scan-all-trips</b> is no longer required for
+trips extracted via the GUI. Use <b>--scan-all-trips</b> for batch operations or to
+refresh lock times on trips extracted with an older version of PathMux.</p>
 
 <dl>
 <dt>gpsLockSeconds = 0</dt>
@@ -161,7 +168,8 @@ not reported.</p>
 <h2>Files</h2>
 <dl>
 <dt>~/.config/pathmux/pathmux.json</dt>
-<dd>Application settings including <b>exiftoolPath</b> and <b>exiftoolOptions</b>.</dd>
+<dd>Application settings including <b>exiftoolPath</b>.  GPS extraction arguments are
+stored in the camera profile, not in global settings.</dd>
 
 <dt>~/.config/pathmux/manifests.json</dt>
 <dd>Manifest index used by MID:TID resolution and <b>--scan-all-trips</b>.</dd>
@@ -182,3 +190,5 @@ not reported.</p>
 
 </body>
 </html>
+
+<!-- SN: 00104 -->

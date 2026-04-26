@@ -13,7 +13,7 @@ groups video segments into trips, caches results as JSON manifests, and
 extracts/exports GPS tracks. Phase 2 Qt6 GUI is in active development.
 Private GitHub repo at https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
 
-**Current version:** 1.7.1 (SN 00102)
+**Current version:** 1.9.0 (SN 00104)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -112,7 +112,7 @@ bottom of the file:
 ```
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00102`
+- There is one project-wide **high-water mark** SN, currently `00104`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -345,4 +345,4 @@ When a communication is prefaced with either label:
 - **Phase 2 (Qt6 GUI):** Active development — `gui/` directory; see `memory/project_qt6_gui_design.md`
 - All work on `main` branch
 
-<!-- SN: 00095 -->
+<!-- SN: 00104 -->

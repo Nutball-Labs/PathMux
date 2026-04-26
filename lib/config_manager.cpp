@@ -76,7 +76,6 @@ void ConfigManager::loadSettings() {
     settings.gapThresholdSeconds = j.value("gapThresholdSeconds", settings.gapThresholdSeconds);
     settings.fuzzyWindowSeconds  = j.value("fuzzyWindowSeconds",  settings.fuzzyWindowSeconds);
     settings.exiftoolPath        = j.value("exiftoolPath",        settings.exiftoolPath);
-    settings.exiftoolOptions     = j.value("exiftoolOptions",     settings.exiftoolOptions);
     settings.ffmpegPath          = j.value("ffmpegPath",          settings.ffmpegPath);
     settings.defaultExportDir    = j.value("defaultExportDir",    settings.defaultExportDir);
     settings.tmpDir              = j.value("tmpDir",              settings.tmpDir);
@@ -88,6 +87,9 @@ void ConfigManager::loadSettings() {
     settings.logLevel            = j.value("logLevel",            settings.logLevel);
     settings.activeProfileId     = j.value("activeProfileId",     settings.activeProfileId);
     settings.uiScale             = j.value("uiScale",             settings.uiScale);
+    settings.hudFontScale        = j.value("hudFontScale",        settings.hudFontScale);
+    settings.hudLineScale        = j.value("hudLineScale",        settings.hudLineScale);
+    settings.hudColor            = j.value("hudColor",            settings.hudColor);
 
     if (j.contains("encode") && j["encode"].is_object()) {
         const auto& e = j["encode"];
@@ -140,7 +142,6 @@ void ConfigManager::saveSettings() {
     j["gapThresholdSeconds"] = settings.gapThresholdSeconds;
     j["fuzzyWindowSeconds"]  = settings.fuzzyWindowSeconds;
     j["exiftoolPath"]        = settings.exiftoolPath;
-    j["exiftoolOptions"]     = settings.exiftoolOptions;
     j["ffmpegPath"]          = settings.ffmpegPath;
     j["defaultExportDir"]    = settings.defaultExportDir;
     j["tmpDir"]              = settings.tmpDir;
@@ -240,6 +241,82 @@ std::vector<CameraProfile> ConfigManager::loadAllProfiles() const {
     return profiles;
 }
 
+// ---------------------------------------------------------------------------
+// Camera profile JSON serialisation — mirrors CameraProfile::saveToFile /
+// loadFromFile but operates on json objects rather than files, so the profile
+// can be embedded inline inside the manifest document.
+// ---------------------------------------------------------------------------
+
+static json profileToJson(const CameraProfile& p) {
+    json j;
+    j["name"]               = p.name;
+    j["profile_id"]         = p.profileId;
+    j["filename_regex"]     = p.filenameRegex;
+    j["timestamp_format"]   = p.timestampFormat;
+    j["timestamp_source"]   = p.timestampSource;
+    j["timestamp_timezone"] = p.timestampTimezone;
+    if (p.timestampCaptureGroup != 1) j["timestamp_capture_group"] = p.timestampCaptureGroup;
+    if (p.tokenCaptureGroup     != 2) j["token_capture_group"]     = p.tokenCaptureGroup;
+    j["container_ext"]      = p.containerExt;
+    j["thumbnail_method"]   = p.thumbnailMethod;
+    j["gps_method"]          = p.gpsMethod;
+    if (!p.gpsExiftoolArgs.empty())
+        j["gps_exiftool_args"] = p.gpsExiftoolArgs;
+    j["default_layout"]     = p.defaultLayout;
+    json slotArr = json::array();
+    for (const auto& s : p.cameraSlots) {
+        json js;
+        js["name"]           = s.name;
+        js["display"]        = s.displayName;
+        js["filename_token"] = s.filenameToken;
+        js["scan_subdir"]    = s.scanSubdir;
+        js["is_primary"]     = s.isPrimary;
+        if (s.quadrant >= 0)
+            js["quadrant"]   = s.quadrant;
+        if (!s.scanSubdirCandidates.empty()) {
+            json cands = json::array();
+            for (const auto& c : s.scanSubdirCandidates) cands.push_back(c);
+            js["scan_subdir_candidates"] = cands;
+        }
+        slotArr.push_back(js);
+    }
+    j["cameraSlots"] = slotArr;
+    return j;
+}
+
+static CameraProfile profileFromJson(const json& j) {
+    CameraProfile p;
+    p.name                  = j.value("name",                    "");
+    p.profileId             = j.value("profile_id",              "");
+    p.filenameRegex         = j.value("filename_regex",          "");
+    p.timestampFormat       = j.value("timestamp_format",        "");
+    p.timestampSource       = j.value("timestamp_source",        "filename");
+    p.timestampTimezone     = j.value("timestamp_timezone",      "utc");
+    p.timestampCaptureGroup = j.value("timestamp_capture_group", 1);
+    p.tokenCaptureGroup     = j.value("token_capture_group",     2);
+    p.containerExt          = j.value("container_ext",           "");
+    p.thumbnailMethod       = j.value("thumbnail_method",        "replace_ext");
+    p.gpsMethod             = j.value("gps_method",              "none");
+    p.gpsExiftoolArgs       = j.value("gps_exiftool_args",       "");
+    p.defaultLayout         = j.value("default_layout",          "2x2");
+    const json& slotArr = j.contains("cameraSlots") ? j["cameraSlots"]
+                        : j.value("slots", json::array());
+    for (const auto& js : slotArr) {
+        CameraSlot s;
+        s.name          = js.value("name",           "");
+        s.displayName   = js.value("display",        "");
+        s.filenameToken = js.value("filename_token", "");
+        s.scanSubdir    = js.value("scan_subdir",    "");
+        s.isPrimary     = js.value("is_primary",     false);
+        s.quadrant      = js.value("quadrant",        -1);
+        if (js.contains("scan_subdir_candidates") && js["scan_subdir_candidates"].is_array())
+            for (const auto& c : js["scan_subdir_candidates"])
+                if (c.is_string()) s.scanSubdirCandidates.push_back(c.get<std::string>());
+        if (!s.name.empty()) p.cameraSlots.push_back(s);
+    }
+    return p;
+}
+
 std::string ConfigManager::getManifestProfileId(const std::string& sourcePath) const {
     std::string mf = const_cast<ConfigManager*>(this)->lookupManifestFilePath(sourcePath);
     if (mf.empty()) return "";
@@ -249,6 +326,37 @@ std::string ConfigManager::getManifestProfileId(const std::string& sourcePath) c
         json j; f >> j;
         return j.value("profile_id", "");
     } catch (...) { return ""; }
+}
+
+CameraProfile ConfigManager::getManifestProfile(const std::string& sourcePath) const {
+    std::string mf = const_cast<ConfigManager*>(this)->lookupManifestFilePath(sourcePath);
+    if (mf.empty()) return getCameraProfile();
+    std::ifstream f(mf);
+    if (!f.is_open()) return getCameraProfile();
+    json j;
+    try { f >> j; } catch (...) { return getCameraProfile(); }
+
+    // Prefer the full embedded profile snapshot.
+    if (j.contains("camera_profile") && j["camera_profile"].is_object()) {
+        CameraProfile p = profileFromJson(j["camera_profile"]);
+        if (p.isValid()) return p;
+    }
+
+    // Fall back to profile_id string — look up user file then built-ins.
+    std::string pid = j.value("profile_id", "");
+    if (!pid.empty()) {
+        std::string profileFile = configDir + "profiles/" + pid + ".json";
+        if (fs::exists(profileFile)) {
+            try {
+                CameraProfile p = CameraProfile::loadFromFile(profileFile);
+                if (p.isValid()) return p;
+            } catch (...) {}
+        }
+        for (const auto& p : CameraProfile::getBuiltinProfiles())
+            if (p.profileId == pid) return p;
+    }
+
+    return getCameraProfile();
 }
 
 // ---------------------------------------------------------------------------
@@ -271,12 +379,14 @@ void ConfigManager::loadHostOverlay() {
 
     // Only override fields that are actually present in the host file.
     if (j.contains("exiftoolPath"))    settings.exiftoolPath    = j["exiftoolPath"];
-    if (j.contains("exiftoolOptions")) settings.exiftoolOptions = j["exiftoolOptions"];
     if (j.contains("ffmpegPath"))      settings.ffmpegPath      = j["ffmpegPath"];
     if (j.contains("defaultExportDir")) settings.defaultExportDir = j["defaultExportDir"];
     if (j.contains("tmpDir"))          settings.tmpDir          = j["tmpDir"];
     if (j.contains("logLevel"))        settings.logLevel        = j["logLevel"];
     if (j.contains("uiScale"))         settings.uiScale         = j["uiScale"];
+    if (j.contains("hudFontScale"))    settings.hudFontScale    = j["hudFontScale"];
+    if (j.contains("hudLineScale"))    settings.hudLineScale    = j["hudLineScale"];
+    if (j.contains("hudColor"))        settings.hudColor        = j["hudColor"];
 
     if (j.contains("encode") && j["encode"].is_object()) {
         const auto& e = j["encode"];
@@ -299,12 +409,14 @@ void ConfigManager::loadHostOverlay() {
 void ConfigManager::saveHostSettings() {
     json j;
     j["exiftoolPath"]     = settings.exiftoolPath;
-    j["exiftoolOptions"]  = settings.exiftoolOptions;
     j["ffmpegPath"]       = settings.ffmpegPath;
     j["defaultExportDir"] = settings.defaultExportDir;
     j["tmpDir"]           = settings.tmpDir;
     j["logLevel"]         = settings.logLevel;
     j["uiScale"]          = settings.uiScale;
+    j["hudFontScale"]     = settings.hudFontScale;
+    j["hudLineScale"]     = settings.hudLineScale;
+    j["hudColor"]         = settings.hudColor;
 
     json e;
     e["preset"]            = settings.encode.preset;
@@ -365,9 +477,6 @@ void ConfigManager::showSettings() const {
               << "  (±" << settings.fuzzyWindowSeconds << "s)\n"
               << std::setw(28) << "exiftoolPath"
               << (settings.exiftoolPath.empty() ? "exiftool (system)" : settings.exiftoolPath) << "\n"
-              << std::setw(28) << "exiftoolOptions"
-              << (settings.exiftoolOptions.empty()
-                  ? "-ee3 -p '$GPSDateTime ...' (default)" : settings.exiftoolOptions) << "\n"
               << std::setw(28) << "ffmpegPath"
               << (settings.ffmpegPath.empty()   ? "ffmpeg (system)"   : settings.ffmpegPath)   << "\n"
               << std::setw(28) << "defaultExportDir"
@@ -1192,7 +1301,8 @@ std::vector<std::string> ConfigManager::getAllCachedPaths() {
 // ---------------------------------------------------------------------------
 
 void ConfigManager::saveTripCache(const std::string& path,
-                                   const std::vector<Trip>& trips) {
+                                   const std::vector<Trip>& trips,
+                                   const CameraProfile& profile) {
     // Guard: reject manifest file paths passed as source directories.
     // A manifest file path (e.g. /foo/pm_manifest_AB.json) must never be
     // used as a source path — doing so creates a bogus duplicate index entry.
@@ -1208,10 +1318,11 @@ void ConfigManager::saveTripCache(const std::string& path,
     std::set<std::string> usedIds;
     for (const auto& t : existingTrips) usedIds.insert(t.id);
 
-    // Preserve existing manifest-level note, profile_id, and path_map.
+    // Preserve existing manifest-level note, profile_id, camera_profile, and path_map.
     std::string existingNote;
     std::string existingProfileId;
-    json existingPathMap = json::object();
+    json existingPathMap        = json::object();
+    json existingCameraProfile  = json::object();
     {
         std::ifstream nifs(manifestFile);
         if (nifs.is_open()) {
@@ -1221,6 +1332,8 @@ void ConfigManager::saveTripCache(const std::string& path,
                 existingProfileId = existing.value("profile_id", "");
                 if (existing.contains("path_map") && existing["path_map"].is_object())
                     existingPathMap = existing["path_map"];
+                if (existing.contains("camera_profile") && existing["camera_profile"].is_object())
+                    existingCameraProfile = existing["camera_profile"];
             } catch (...) {}
         }
     }
@@ -1233,14 +1346,25 @@ void ConfigManager::saveTripCache(const std::string& path,
         if (!t.id.empty())
             hashToId[tripIdentityHash(t)] = t.id;
 
-    // profile_id: use active setting; fall back to whatever was already in the manifest.
-    std::string profileId = settings.activeProfileId.empty()
-                          ? existingProfileId
-                          : settings.activeProfileId;
+    // profile_id / camera_profile:
+    //   If a profile was provided (scan-time call), embed the full snapshot.
+    //   Otherwise preserve whatever was already in the manifest.
+    std::string newProfileId;
+    json        newCameraProfile;
+    if (!profile.profileId.empty()) {
+        newProfileId      = profile.profileId;
+        newCameraProfile  = profileToJson(profile);
+    } else {
+        newProfileId = settings.activeProfileId.empty() ? existingProfileId
+                                                        : settings.activeProfileId;
+        newCameraProfile = existingCameraProfile;
+    }
 
     json root;
     root["source_path"]    = path;
-    root["profile_id"]     = profileId;
+    root["profile_id"]     = newProfileId;
+    if (!newCameraProfile.empty())
+        root["camera_profile"] = newCameraProfile;
     root["schema_version"] = 3;
     root["path_map"]       = existingPathMap;
     root["note"]           = existingNote;
@@ -1308,6 +1432,11 @@ void ConfigManager::saveTripCache(const std::string& path,
             json arr = json::array();
             for (const auto& p : trip.dashVideos) arr.push_back(p);
             jTrip["dashVideos"] = arr;
+        }
+        if (!trip.hudVideos.empty()) {
+            json arr = json::array();
+            for (const auto& p : trip.hudVideos) arr.push_back(p);
+            jTrip["hudVideos"] = arr;
         }
 
         {
@@ -1474,6 +1603,8 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
             for (const auto& v : jTrip["mapVideos"]) trip.mapVideos.push_back(v.get<std::string>());
         if (jTrip.contains("dashVideos") && jTrip["dashVideos"].is_array())
             for (const auto& v : jTrip["dashVideos"]) trip.dashVideos.push_back(v.get<std::string>());
+        if (jTrip.contains("hudVideos") && jTrip["hudVideos"].is_array())
+            for (const auto& v : jTrip["hudVideos"]) trip.hudVideos.push_back(v.get<std::string>());
 
         // Trip thumbnails — new format uses firstThumbs/lastThumbs maps.
         // Migrate old per-camera named fields transparently on read.
@@ -1715,4 +1846,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00102
+// SN: 00104

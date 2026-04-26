@@ -104,8 +104,7 @@ void FindTrips::runInteractive(ConfigManager& config) {
                                               config.getGapThreshold(),
                                               config.getFuzzyWindow(),
                                               config.getFfprobePath(),
-                                              config.getExiftoolPath(),
-                                              config.getExiftoolOptions());
+                                              config.getExiftoolPath());
             if (!trips.empty()) {
                 config.saveTripCache(path, trips);
                 std::cout << "  Scan complete — " << trips.size() << " trip(s) found.\n";
@@ -273,8 +272,7 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
                                                   config.getGapThreshold(),
                                                   config.getFuzzyWindow(),
                                                   config.getFfprobePath(),
-                                                  config.getExiftoolPath(),
-                                                  config.getExiftoolOptions());
+                                                  config.getExiftoolPath());
             if (!newTrips.empty()) {
                 config.saveTripCache(entry.path, newTrips);
                 std::cout << "  Scan complete — " << newTrips.size()
@@ -659,4 +657,4 @@ void FindTrips::formatDump(ConfigManager& config,
     }
 }
 
-// SN: 00097
+// SN: 00104

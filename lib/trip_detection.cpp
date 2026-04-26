@@ -148,7 +148,7 @@ namespace {
 void extractStartEndGps(Trip& trip,
                         const std::string& primarySlot,
                         const std::string& exiftoolPath,
-                        const std::string& exiftoolOptions)
+                        const CameraProfile& profile)
 {
     if (trip.segments.empty()) return;
 
@@ -156,7 +156,12 @@ void extractStartEndGps(Trip& trip,
     const std::string lastSeg  = camPath(trip.segments.back(),  primarySlot);
     if (firstSeg == "-" || firstSeg.empty()) return;
 
-    const std::string exifCmd = exiftoolPath + " " + exiftoolOptions + " ";
+    // Use the profile's GPS args; fall back to D90 default for old profiles
+    std::string gpsArgs = profile.gpsExiftoolArgs;
+    if (gpsArgs.empty())
+        gpsArgs = "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude#"
+                  " $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'";
+    const std::string exifCmd = exiftoolPath + " " + gpsArgs + " ";
 
     // --- First segment: find first valid fix ---
     {
@@ -233,13 +238,62 @@ void extractStartEndGps(Trip& trip,
 
 } // anonymous namespace
 
+// ---------------------------------------------------------------------------
+// Deep-search helper: count files in one directory matching slot pattern+token.
+// ---------------------------------------------------------------------------
+static int countMatchingInDir(const fs::path& dir,
+                               const CameraSlot& slot,
+                               const std::regex& pattern,
+                               int tokenCaptureGroup)
+{
+    std::error_code ec;
+    int n = 0;
+    for (const auto& entry : fs::directory_iterator(dir, ec)) {
+        if (entry.is_directory()) continue;
+        std::string fname = entry.path().filename().string();
+        if (fname.empty() || fname[0] == '.') continue;
+        std::smatch m;
+        if (!std::regex_search(fname, m, pattern)) continue;
+        if ((int)m.size() > tokenCaptureGroup && m[tokenCaptureGroup].matched
+                && !slot.filenameToken.empty())
+            if (m[tokenCaptureGroup].str() != slot.filenameToken) continue;
+        ++n;
+    }
+    return n;
+}
+
+// Recursively search subdirs (up to maxDepth) for the directory with the most
+// files matching the slot.  Returns empty path if nothing found.
+static fs::path findBestMatchDir(const fs::path& root,
+                                  const CameraSlot& slot,
+                                  const std::regex& pattern,
+                                  int tokenCaptureGroup,
+                                  int maxDepth)
+{
+    if (maxDepth <= 0) return {};
+    fs::path best;
+    int bestN = 0;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(root, ec)) {
+        if (!entry.is_directory()) continue;
+        int n = countMatchingInDir(entry.path(), slot, pattern, tokenCaptureGroup);
+        if (n > bestN) { bestN = n; best = entry.path(); }
+        fs::path deeper = findBestMatchDir(entry.path(), slot, pattern,
+                                           tokenCaptureGroup, maxDepth - 1);
+        if (!deeper.empty()) {
+            int dn = countMatchingInDir(deeper, slot, pattern, tokenCaptureGroup);
+            if (dn > bestN) { bestN = dn; best = deeper; }
+        }
+    }
+    return best;
+}
+
 std::vector<Trip> TripDetection::detectTrips(const std::string& path,
                                               const CameraProfile& profile,
                                               int gapThresholdSeconds,
                                               int fuzzyWindowSeconds,
                                               const std::string& ffprobePath,
-                                              const std::string& exiftoolPath,
-                                              const std::string& exiftoolOptions)
+                                              const std::string& exiftoolPath)
 {
     std::vector<Trip> trips;
     if (!fs::exists(path)) return trips;
@@ -254,15 +308,12 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     for (const auto& slot : profile.cameraSlots)
         slotFiles[slot.name] = {};
 
-    auto scanSlot = [&](const CameraSlot& slot) {
-        fs::path scanDir = slot.scanSubdir.empty()
-                         ? fs::path(path)
-                         : fs::path(path) / slot.scanSubdir;
-        if (!fs::exists(scanDir)) return;
-
+    // Scan one directory for files matching the slot's regex/token/timestamp rules.
+    auto scanDir = [&](const CameraSlot& slot, const fs::path& dir) {
+        if (!fs::exists(dir)) return;
         auto& targetMap = slotFiles[slot.name];
-        for (const auto& entry : fs::directory_iterator(scanDir)) {
-            if (entry.is_directory()) continue;   // skip Archive/ and any other subdirs
+        for (const auto& entry : fs::directory_iterator(dir)) {
+            if (entry.is_directory()) continue;
             std::string filename = entry.path().filename().string();
             if (filename.empty() || filename[0] == '.') continue;
 
@@ -281,8 +332,6 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
             if (profile.timestampSource == "exiftool_metadata") {
                 epoch = exiftoolTimestamp(entry.path().string(), exiftoolPath);
             } else if (profile.timestampSource == "mtime") {
-                // mtime = segment end time; use as ordering key.
-                // Clock-cast via offset between file_clock and system_clock (C++17).
                 auto ft  = fs::last_write_time(entry.path());
                 auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
                     ft - fs::file_time_type::clock::now()
@@ -294,6 +343,29 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
             }
             if (epoch <= 0) continue;
             targetMap[epoch] = entry.path().string();
+        }
+    };
+
+    auto scanSlot = [&](const CameraSlot& slot) {
+        // 1. Declared primary subdir (or source root if empty)
+        fs::path primary = slot.scanSubdir.empty()
+                         ? fs::path(path)
+                         : fs::path(path) / slot.scanSubdir;
+        scanDir(slot, primary);
+
+        // 2. Known alternative layouts
+        if (slotFiles[slot.name].empty()) {
+            for (const auto& cand : slot.scanSubdirCandidates) {
+                scanDir(slot, fs::path(path) / cand);
+                if (!slotFiles[slot.name].empty()) break;
+            }
+        }
+
+        // 3. Deep search up to 4 levels — handles unexpected directory structures
+        if (slotFiles[slot.name].empty()) {
+            fs::path found = findBestMatchDir(fs::path(path), slot, filePattern,
+                                              profile.tokenCaptureGroup, 4);
+            if (!found.empty()) scanDir(slot, found);
         }
     };
 
@@ -430,7 +502,7 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     if (profile.gpsMethod != "none") {
         std::cout << "  Extracting GPS start/end coords";
         for (auto& trip : trips) {
-            extractStartEndGps(trip, primary, exiftoolPath, exiftoolOptions);
+            extractStartEndGps(trip, primary, exiftoolPath, profile);
             std::cout << "." << std::flush;
         }
         std::cout << "\n";
@@ -440,4 +512,4 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 }
 
 } // namespace Pathmux
-// SN: 00097
+// SN: 00104

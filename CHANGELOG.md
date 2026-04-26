@@ -1,5 +1,81 @@
 # CHANGELOG
 
+## [v1.9.0 / SN: 00104] - 2026-04-26
+
+### Added
+- **HUD overlay renderer** (`scripts/pm_hud.py`): military-style heads-up display
+  as a full-frame transparent WebM (VP9/alpha) for compositing over collage footage.
+  Three elements: left speed tape (KPH), right speed tape (MPH), circular compass
+  rose at bottom-center. Transparent design — elements float over camera footage with
+  no backing strip. Compass rose has rotating ring with cardinal/intercardinal labels
+  and a fixed 12-o'clock pointer. Speed tapes have scale line, floating tick marks,
+  and a full-width readout box at current speed. Strip-based rendering for performance
+  (element bounding boxes only — eliminates 32 MB/frame full-frame allocation).
+  Args: `--tape-width`, `--visible-range`, `--font-scale`, `--line-scale`,
+  `--color-hex`, `--heading-height` (compass radius), `--heading-x/y` (compass center).
+- **HUD tab in TripPropertiesDialog**: Style group (font scale, line scale, color hex
+  seeded from Settings defaults), Speed Tapes group (tape width, visible range,
+  per-tape position), Compass Rose group (radius, center position). HUD files tracked
+  in manifest as `hudVideos`.
+- **Settings → HUD tab**: global defaults for font scale, line scale, color hex that
+  pre-populate the Properties HUD tab on open.
+- **`hudVideos` manifest field** (`lib/trip_detection.hpp`, `lib/config_manager.cpp`):
+  HUD WebM paths stored and loaded alongside `mapVideos` and `dashVideos`.
+- **AppSettings HUD fields**: `hudFontScale`, `hudLineScale`, `hudColor` in
+  `lib/config_manager.hpp/.cpp`.
+- **Full-screen HUD overlay in TripBuildDialog** (`gui/TripBuildDialog.cpp/.h`,
+  `cli/video_build.hpp/.cpp`): dedicated "HUD overlay (full-screen)" row below the
+  4-quadrant grid, independent of the center map/dashboard overlay cell. Enable
+  checkbox opts in; if enabled with no HUD video available a dialog warns the user
+  and offers to return to Trip Properties to build one first. The HUD WebM is
+  composited at full 3840×2160 over the complete collage output using VP9 alpha
+  blending — elements float transparently over all four camera quadrants.
+  `VideoOptions::hudOverlayPath` / `hudOverlayLoop` fields added.
+
+### Changed
+- **TripPropertiesDialog two-row tab bar**: top row holds General + camera tabs;
+  bottom row holds GPS / Map / Dashboard / HUD. Bottom-row tabs show a green ✓ or
+  red ✗ status icon that updates live when GPS is extracted or a video is generated.
+- **MapProgressDialog** (`gui/MapProgressDialog.cpp/.h`): added Cancel button with
+  thread-safe cancellation (`MapWorker::cancel()` via QMutex + QAtomicInt + proc.kill()).
+  `closeEvent()` and `reject()` now trigger cancel-and-wait instead of destroying a
+  live thread. Removed hardcoded `--render-fps 10` override.
+- **Python font paths** (`scripts/pm_hud.py`, `scripts/pm_dashboard.py`): added
+  correct Alma Linux 9 font paths as first candidates; restores proper TrueType
+  rendering (previous renders on penny used PIL 10px bitmap font).
+- **HUD compass proportions** (`scripts/pm_hud.py`): intercardinal labels (NE/SE/SW/NW)
+  reduced to ~1/3 the size of cardinal labels (N/S/E/W) using a new "micro" font tier;
+  KPH/MPH unit labels halved in size; compass sunk so the bottom 1/5 of the ring is
+  off-frame for a more cinematic look.
+- **TripBuildDialog overlay/HUD separation**: center overlay cell (960×540 centered,
+  for map and dashboard videos) and HUD overlay (full-screen transparent WebM) are now
+  entirely separate controls. HUD was previously only available as a center overlay
+  item, which scaled it to an inset box and ignored the alpha channel.
+- **Checkbox visibility** in overlay cell and HUD row: text color #e8e8ff, bold, 9pt;
+  indicator border styled for dark-theme contrast; HUD row has a subtle panel
+  background to read as a distinct control section.
+
+### Fixed
+- **VP9 alpha not decoded in collage build**: added `-c:v libvpx-vp9` to the HUD
+  input in the ffmpeg command (`cli/video_build.cpp`). Hardware VP9 decoders (QSV,
+  NVENC, VAAPI) silently drop the VP9 alpha track, causing the HUD to composite as
+  an opaque black sheet covering all camera footage. The software libvpx-vp9 decoder
+  correctly reads the separate alpha bitstream from the WebM container.
+- **GPS sync between map/HUD overlay and video** (`lib/gps_export.cpp`):
+  `gpsLockSeconds` is now computed and stored automatically during GPS extraction.
+  Previously it was only populated by `pm_gpsinfo --scan-all-trips`; trips extracted
+  via the GUI had `gpsLockSeconds = -1` (treated as 0 by both scripts), causing the
+  moving map and HUD compass to run ahead of the video by the GPS cold-start duration.
+  The calculation uses the same epoch arithmetic as `pm_gpsinfo` so values are
+  identical between the two paths.
+- **Preview frame HUD rendering**: forced `-c:v libvpx-vp9` in the frame-grab
+  ffmpeg command and switched to `-vf format=rgba` (filter-chain conversion, preserves
+  alpha) from `-pix_fmt rgba` (output-side flag, strips alpha). Composite pixmap
+  upgraded to `QImage::Format_ARGB32_Premultiplied` so QPainter alpha-blends the HUD
+  frame correctly over the camera tile composite.
+- Inactive tab bar selected-tab text invisible in Adwaita light theme.
+- `QDoubleSpinBox` missing forward-declaration in `TripPropertiesDialog.h`.
+
 ## [v1.7.1 / SN: 00102] - 2026-04-23
 
 ### Changed

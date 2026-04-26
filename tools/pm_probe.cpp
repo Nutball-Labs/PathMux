@@ -1991,8 +1991,7 @@ static void wizardCard(const std::string& root,
             900,    // default gap threshold
             5,      // fuzzy window seconds
             ffprobePath,
-            exiftoolPath,
-            exiftoolOptions
+            exiftoolPath
         );
         std::cout << "Trial scan complete: " << trips.size() << " trip(s) detected.\n";
         for (size_t i = 0; i < trips.size() && i < 10; ++i) {
@@ -2043,7 +2042,7 @@ int main(int argc, char* argv[])
     ConfigManager config;
     std::string ffprobePath  = config.getFfprobePath();
     std::string exiftoolPath = config.getExiftoolPath();
-    std::string exiftoolOpts = config.getExiftoolOptions();
+    std::string exiftoolOpts = "-ee3";
 
     // ---- Wizard mode ----
     if (wizardMode) {
@@ -2122,4 +2121,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00090
+// SN: 00104

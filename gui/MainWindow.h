@@ -25,6 +25,7 @@ private slots:
     void onSettings();
     void onManageManifests();
     void onSetupWizard();
+    void onCameraProfiles();
 
 private:
     void buildMenuBar();
@@ -34,4 +35,4 @@ private:
     TripGridPanel* m_tripGridPanel;
     HelpDialog*    m_helpDialog = nullptr;
 };
-// SN: 00097
+// SN: 00104

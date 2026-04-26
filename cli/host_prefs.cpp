@@ -32,19 +32,15 @@ bool HostPrefsEditor::run(ConfigManager& config) {
                       + fmtPath(working.ffmpegPath, "ffmpeg"));
         UI::printLine("[B]  ExifTool path          "
                       + fmtPath(working.exiftoolPath, "exiftool"));
-        UI::printLine("[C]  ExifTool options       "
-                      + (working.exiftoolOptions.empty()
-                         ? "-ee3 -p '$GPSDateTime ...' (default)"
-                         : working.exiftoolOptions));
-        UI::printLine("[D]  Default output dir     "
+        UI::printLine("[C]  Default output dir     "
                       + fmtPath(working.defaultExportDir, "(current directory)"));
-        UI::printLine("[E]  Temp directory         "
+        UI::printLine("[D]  Temp directory         "
                       + (working.tmpDir.empty()
                          ? "(auto: <output dir>/pm_tmp)"
                          : working.tmpDir));
-        UI::printLine("[F]  Log level              " + working.logLevel
+        UI::printLine("[E]  Log level              " + working.logLevel
                       + "  (off|normal|debug)");
-        UI::printLine("[G]  Encoder settings  -->  " + working.encode.preset
+        UI::printLine("[F]  Encoder settings  -->  " + working.encode.preset
                       + " / " + working.encode.collageEncoder);
         UI::printLine();
         UI::printLine(unsaved);
@@ -83,29 +79,19 @@ bool HostPrefsEditor::run(ConfigManager& config) {
             changed = true;
         }
         else if (ch == 'C') {
-            std::string cur = working.exiftoolOptions.empty()
-                ? "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSSpeed# $GPSTrack#'"
-                : working.exiftoolOptions;
-            std::cout << "  Current: " << cur << "\n\n"
-                      << "  This is the COMPLETE options string appended to the exiftool binary.\n"
-                      << "  Field order in the -p format string is fixed — do not change it.\n\n";
-            working.exiftoolOptions = UI::promptString("ExifTool options", cur);
-            changed = true;
-        }
-        else if (ch == 'D') {
             working.defaultExportDir = UI::promptString(
                 "Default output directory", working.defaultExportDir);
             UI::confirmExists(working.defaultExportDir);
             changed = true;
         }
-        else if (ch == 'E') {
+        else if (ch == 'D') {
             working.tmpDir = UI::promptString(
                 "Temp directory (empty = auto)", working.tmpDir);
             if (!working.tmpDir.empty())
                 UI::confirmExists(working.tmpDir);
             changed = true;
         }
-        else if (ch == 'F') {
+        else if (ch == 'E') {
             static const std::vector<std::string> logLevels = {"off","normal","debug"};
             int cur = 0;
             for (int i = 0; i < (int)logLevels.size(); ++i)
@@ -113,7 +99,7 @@ bool HostPrefsEditor::run(ConfigManager& config) {
             working.logLevel = logLevels[UI::promptChoice("Log level", logLevels, cur)];
             changed = true;
         }
-        else if (ch == 'G') {
+        else if (ch == 'F') {
             // Launch encoder sub-menu; it now saves to the host file as well.
             EncoderPrefsEditor enc;
             config.applySettings(working);  // push working state before sub-menu
@@ -126,4 +112,4 @@ bool HostPrefsEditor::run(ConfigManager& config) {
         }
     }
 }
-// SN: 00089
+// SN: 00104

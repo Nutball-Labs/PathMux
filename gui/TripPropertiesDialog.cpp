@@ -2,7 +2,6 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "TripPropertiesDialog.h"
 #include "MapProgressDialog.h"
-#include <QTabWidget>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QFormLayout>
@@ -13,13 +12,19 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QSpinBox>
+#include <QTabBar>
+#include <QStackedWidget>
+#include <QPainter>
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QDesktopServices>
+#include <QCloseEvent>
 #include <QMutex>
 #include <QThread>
 #include <QUrl>
@@ -60,10 +65,9 @@ class GpsExtractWorker : public QObject {
 public:
     GpsExtractWorker(const std::string& tripId,
                      const std::string& manifestFile,
-                     const std::string& exiftoolPath,
-                     const std::string& exiftoolOptions)
+                     const std::string& exiftoolPath)
         : m_tripId(tripId), m_manifestFile(manifestFile),
-          m_exiftoolPath(exiftoolPath), m_exiftoolOptions(exiftoolOptions) {}
+          m_exiftoolPath(exiftoolPath) {}
 
 public slots:
     void start() {
@@ -105,7 +109,7 @@ public slots:
         }
 
         bool ok = Pathmux::extractGps(root, tripIdx, m_manifestFile,
-                                      m_exiftoolPath, m_exiftoolOptions,
+                                      m_exiftoolPath,
                                       /*verbose=*/false,
                                       [this](int done, int total) {
                                           emit progress(done, total);
@@ -123,7 +127,6 @@ private:
     std::string m_tripId;
     std::string m_manifestFile;
     std::string m_exiftoolPath;
-    std::string m_exiftoolOptions;
 };
 
 // ---------------------------------------------------------------------------
@@ -222,6 +225,36 @@ static QWidget* makeCameraTab(const Trip& t, const std::string& slot, QWidget* p
 }
 
 // ---------------------------------------------------------------------------
+// makeStatusIcon — green check or red X dot for bottom tab bar indicators.
+// File-scope so it can be called from constructor and update methods.
+// ---------------------------------------------------------------------------
+static QIcon makeStatusIcon(bool ok)
+{
+    QPixmap pix(14, 14);
+    pix.fill(Qt::transparent);
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(ok ? QColor("#22cc44") : QColor("#cc2222"));
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(1, 1, 12, 12);
+    p.setPen(QPen(Qt::white, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    if (ok) {
+        p.drawLine(3, 7, 6, 11);
+        p.drawLine(6, 11, 11, 3);
+    } else {
+        p.drawLine(4, 4, 10, 10);
+        p.drawLine(10, 4, 4, 10);
+    }
+    return QIcon(pix);
+}
+
+// Bottom-bar tab indices (fixed regardless of how many camera tabs are in the top bar).
+static constexpr int kBotTabGps  = 0;
+static constexpr int kBotTabMap  = 1;
+static constexpr int kBotTabDash = 2;
+static constexpr int kBotTabHud  = 3;
+
+// ---------------------------------------------------------------------------
 // TripPropertiesDialog
 // ---------------------------------------------------------------------------
 TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
@@ -235,15 +268,27 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
     resize(640, 500);
 
     auto* vbox = new QVBoxLayout(this);
-    auto* tabs = new QTabWidget(this);
+
+    m_topTabBar = new QTabBar(this);
+    m_topTabBar->setExpanding(false);
+    m_botTabBar = new QTabBar(this);
+    m_botTabBar->setExpanding(false);
+    m_tabStack  = new QStackedWidget(this);
 
     bool hasGps = (trip.gpsTrackStatus == "complete");
 
+    // makeStatusIcon is a file-scope static function defined above.
+
+    // Stylesheet applied to the bar that is NOT currently driving the content.
+    static const char* kInactiveBarStyle =
+        "QTabBar::tab:selected { color: #888888; }";
+
     // -----------------------------------------------------------------------
-    // General tab
+    // -----------------------------------------------------------------------
+    // General tab  (top bar)
     // -----------------------------------------------------------------------
     {
-        auto* w    = new QWidget(tabs);
+        auto* w    = new QWidget;
         auto* form = new QFormLayout(w);
         form->setContentsMargins(12, 12, 12, 12);
         form->setVerticalSpacing(6);
@@ -293,14 +338,47 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
             .arg(QString::fromStdString(trip.videoProfile.frameRate));
         form->addRow("Video:", valueLabel(vp, w));
 
-        tabs->addTab(w, "General");
+        m_topTabBar->addTab("General");
+        m_tabStack->addWidget(w);
     }
 
     // -----------------------------------------------------------------------
-    // GPS tab
+    // Per-camera tabs  (top bar — built here so m_topCount is set before
+    // the bottom-bar functional tabs are added)
     // -----------------------------------------------------------------------
     {
-        auto* w    = new QWidget(tabs);
+        // Note: "slots" is a Qt macro — use cameraSlots instead.
+        std::vector<std::string> cameraSlots;
+        for (const auto& seg : trip.segments)
+            for (const auto& kv : seg.cameras) {
+                const std::string& k = kv.first;
+                if (std::find(cameraSlots.begin(), cameraSlots.end(), k) == cameraSlots.end())
+                    cameraSlots.push_back(k);
+            }
+        std::sort(cameraSlots.begin(), cameraSlots.end());
+
+        for (const auto& camSlot : cameraSlots) {
+            bool hasAny = false;
+            for (const auto& seg : trip.segments) {
+                auto it = seg.cameras.find(camSlot);
+                if (it != seg.cameras.end() && !it->second.empty() && it->second != "-") {
+                    hasAny = true; break;
+                }
+            }
+            if (!hasAny) continue;
+            QString tabName = QString::fromStdString(camSlot);
+            tabName[0] = tabName[0].toUpper();
+            m_topTabBar->addTab(tabName);
+            m_tabStack->addWidget(makeCameraTab(trip, camSlot, nullptr));
+        }
+    }
+    m_topCount = m_tabStack->count();
+
+    // -----------------------------------------------------------------------
+    // GPS tab  (bottom bar)
+    // -----------------------------------------------------------------------
+    {
+        auto* w    = new QWidget;
         auto* vlay = new QVBoxLayout(w);
         vlay->setContentsMargins(12, 12, 12, 12);
         vlay->setSpacing(10);
@@ -373,14 +451,15 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
         vlay->addWidget(exportGrp);
         vlay->addStretch();
 
-        tabs->addTab(w, "GPS");
+        m_botTabBar->addTab(makeStatusIcon(hasGps), "GPS");
+        m_tabStack->addWidget(w);
     }
 
     // -----------------------------------------------------------------------
-    // Map tab
+    // Map tab  (bottom bar)
     // -----------------------------------------------------------------------
     {
-        auto* w    = new QWidget(tabs);
+        auto* w    = new QWidget;
         auto* vlay = new QVBoxLayout(w);
         vlay->setContentsMargins(12, 12, 12, 12);
         vlay->setSpacing(8);
@@ -444,14 +523,15 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
                 this, &TripPropertiesDialog::onGenerateMap);
         vlay->addWidget(m_mapGenerateBtn);
 
-        tabs->addTab(w, "Map");
+        m_botTabBar->addTab(makeStatusIcon(!m_trip.mapVideos.empty()), "Map");
+        m_tabStack->addWidget(w);
     }
 
     // -----------------------------------------------------------------------
-    // Dashboard tab
+    // Dashboard tab  (bottom bar)
     // -----------------------------------------------------------------------
     {
-        auto* w    = new QWidget(tabs);
+        auto* w    = new QWidget;
         auto* vlay = new QVBoxLayout(w);
         vlay->setContentsMargins(12, 12, 12, 12);
         vlay->setSpacing(8);
@@ -475,9 +555,11 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
         auto* dashBrowseBtn = new QPushButton("\u2026", w);
         dashBrowseBtn->setFixedWidth(28);
         connect(dashBrowseBtn, &QPushButton::clicked, [this]() {
+            bool transp = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
+            QString filter = transp ? "Video (*.webm)" : "Video (*.mp4)";
             QString path = QFileDialog::getSaveFileName(
                 this, "Dashboard Output", m_dashOutputEdit->text(),
-                "Video (*.mp4)");
+                filter + ";;All Files (*)");
             if (!path.isEmpty())
                 m_dashOutputEdit->setText(path);
         });
@@ -485,6 +567,17 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
         outRow->addWidget(m_dashOutputEdit);
         outRow->addWidget(dashBrowseBtn);
         vlay->addLayout(outRow);
+
+        m_dashTransparentCheck = new QCheckBox("Transparent background  (WebM/VP9, for overlay use)", w);
+        connect(m_dashTransparentCheck, &QCheckBox::toggled, this, [this](bool checked) {
+            if (!m_dashOutputEdit) return;
+            QString path = m_dashOutputEdit->text();
+            if (checked && path.endsWith(".mp4", Qt::CaseInsensitive))
+                m_dashOutputEdit->setText(path.chopped(4) + ".webm");
+            else if (!checked && path.endsWith(".webm", Qt::CaseInsensitive))
+                m_dashOutputEdit->setText(path.chopped(5) + ".mp4");
+        });
+        vlay->addWidget(m_dashTransparentCheck);
 
         auto* infoLbl = new QLabel(
             "Resolution: 960\u00d7540  (collage quadrant slot)", w);
@@ -512,47 +605,241 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
                 this, &TripPropertiesDialog::onGenerateDashboard);
         vlay->addWidget(m_dashGenerateBtn);
 
-        tabs->addTab(w, "Dashboard");
+        m_botTabBar->addTab(makeStatusIcon(!m_trip.dashVideos.empty()), "Dashboard");
+        m_tabStack->addWidget(w);
+    }
+
+    // -----------------------------------------------------------------------
+    // HUD tab  (bottom bar)
+    // -----------------------------------------------------------------------
+    {
+        auto* w    = new QWidget;
+        auto* vlay = new QVBoxLayout(w);
+        vlay->setContentsMargins(12, 12, 12, 12);
+        vlay->setSpacing(8);
+
+        m_hudWarnLabel = new QLabel(
+            "GPS track not yet extracted for this trip.\n"
+            "Use the GPS tab to extract the track first.", w);
+        m_hudWarnLabel->setWordWrap(true);
+        m_hudWarnLabel->setStyleSheet("color: #cc6600;");
+        m_hudWarnLabel->setVisible(!hasGps);
+        vlay->addWidget(m_hudWarnLabel);
+
+        // Output path
+        {
+            auto* row = new QHBoxLayout;
+            auto* lbl = new QLabel("Output:", w); lbl->setFixedWidth(54);
+            m_hudOutputEdit = new QLineEdit(w);
+            m_hudOutputEdit->setText(
+                QString::fromStdString(m_sourcePath) + "/pm_trip_" +
+                QString::fromStdString(trip.id) + "_hud.webm");
+            auto* btn = new QPushButton("…", w); btn->setFixedWidth(28);
+            connect(btn, &QPushButton::clicked, [this]() {
+                QString path = QFileDialog::getSaveFileName(
+                    this, "HUD Output", m_hudOutputEdit->text(),
+                    "Video (*.webm);;All Files (*)");
+                if (!path.isEmpty()) m_hudOutputEdit->setText(path);
+            });
+            row->addWidget(lbl); row->addWidget(m_hudOutputEdit); row->addWidget(btn);
+            vlay->addLayout(row);
+        }
+
+        // Render resolution
+        {
+            auto* row = new QHBoxLayout;
+            row->addWidget(new QLabel("Render:", w));
+            row->addWidget(new QLabel("W", w));
+            m_hudWidth = new QSpinBox(w);
+            m_hudWidth->setRange(640, 7680); m_hudWidth->setSingleStep(16); m_hudWidth->setValue(3840);
+            row->addWidget(m_hudWidth);
+            row->addWidget(new QLabel("H", w));
+            m_hudHeight = new QSpinBox(w);
+            m_hudHeight->setRange(480, 4320); m_hudHeight->setSingleStep(16); m_hudHeight->setValue(2160);
+            row->addWidget(m_hudHeight);
+            row->addWidget(new QLabel("px  (match collage resolution)", w));
+            row->addStretch();
+            vlay->addLayout(row);
+        }
+
+        // ── Style ───────────────────────────────────────────────────────────
+        {
+            ConfigManager cfg_seed; cfg_seed.loadSettings();
+            auto* grp  = new QGroupBox("Style", w);
+            auto* glay = new QFormLayout(grp);
+            glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
+
+            m_hudFontScale = new QDoubleSpinBox(grp);
+            m_hudFontScale->setRange(0.25, 4.0); m_hudFontScale->setSingleStep(0.25);
+            m_hudFontScale->setDecimals(2); m_hudFontScale->setSuffix("×");
+            m_hudFontScale->setValue(cfg_seed.getHudFontScale());
+            glay->addRow("Font scale:", m_hudFontScale);
+
+            m_hudLineScale = new QDoubleSpinBox(grp);
+            m_hudLineScale->setRange(0.25, 4.0); m_hudLineScale->setSingleStep(0.25);
+            m_hudLineScale->setDecimals(2); m_hudLineScale->setSuffix("×");
+            m_hudLineScale->setValue(cfg_seed.getHudLineScale());
+            glay->addRow("Line scale:", m_hudLineScale);
+
+            m_hudColorHex = new QLineEdit(grp);
+            m_hudColorHex->setMaxLength(7);
+            m_hudColorHex->setPlaceholderText("#00ff41");
+            m_hudColorHex->setText(QString::fromStdString(cfg_seed.getHudColor()));
+            glay->addRow("Color (hex):", m_hudColorHex);
+
+            vlay->addWidget(grp);
+        }
+
+        // ── Speed Tapes ─────────────────────────────────────────────────────
+        {
+            auto* grp  = new QGroupBox("Speed Tapes", w);
+            auto* glay = new QVBoxLayout(grp);
+            glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
+
+            // Global tape settings
+            auto* globalRow = new QHBoxLayout;
+            globalRow->addWidget(new QLabel("Tape width:", grp));
+            m_hudTapeWidth = new QSpinBox(grp);
+            m_hudTapeWidth->setRange(0, 800); m_hudTapeWidth->setValue(0);
+            m_hudTapeWidth->setSpecialValueText("auto");
+            globalRow->addWidget(m_hudTapeWidth);
+            globalRow->addWidget(new QLabel("px", grp));
+            globalRow->addSpacing(16);
+            globalRow->addWidget(new QLabel("Visible range:", grp));
+            m_hudVisibleRange = new QSpinBox(grp);
+            m_hudVisibleRange->setRange(20, 200); m_hudVisibleRange->setSingleStep(10);
+            m_hudVisibleRange->setValue(100); m_hudVisibleRange->setSuffix(" units");
+            globalRow->addWidget(m_hudVisibleRange);
+            globalRow->addStretch();
+            glay->addLayout(globalRow);
+
+            auto addPosRow = [&](const QString& label, QSpinBox*& spX, QSpinBox*& spY, int defX, int defY) {
+                auto* row = new QHBoxLayout;
+                row->addWidget(new QLabel(label, grp));
+                row->addWidget(new QLabel("X:", grp));
+                spX = new QSpinBox(grp); spX->setRange(-1, 7680); spX->setValue(defX);
+                spX->setSpecialValueText("auto");
+                row->addWidget(spX);
+                row->addWidget(new QLabel("Y:", grp));
+                spY = new QSpinBox(grp); spY->setRange(-1, 4320); spY->setValue(defY);
+                spY->setSpecialValueText("auto");
+                row->addWidget(spY);
+                row->addWidget(new QLabel("px  (-1 = auto)", grp));
+                row->addStretch();
+                glay->addLayout(row);
+            };
+
+            addPosRow("Left tape (KPH) position:", m_hudLsX, m_hudLsY, 0, -1);
+            addPosRow("Right tape (MPH) position:", m_hudRsX, m_hudRsY, -1, -1);
+            vlay->addWidget(grp);
+        }
+
+        // ── Compass Rose ────────────────────────────────────────────────────
+        {
+            auto* grp  = new QGroupBox("Compass Rose", w);
+            auto* glay = new QVBoxLayout(grp);
+            glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
+
+            auto* rRow = new QHBoxLayout;
+            rRow->addWidget(new QLabel("Radius:", grp));
+            m_hudCompassRadius = new QSpinBox(grp);
+            m_hudCompassRadius->setRange(0, 1000); m_hudCompassRadius->setValue(0);
+            m_hudCompassRadius->setSpecialValueText("auto");
+            rRow->addWidget(m_hudCompassRadius);
+            rRow->addWidget(new QLabel("px", grp));
+            rRow->addStretch();
+            glay->addLayout(rRow);
+
+            auto* cRow = new QHBoxLayout;
+            cRow->addWidget(new QLabel("Center X:", grp));
+            m_hudCompassX = new QSpinBox(grp);
+            m_hudCompassX->setRange(-1, 7680); m_hudCompassX->setValue(-1);
+            m_hudCompassX->setSpecialValueText("auto");
+            cRow->addWidget(m_hudCompassX);
+            cRow->addWidget(new QLabel("Y:", grp));
+            m_hudCompassY = new QSpinBox(grp);
+            m_hudCompassY->setRange(-1, 4320); m_hudCompassY->setValue(-1);
+            m_hudCompassY->setSpecialValueText("auto");
+            cRow->addWidget(m_hudCompassY);
+            cRow->addWidget(new QLabel("px  (-1 = bottom-center)", grp));
+            cRow->addStretch();
+            glay->addLayout(cRow);
+
+            vlay->addWidget(grp);
+        }
+
+        auto* hudFileLbl = new QLabel("Generated HUD files (double-click to open):", w);
+        hudFileLbl->setStyleSheet("font-size: 8pt; color: gray;");
+        vlay->addWidget(hudFileLbl);
+
+        m_hudFileList = new QListWidget(w);
+        m_hudFileList->setMaximumHeight(80);
+        m_hudFileList->setAlternatingRowColors(true);
+        connect(m_hudFileList, &QListWidget::itemDoubleClicked,
+                [](QListWidgetItem* item) {
+            QDesktopServices::openUrl(
+                QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
+        });
+        vlay->addWidget(m_hudFileList);
+
+        vlay->addStretch();
+
+        m_hudGenerateBtn = new QPushButton("Generate HUD…", w);
+        connect(m_hudGenerateBtn, &QPushButton::clicked,
+                this, &TripPropertiesDialog::onGenerateHud);
+        vlay->addWidget(m_hudGenerateBtn);
+
+        m_botTabBar->addTab(makeStatusIcon(!m_trip.hudVideos.empty()), "HUD");
+        m_tabStack->addWidget(w);
     }
 
     // Populate video lists from manifest data.
     populateVideoList(m_mapFileList,  m_trip.mapVideos);
     populateVideoList(m_dashFileList, m_trip.dashVideos);
+    populateVideoList(m_hudFileList,  m_trip.hudVideos);
 
     // -----------------------------------------------------------------------
-    // Per-camera tabs
+    // Wire tab bars → stack; mutual deactivation via stylesheet
     // -----------------------------------------------------------------------
-    // Note: "slots" is a Qt macro — use cameraSlots instead.
-    std::vector<std::string> cameraSlots;
-    for (const auto& seg : trip.segments)
-        for (const auto& kv : seg.cameras) {
-            const std::string& k = kv.first;
-            if (std::find(cameraSlots.begin(), cameraSlots.end(), k) == cameraSlots.end())
-                cameraSlots.push_back(k);
-        }
-    std::sort(cameraSlots.begin(), cameraSlots.end());
+    connect(m_topTabBar, &QTabBar::currentChanged, this, [this](int idx) {
+        if (idx < 0) return;
+        static const char* kInactive =
+            "QTabBar::tab:selected { color: #888888; }";
+        m_tabStack->setCurrentIndex(idx);
+        m_topTabBar->setStyleSheet("");
+        m_botTabBar->setStyleSheet(kInactive);
+    });
+    connect(m_botTabBar, &QTabBar::currentChanged, this, [this](int idx) {
+        if (idx < 0) return;
+        static const char* kInactive =
+            "QTabBar::tab:selected { color: #888888; }";
+        m_tabStack->setCurrentIndex(m_topCount + idx);
+        m_topTabBar->setStyleSheet(kInactive);
+        m_botTabBar->setStyleSheet("");
+    });
 
-    for (const auto& camSlot : cameraSlots) {
-        bool hasAny = false;
-        for (const auto& seg : trip.segments) {
-            auto it = seg.cameras.find(camSlot);
-            if (it != seg.cameras.end() && !it->second.empty() && it->second != "-") {
-                hasAny = true; break;
-            }
-        }
-        if (!hasAny) continue;
-        QString tabName = QString::fromStdString(camSlot);
-        tabName[0] = tabName[0].toUpper();
-        tabs->addTab(makeCameraTab(trip, camSlot, tabs), tabName);
-    }
+    // Initial state: General (top bar) is active.
+    m_botTabBar->setStyleSheet(kInactiveBarStyle);
 
-    vbox->addWidget(tabs);
+    // -----------------------------------------------------------------------
+    // Assemble layout
+    // -----------------------------------------------------------------------
+    auto* tabBarsWidget = new QWidget(this);
+    tabBarsWidget->setContentsMargins(0, 0, 0, 0);
+    auto* tabBarsLayout = new QVBoxLayout(tabBarsWidget);
+    tabBarsLayout->setContentsMargins(0, 0, 0, 0);
+    tabBarsLayout->setSpacing(0);
+    tabBarsLayout->addWidget(m_topTabBar);
+    tabBarsLayout->addWidget(m_botTabBar);
 
-    auto* buttons = new QDialogButtonBox(
+    vbox->addWidget(tabBarsWidget);
+    vbox->addWidget(m_tabStack, 1);
+
+    m_buttonBox = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    connect(buttons, &QDialogButtonBox::accepted, this, &TripPropertiesDialog::onAccepted);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    vbox->addWidget(buttons);
+    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &TripPropertiesDialog::onAccepted);
+    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    vbox->addWidget(m_buttonBox);
 }
 
 // ---------------------------------------------------------------------------
@@ -561,6 +848,31 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
 std::string TripPropertiesDialog::updatedNote() const
 {
     return m_noteEdit ? m_noteEdit->text().trimmed().toStdString() : m_trip.note;
+}
+
+// ---------------------------------------------------------------------------
+// Close / reject guards — block while GPS extraction thread is running.
+// Destroying a running QThread is UB; we must wait until it stops.
+// ---------------------------------------------------------------------------
+void TripPropertiesDialog::reject()
+{
+    if (m_extractThread && m_extractThread->isRunning()) {
+        QMessageBox::information(this, "Extraction In Progress",
+            "GPS extraction is running. Please wait for it to finish.");
+        return;
+    }
+    QDialog::reject();
+}
+
+void TripPropertiesDialog::closeEvent(QCloseEvent* event)
+{
+    if (m_extractThread && m_extractThread->isRunning()) {
+        QMessageBox::information(this, "Extraction In Progress",
+            "GPS extraction is running. Please wait for it to finish.");
+        event->ignore();
+        return;
+    }
+    QDialog::closeEvent(event);
 }
 
 // ---------------------------------------------------------------------------
@@ -586,8 +898,7 @@ void TripPropertiesDialog::onExtractGps()
 
     auto* worker = new GpsExtractWorker(
         m_trip.id, manifestFile,
-        config.getExiftoolPath(),
-        config.getExiftoolOptions());
+        config.getExiftoolPath());
     auto* thread = new QThread(this);
     worker->moveToThread(thread);
 
@@ -598,7 +909,10 @@ void TripPropertiesDialog::onExtractGps()
             this,   &TripPropertiesDialog::onExtractGpsFinished);
     connect(worker, &GpsExtractWorker::finished, thread, &QThread::quit);
     connect(thread, &QThread::finished,   worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished,   this,   [this]{ m_extractThread = nullptr; });
 
+    m_extractThread = thread;
+    m_buttonBox->setEnabled(false);
     thread->start();
 }
 
@@ -613,6 +927,7 @@ void TripPropertiesDialog::onExtractGpsProgress(int done, int total)
 
 void TripPropertiesDialog::onExtractGpsFinished(bool ok, const QString& error)
 {
+    m_buttonBox->setEnabled(true);
     m_extractBar->hide();
     m_extractGpsBtn->setEnabled(true);
 
@@ -623,7 +938,10 @@ void TripPropertiesDialog::onExtractGpsFinished(bool ok, const QString& error)
         m_extractMsgLabel->setText("Extraction complete.");
         m_exportGpsBtn->setEnabled(true);
         m_mapGenerateBtn->setEnabled(true);
-        if (m_mapWarnLabel) m_mapWarnLabel->hide();
+        if (m_mapWarnLabel)  m_mapWarnLabel->hide();
+        if (m_dashWarnLabel) m_dashWarnLabel->hide();
+        if (m_hudWarnLabel)  m_hudWarnLabel->hide();
+        if (m_botTabBar)     m_botTabBar->setTabIcon(kBotTabGps, makeStatusIcon(true));
         emit gpsExtracted();
     } else {
         m_extractMsgLabel->setText(error.isEmpty() ? "Extraction failed." : error);
@@ -797,6 +1115,9 @@ void TripPropertiesDialog::onGenerateDashboard()
     }
 
     QString units = config.getUseImperial() ? "imperial" : "metric";
+    bool transparent = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
+    QStringList extraArgs{"--units", units};
+    if (transparent) extraArgs << "--transparent";
     auto* dlg = new MapProgressDialog(
         m_trip,
         QString::fromStdString(manifestFile),
@@ -805,11 +1126,104 @@ void TripPropertiesDialog::onGenerateDashboard()
         this,
         "pm_dashboard.py",
         "Generating Dashboard",
-        QStringList{"--units", units});
+        extraArgs);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     connect(dlg, &MapProgressDialog::renderComplete,
             this, [this, output](bool ok) {
         if (ok) appendVideoToManifest(output, "dashVideos", m_trip.dashVideos);
+    });
+    dlg->show();
+    dlg->startRender();
+}
+
+// ---------------------------------------------------------------------------
+// HUD
+// ---------------------------------------------------------------------------
+void TripPropertiesDialog::onGenerateHud()
+{
+    if (m_trip.gpsTrackStatus != "complete") {
+        QMessageBox::information(
+            this,
+            "GPS Track Required",
+            "This trip does not have a GPS track in the manifest yet.\n\n"
+            "Go to the GPS tab, click 'Extract GPS Track', then return\n"
+            "to the HUD tab and generate the HUD.");
+        return;
+    }
+
+    QString output = m_hudOutputEdit ? m_hudOutputEdit->text().trimmed() : QString();
+    if (output.isEmpty()) return;
+    if (!output.endsWith(".webm", Qt::CaseInsensitive))
+        output += ".webm";
+
+    if (QFileInfo::exists(output)) {
+        auto btn = QMessageBox::question(
+            this, "Overwrite existing file?",
+            QString("The file already exists:\n%1\n\nOverwrite it?").arg(output),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (btn != QMessageBox::Yes) return;
+    }
+
+    ConfigManager config;
+    config.loadSettings();
+    std::string manifestFile = config.lookupManifestFilePath(m_sourcePath);
+    if (manifestFile.empty()) {
+        if (m_hudWarnLabel) {
+            m_hudWarnLabel->setText("Error: manifest file not found. Try rescanning.");
+            m_hudWarnLabel->setVisible(true);
+        }
+        return;
+    }
+
+    int     W        = m_hudWidth  ? m_hudWidth->value()  : 3840;
+    int     H        = m_hudHeight ? m_hudHeight->value() : 2160;
+    QString hexColor = m_hudColorHex ? m_hudColorHex->text().trimmed() : "#00ff41";
+    if (hexColor.isEmpty() || !hexColor.startsWith('#')) hexColor = "#00ff41";
+    double  fontSc   = m_hudFontScale ? m_hudFontScale->value() : 1.0;
+    double  lineSc   = m_hudLineScale ? m_hudLineScale->value() : 1.0;
+
+    QStringList extraArgs{
+        "--color-hex",    hexColor,
+        "--font-scale",   QString::number(fontSc, 'f', 2),
+        "--line-scale",   QString::number(lineSc, 'f', 2),
+    };
+
+    // Tape width (global for both tapes; 0 = omit → script uses auto)
+    if (m_hudTapeWidth && m_hudTapeWidth->value() > 0)
+        extraArgs << "--tape-width" << QString::number(m_hudTapeWidth->value());
+
+    // Always pass visible-range so the GUI value is authoritative
+    extraArgs << "--visible-range"
+              << QString::number(m_hudVisibleRange ? m_hudVisibleRange->value() : 100);
+
+    // Speed tape positions (-1 = auto, only pass when explicitly set)
+    auto addNeg = [&](const QString& flag, QSpinBox* sp) {
+        if (sp && sp->value() >= 0) extraArgs << flag << QString::number(sp->value());
+    };
+    addNeg("--left-speed-x",  m_hudLsX);
+    addNeg("--left-speed-y",  m_hudLsY);
+    addNeg("--right-speed-x", m_hudRsX);
+    addNeg("--right-speed-y", m_hudRsY);
+
+    // Compass rose
+    if (m_hudCompassRadius && m_hudCompassRadius->value() > 0)
+        extraArgs << "--heading-height" << QString::number(m_hudCompassRadius->value());
+    addNeg("--heading-x", m_hudCompassX);
+    addNeg("--heading-y", m_hudCompassY);
+
+    auto* dlg = new MapProgressDialog(
+        m_trip,
+        QString::fromStdString(manifestFile),
+        output,
+        W, H,
+        this,
+        "pm_hud.py",
+        "Generating HUD",
+        extraArgs);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dlg, &MapProgressDialog::renderComplete,
+            this, [this, output](bool ok) {
+        if (ok) appendVideoToManifest(output, "hudVideos", m_trip.hudVideos);
     });
     dlg->show();
     dlg->startRender();
@@ -906,13 +1320,19 @@ void TripPropertiesDialog::appendVideoToManifest(const QString& path,
     ofs << root.dump(2);
     ofs.close();
 
-    // Update in-memory trip and refresh the appropriate list.
+    // Update in-memory trip, refresh the list widget, and update tab icon.
     tripVec.push_back(p);
-    if (key == "mapVideos")
-        populateVideoList(m_mapFileList,  m_trip.mapVideos);
-    else
+    if (key == "mapVideos") {
+        populateVideoList(m_mapFileList, m_trip.mapVideos);
+        if (m_botTabBar) m_botTabBar->setTabIcon(kBotTabMap,  makeStatusIcon(true));
+    } else if (key == "hudVideos") {
+        populateVideoList(m_hudFileList, m_trip.hudVideos);
+        if (m_botTabBar) m_botTabBar->setTabIcon(kBotTabHud,  makeStatusIcon(true));
+    } else {
         populateVideoList(m_dashFileList, m_trip.dashVideos);
+        if (m_botTabBar) m_botTabBar->setTabIcon(kBotTabDash, makeStatusIcon(true));
+    }
 }
 
 #include "TripPropertiesDialog.moc"
-// SN: 00101
+// SN: 00104

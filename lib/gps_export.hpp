@@ -23,7 +23,6 @@ bool extractGps(json& root,
                 int tripIdx,
                 const std::string& manifestFile,
                 const std::string& exiftoolPath,
-                const std::string& exiftoolOptions,
                 bool verbose = false,
                 std::function<void(int done, int total)> progressCb = nullptr);
 
@@ -43,4 +42,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 } // namespace Pathmux
 
 #endif
-// SN: 00098
+// SN: 00104

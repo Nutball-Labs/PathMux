@@ -383,7 +383,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
                            ? (int)root["trips"][idx]["segments"].size() : 0;
             std::cout << "Extracting GPS for trip " << tId
                       << " (" << segCount << " segments)";
-            if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, opts.exiftoolOptions, m_verbose)) {
+            if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, m_verbose)) {
                 std::cout << "\nGPS extraction failed for trip " << tId << ".\n"
                           << "Verify exiftool is installed and the options match your camera format.\n"
                           << "If GPS is unsupported for your camera, contact https://exiftool.org\n";
@@ -395,7 +395,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
                            ? (int)root["trips"][idx]["segments"].size() : 0;
             std::cout << "Extracting GPS for trip " << tId
                       << " (" << segCount << " segments)";
-            if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, opts.exiftoolOptions, m_verbose)) {
+            if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, m_verbose)) {
                 std::cout << "\nGPS extraction failed for trip " << tId << ".\n"
                           << "Verify exiftool is installed and the options match your camera format.\n"
                           << "If GPS is unsupported for your camera, contact https://exiftool.org\n";
@@ -440,7 +440,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
     if (doAll)
         std::cout << exported << " file" << (exported != 1 ? "s" : "") << " written.\n";
 }
-// SN: 00089
+// SN: 00104
 
 // ===========================================================================
 // runInteractive — interactive GPS menu entry point
@@ -683,7 +683,7 @@ void GpxExport::runInteractive(const ExportOptions& opts)
                               << " (" << segCount << " segments)...";
                     std::cout.flush();
                     if (!Pathmux::extractGps(root, i, manifestFile,
-                                    actionOpts.exiftoolPath, actionOpts.exiftoolOptions,
+                                    actionOpts.exiftoolPath,
                                     m_verbose)) {
                         // extractGps already printed the reason to stderr
                         std::cout << "\n  GPS extraction failed for trip " << tId << ".\n";

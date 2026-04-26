@@ -133,7 +133,7 @@ int main(int argc, char* argv[])
 
     // ---- Exiftool command prefix from PathMux prefs ----
     ConfigManager config;
-    const std::string exifCmd = config.getExiftoolPath() + " " + config.getExiftoolOptions();
+    const std::string exifCmd = config.getExiftoolPath() + " -ee3";
 
     // ---- Process each file ----
     for (const auto& path : files) {
@@ -210,4 +210,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-// SN: 00089
+// SN: 00104

@@ -5,12 +5,20 @@
 #include <string>
 #include "trip_detection.hpp"
 
+class QCheckBox;
+class QCloseEvent;
 class QComboBox;
+class QDialogButtonBox;
+class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
 class QProgressBar;
 class QPushButton;
+class QSpinBox;
+class QStackedWidget;
+class QTabBar;
+class QThread;
 
 class TripPropertiesDialog : public QDialog {
     Q_OBJECT
@@ -25,10 +33,15 @@ public:
 signals:
     void gpsExtracted();   // emitted immediately when GPS extraction succeeds
 
+protected:
+    void reject() override;
+    void closeEvent(QCloseEvent* event) override;
+
 private slots:
     void onAccepted();
     void onGenerateMap();
     void onGenerateDashboard();
+    void onGenerateHud();
     void onExtractGps();
     void onExtractGpsProgress(int done, int total);
     void onExtractGpsFinished(bool ok, const QString& error);
@@ -40,14 +53,24 @@ private:
     Pathmux::Trip m_trip;
     std::string   m_sourcePath;
 
+    // Two-row tab bar system
+    QTabBar*       m_topTabBar  = nullptr;   // General + camera tabs
+    QTabBar*       m_botTabBar  = nullptr;   // GPS, Map, Dashboard, HUD
+    QStackedWidget* m_tabStack  = nullptr;
+    int            m_topCount   = 0;         // pages belonging to top bar
+
     // General tab
     QLineEdit*    m_noteEdit        = nullptr;
 
     // GPS tab — extraction
-    QLabel*       m_gpsStatusLabel  = nullptr;
-    QPushButton*  m_extractGpsBtn   = nullptr;
-    QProgressBar* m_extractBar      = nullptr;
-    QLabel*       m_extractMsgLabel = nullptr;
+    QLabel*           m_gpsStatusLabel  = nullptr;
+    QPushButton*      m_extractGpsBtn   = nullptr;
+    QProgressBar*     m_extractBar      = nullptr;
+    QLabel*           m_extractMsgLabel = nullptr;
+    QThread*          m_extractThread   = nullptr;
+
+    // Bottom button box (Ok / Cancel)
+    QDialogButtonBox* m_buttonBox       = nullptr;
 
     // GPS tab — export
     QComboBox*    m_exportFormatCombo = nullptr;
@@ -61,13 +84,38 @@ private:
     QPushButton*  m_mapGenerateBtn  = nullptr;
 
     // Dashboard tab
-    QLabel*       m_dashWarnLabel   = nullptr;
-    QLineEdit*    m_dashOutputEdit  = nullptr;
-    QListWidget*  m_dashFileList    = nullptr;
-    QPushButton*  m_dashGenerateBtn = nullptr;
+    QLabel*       m_dashWarnLabel        = nullptr;
+    QLineEdit*    m_dashOutputEdit       = nullptr;
+    QCheckBox*    m_dashTransparentCheck = nullptr;
+    QListWidget*  m_dashFileList         = nullptr;
+    QPushButton*  m_dashGenerateBtn      = nullptr;
+
+    // HUD tab
+    QLabel*         m_hudWarnLabel     = nullptr;
+    QLineEdit*      m_hudOutputEdit    = nullptr;
+    QSpinBox*       m_hudWidth         = nullptr;   // render resolution
+    QSpinBox*       m_hudHeight        = nullptr;
+    // Style
+    QDoubleSpinBox* m_hudFontScale     = nullptr;
+    QDoubleSpinBox* m_hudLineScale     = nullptr;
+    QLineEdit*      m_hudColorHex      = nullptr;
+    // Speed tapes
+    QSpinBox*       m_hudTapeWidth     = nullptr;   // 0 = auto
+    QSpinBox*       m_hudVisibleRange  = nullptr;   // units in tape height
+    QSpinBox*       m_hudLsX           = nullptr;   // left tape position
+    QSpinBox*       m_hudLsY           = nullptr;
+    QSpinBox*       m_hudRsX           = nullptr;   // right tape position
+    QSpinBox*       m_hudRsY           = nullptr;
+    // Compass rose
+    QSpinBox*       m_hudCompassRadius = nullptr;   // 0 = auto
+    QSpinBox*       m_hudCompassX      = nullptr;   // -1 = center
+    QSpinBox*       m_hudCompassY      = nullptr;   // -1 = bottom
+    // File list + button
+    QListWidget*    m_hudFileList      = nullptr;
+    QPushButton*    m_hudGenerateBtn   = nullptr;
 
     void populateVideoList(QListWidget* list, const std::vector<std::string>& paths);
     void appendVideoToManifest(const QString& path, const std::string& key,
                                std::vector<std::string>& tripVec);
 };
-// SN: 00101
+// SN: 00104

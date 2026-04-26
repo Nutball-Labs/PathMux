@@ -227,9 +227,9 @@ and are applied as an overlay on top of the base preferences.  They
 affect only the current machine.  Use this to configure encoder paths,
 hardware acceleration, output directories, and log level per host when
 the same footage library is shared across multiple machines.
-Available settings: FFmpeg path, ExifTool path, ExifTool options,
-default output directory, temp directory, log level, and encoder
-settings.
+Available settings: FFmpeg path, ExifTool path, default output directory,
+temp directory, log level, and encoder settings.
+ExifTool GPS options are stored per camera profile, not per host.
 .TP
 .B \-\-encoderprefs
 Launch the interactive encoder preferences editor.  The default out-of-box
@@ -394,10 +394,11 @@ The optional 1080p collage is a simple transcode of the finished 4K master
 with the audio stream copied without re-encoding.
 .SH "GPS EXTRACTION"
 GPS extraction uses ExifTool to read GPS metadata from footage segments.
-PathMux passes the configured
-.B exiftoolOptions
-string to the ExifTool binary and parses the output; it does not validate
-the ExifTool version.
+The ExifTool option string is sourced from the camera profile embedded in
+the manifest (the
+.B gps_exiftool_args
+field), not from a global preference.
+PathMux does not validate the ExifTool version.
 If GPS extraction returns no data or corrupted/garbled data, verify that
 ExifTool is installed and that the options string matches your camera's
 GPS format.
@@ -428,91 +429,57 @@ undercount any mileage driven before GPS lock was achieved.
 Altitude values from the D90 are systematically incorrect (negative) and are
 ignored.  Speed is recorded in km/h; the dashcam OSD converts to mph for
 display but the raw stream is metric.
-.SS "ExifTool Options Preference"
-The complete exiftool command line (excluding the binary path and the input
-filename) is stored in the
-.B exiftoolOptions
-preference, editable via
-.B \-\-prefs
-option
-.BR [O] .
-The default value for Pruveeo D90 footage is:
+.SS "GPS Arguments \(em Per-Camera Profile"
+GPS extraction arguments are stored in the camera profile, not in global
+preferences.
+Each profile carries a
+.B gps_exiftool_args
+field containing the complete ExifTool option string for that camera\(cqs GPS format.
+At scan time this value is baked into the manifest; subsequent GPS operations
+use it automatically without consulting the global active profile setting.
 .PP
-.RS
-.B \-ee3 \-p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'
-.RE
-.PP
-This string is passed verbatim between the binary path and the quoted filename.
-The assembled command is:
-.PP
-.RS
-.RI exiftool " OPTIONS" " \(dqfile.ts\(dq"
-.RE
-.PP
-.B Important constraints when modifying this value:
+Built-in profiles and their GPS arguments:
 .TP
-.B Field order is fixed.
-The output parser expects exactly seven space-separated tokens per line after
-the date and time:
+.BR "Pruveeo D90 " ( pruveeo_d90 )
+.RS
+.EX
+\-ee3 \-p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'
+.EE
+.RE
+LIGOGPSINFO binary stream embedded in MPEG-TS.
+.B \-ee3
+is required to reach the private GPS stream.
+Accelerometer data is available.
+.TP
+.BR "Cobra GPS " ( cobra_gps )
+.RS
+.EX
+\-ee \-p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack#'
+.EE
+.RE
+Standard GPS0 atom in MOV/3GP container.
+.B \-ee
+(depth\~1) is sufficient.
+No accelerometer data on this camera.
+.PP
+To customise GPS arguments for a specific camera, open
+.BR "Tools > Camera Profiles" ,
+select the profile, click
+.BR "Fork as Custom" ,
+edit the
+.B gps_exiftool_args
+field in the JSON file, and rescan the footage directory to embed the updated profile.
+.PP
+The output parser expects the following fields per line after the date/time token:
 .IR latitude ,
 .IR longitude ,
 .IR altitude ,
-.IR speed ,
-.IR heading ,
-.IR accelerometer .
-Do not reorder, add, or remove fields from the
-.B \-p
-format string without corresponding changes to the parser source.
-.TP
-.B The \-p flag and format string must be included.
-Unlike most tool preferences which store only extraction flags,
-.B exiftoolOptions
-must contain the complete options string including
-.BR \-p .
-This design allows the
-.B \-p
-flag itself to be omitted entirely for cameras that require a different
-extraction approach (e.g.\&
-.BR \-json ).
-.TP
-.B Single quotes are required around the format string.
-The
-.B \-p
-argument must be quoted because it contains spaces and
-.B $
-characters.
-Single quotes prevent the shell from expanding
-.B $GPSDateTime
-etc. as variables.
-Double quotes would also expand
-.BR $GPSTrack ,
-corrupting the command.
-When editing in the preferences menu, enter the value exactly as it would
-appear on a shell command line.
-.TP
-.B The \-ee3 flag controls embedded stream extraction depth.
-Level 3 is required for MPEG-TS files from the D90 because the GPS data
-is in a private binary stream (LIGOGPSINFO) several levels deep in the
-container.  Level 1
-.RB ( \-ee )
-and level 2
-.RB ( \-ee2 )
-do not reach it.
-Other camera formats may work at lower levels or may not need
-.B \-ee
-at all.
-.TP
-.B The \-# numeric suffix on coordinate tags requests decimal degrees.
-.B $GPSLatitude#
-and
-.B $GPSLongitude#
-output signed decimal values (e.g.\&
-.IR \-89.025 )
-rather than the default DMS notation
-.RI ( "89 deg 1' 30\(dq W" ).
-The parser requires decimal form; remove the
-.B #
-suffix only if replacing the parser entirely.
+.IR speed\ (km/h) ,
+.IR heading\ (degrees) .
+Accelerometer fields
+.RI ( accelX\ accelY\ accelZ )
+are optional and may be omitted for cameras that do not record them.
+Field order is fixed.
 .SH "MANIFEST IDS"
 Manifests are assigned two-character IDs from an unambiguous alphanumeric
 character set.  The following characters are excluded to avoid visual
@@ -638,4 +605,4 @@ issue on the PathMux GitHub tracker.
 .BR pm_tripdebug (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-." SN: 00091
+." SN: 00104

@@ -71,10 +71,24 @@ file to open it in the system viewer.</li>
 <li><b>Dashboard:</b> Generate an animated instrument dashboard video (speed, heading,
 trip odometer, weather). Weather data from Open-Meteo archive API — no account or key
 required. Requires GPS to be extracted first.</li>
+<li><b>HUD:</b> Generate a military-style heads-up display as a transparent WebM
+(VP9/alpha). Elements: left speed tape (KPH), right speed tape (MPH), circular
+compass rose at bottom-center. Elements float over camera footage with no opaque
+background — designed for full-frame compositing over the collage output. Style,
+tape dimensions, and compass position are configurable per-trip; global defaults
+are set in <b>Tools &gt; Settings &gt; HUD</b>. Requires GPS to be extracted first.</li>
 </ul>
 
-<p>Map and Dashboard generation show a progress dialog. Both prompt before overwriting
-an existing output file.</p>
+<p>Map, Dashboard, and HUD generation each show a progress dialog with a Cancel
+button. All prompt before overwriting an existing output file.</p>
+
+<div class="warning">
+<b>GPS sync note:</b> The map and HUD overlay are timed relative to the video using
+<b>gpsLockSeconds</b> — the number of seconds from trip start until the first GPS
+satellite fix. This value is computed automatically when you extract GPS from the
+GUI. If the map or HUD appears offset from the video, re-extract GPS for that trip
+to refresh the value.
+</div>
 
 <h2>Video Build Dialog</h2>
 
@@ -105,16 +119,24 @@ is valid.</li>
 </ul>
 
 <p>The <b>centre overlay cell</b> (between the quadrants) configures an optional
-video composited at 960×540 centred over the 4K output. Same source options as the
-quadrants. Selecting None with the overlay enabled uses the logo morph as a looping
-branded watermark on the finished video.</p>
+video composited at 960×540 centred over the 4K output. Intended for map and
+dashboard videos. Selecting None with the overlay enabled uses the logo morph as a
+looping branded watermark on the finished video.</p>
 
 <p>Below the grid:</p>
 <ul>
+<li><b>HUD overlay (full-screen):</b> checkbox to composite a transparent HUD WebM
+(VP9/alpha) at full 3840×2160 over the entire collage output. The HUD elements
+(speed tapes, compass rose) float over all four camera quadrants with genuine alpha
+transparency. This is separate from the centre overlay — enabling both applies the
+map/dashboard inset first, then the HUD on top. If no HUD video has been generated
+for the trip yet, enabling the checkbox prompts you to build one first in Trip
+Properties → HUD tab.</li>
 <li><b>Collage audio from:</b> which quadrant provides the audio track.</li>
 <li><b>Build:</b> 4K (3840×2160 H.265) and/or 1080p downscale checkboxes.</li>
 <li><b>Preview Frame…</b> — grabs one frame per active slot via ffmpeg and shows
 a 960×540 composite preview of the collage layout before you commit to a full build.
+The HUD overlay is also composited into the preview with correct alpha transparency.
 Takes a few seconds per slot.</li>
 </ul>
 
@@ -188,13 +210,30 @@ You can also hold Ctrl and scroll the mouse wheel over either panel.</dd>
 <h3>Tools</h3>
 <dl>
 <dt>Settings… (Ctrl+,)</dt>
-<dd>Open the Settings dialog to configure ffmpeg path, ExifTool path, default
-export directory, camera profile, encoder preset, and UI scale.</dd>
+<dd>Open the Settings dialog to configure ffmpeg path, ExifTool binary path, default
+export directory, active camera profile, encoder preset, and UI scale.
+ExifTool GPS options are no longer a global setting — they are stored per camera
+profile (see <b>Camera Profiles</b>).</dd>
 
 <dt>Setup Wizard…</dt>
 <dd>Re-run the first-run setup wizard. Pre-populated with current settings so
 you can update specific fields (e.g. swap the encoder preset after adding a
 GPU) without reconfiguring everything.</dd>
+
+<dt>Camera Profiles…</dt>
+<dd>Manage camera profiles.  Lists all built-in and user profiles.
+<ul>
+<li><b>Fork as Custom</b> — create an editable JSON copy of a built-in profile in
+<code>~/.config/pathmux/profiles/</code>.  Edit it with any text editor, then
+rescan footage to embed the updated profile.</li>
+<li><b>Open in Editor</b> — open a user profile in the system default editor.</li>
+<li><b>Set as Active</b> — set the selected profile as the default for new scans
+(shown with a ★ in the list).</li>
+<li><b>Delete</b> — remove a user profile file.  Built-in profiles cannot be
+deleted, but can be overridden by forking them.</li>
+</ul>
+Manifests that already have an embedded profile snapshot are unaffected by
+profile changes until the footage directory is rescanned.</dd>
 
 <dt>Probe SD Card…</dt>
 <dd>Run <b>pm_probe --wizard</b> against an SD card to create or update a camera
@@ -215,7 +254,7 @@ profile.</dd>
 <p>The Settings dialog covers:</p>
 <ul>
 <li><b>Paths:</b> ffmpeg binary, ExifTool binary, default export directory</li>
-<li><b>Camera Profile:</b> active profile ID; controls trip detection layout</li>
+<li><b>Camera Profile:</b> active profile ID used when scanning new directories with no existing manifest.  Manage profiles in <b>Tools &gt; Camera Profiles</b>.</li>
 <li><b>Display:</b> imperial/metric units toggle; UI scale factor (1.0–3.0,
 requires restart)</li>
 <li><b>Encoder:</b> preset selection and individual encoder parameters
@@ -261,4 +300,4 @@ recorded fix — not total odometer distance.
 
 </body>
 </html>
-<!-- SN: 00102 -->
+<!-- SN: 00104 -->

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "gps_export.hpp"
+#include "camera_profile.hpp"
 #include "compat.hpp"
 #include "config_manager.hpp"
 #include "json.hpp"
@@ -42,6 +43,10 @@ static std::string fmtIso8601(const std::string& raw)
 {
     if (raw.size() < 19) return raw;
     std::string out = raw;
+    // Strip any existing timezone suffix before reformatting
+    while (!out.empty() && !std::isdigit((unsigned char)out.back()) && out.back() != ':')
+        out.pop_back();
+    if (out.size() < 19) return raw;
     out[4]  = '-';
     out[7]  = '-';
     out[10] = 'T';
@@ -63,7 +68,6 @@ bool extractGps(json& root,
                 int tripIdx,
                 const std::string& manifestFile,
                 const std::string& exiftoolPath,
-                const std::string& exiftoolOptions,
                 bool verbose,
                 std::function<void(int done, int total)> progressCb)
 {
@@ -78,21 +82,110 @@ bool extractGps(json& root,
     const auto& segs  = jTrip["segments"];
     int segCount      = (int)segs.size();
 
-    // exiftool format: "YYYY:MM:DD HH:MM:SS lat lon altitude speed_kmh heading_deg"
-    // Full command including -p and format string is in exiftoolOptions pref.
-    const std::string exifCmd = exiftoolPath + " " + exiftoolOptions + " ";
+    // Resolve GPS extraction args and primary slot from the manifest's embedded
+    // camera profile.  Fallback chain:
+    //   1. Embedded profile's gps_exiftool_args field
+    //   2. Built-in profile matching the embedded profile_id
+    //   3. D90 hard-coded default (legacy manifests pre-dating profile embedding)
+    static const std::string kD90Args =
+        "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude#"
+        " $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'";
+    std::string effectiveArgs = kD90Args;
+    std::string primarySlot   = "front";
+    if (root.contains("camera_profile") && root["camera_profile"].is_object()) {
+        const auto& cp = root["camera_profile"];
+        // 1. Profile has GPS args directly embedded
+        std::string profileArgs = cp.value("gps_exiftool_args", "");
+        if (!profileArgs.empty()) {
+            effectiveArgs = profileArgs;
+        } else {
+            // 2. Look up built-in by profile_id — handles manifests embedded
+            //    before gps_exiftool_args was added to the profile schema
+            std::string pid = cp.value("profile_id", "");
+            for (const auto& bp : CameraProfile::getBuiltinProfiles()) {
+                if (bp.profileId == pid && !bp.gpsExiftoolArgs.empty()) {
+                    effectiveArgs = bp.gpsExiftoolArgs;
+                    break;
+                }
+            }
+        }
+        // Primary slot from profile
+        if (cp.contains("cameraSlots") && cp["cameraSlots"].is_array()) {
+            for (const auto& s : cp["cameraSlots"])
+                if (s.value("is_primary", false)) {
+                    primarySlot = s.value("name", "front");
+                    break;
+                }
+        }
+    }
+    const std::string exifCmd = exiftoolPath + " " + effectiveArgs + " ";
+
+    // Resolve source root so relative segment paths (schema 3) become absolute.
+    // Priority: path_map[os_hostname] → manifest parent directory.
+    std::string sourceRoot;
+    {
+        std::string h = getShortHostname();
+        std::transform(h.begin(), h.end(), h.begin(),
+            [](unsigned char c){ return (char)std::tolower(c); });
+#ifdef _WIN32
+        std::string pmKey = "windows_" + h;
+#elif defined(__APPLE__)
+        std::string pmKey = "macos_" + h;
+#else
+        std::string pmKey = "linux_" + h;
+#endif
+        if (root.contains("path_map") && root["path_map"].is_object()) {
+            const auto& pm = root["path_map"];
+            if (pm.contains(pmKey) && pm[pmKey].is_string())
+                sourceRoot = pm[pmKey].get<std::string>();
+        }
+        if (sourceRoot.empty())
+            sourceRoot = fs::path(manifestFile).parent_path().string();
+        while (!sourceRoot.empty() &&
+               (sourceRoot.back() == '/' || sourceRoot.back() == '\\'))
+            sourceRoot.pop_back();
+    }
 
     json trackArray = json::array();
     bool gotAny     = false;
     int prePositionLockCount = 0;  // records with zero lat/lon (no position fix yet)
     int preTimeLockCount     = 0;  // records with valid position but unsynchronized clock
 
+    // Capture first-segment front path now so gpsLockSeconds can be computed after the loop.
+    std::string firstSegFront;
+    {
+        const auto& s0 = segs[0];
+        if (s0.contains("cameras") && s0["cameras"].is_object()) {
+            const auto& c0 = s0["cameras"];
+            if (c0.contains(primarySlot))  firstSegFront = c0[primarySlot].get<std::string>();
+            else if (c0.contains("front")) firstSegFront = c0["front"].get<std::string>();
+        } else {
+            firstSegFront = s0.value("front", "-");
+        }
+        if (!firstSegFront.empty() && firstSegFront != "-"
+                && !fs::path(firstSegFront).is_absolute() && !sourceRoot.empty())
+            firstSegFront = sourceRoot + "/" + firstSegFront;
+    }
+
     for (int si = 0; si < segCount; ++si) {
         std::string frontPath = "-";
-        if (segs[si].contains("cameras") && segs[si]["cameras"].contains("front"))
-            frontPath = segs[si]["cameras"]["front"].get<std::string>();
-        else
+        if (segs[si].contains("cameras") && segs[si]["cameras"].is_object()) {
+            const auto& cams = segs[si]["cameras"];
+            // Use the profile's primary slot; fall back to "front" for legacy manifests
+            if (cams.contains(primarySlot))
+                frontPath = cams[primarySlot].get<std::string>();
+            else if (cams.contains("front"))
+                frontPath = cams["front"].get<std::string>();
+        } else {
             frontPath = segs[si].value("front", "-");  // legacy manifest fallback
+        }
+
+        // Resolve relative path to absolute (schema 3 manifests store relative paths).
+        if (!frontPath.empty() && frontPath != "-"
+                && !fs::path(frontPath).is_absolute()
+                && !sourceRoot.empty())
+            frontPath = sourceRoot + "/" + frontPath;
+
         if (frontPath == "-" || frontPath.empty()) continue;
 
         // verbose=true: let ExifTool stderr reach the terminal.
@@ -127,6 +220,9 @@ bool extractGps(json& root,
             if (!(iss >> datePart >> timePart >> lat >> lon >> alt >> speed >> heading)) {
                 continue;
             }
+            // Strip UTC suffix — some cameras (e.g. Cobra GPS) append 'Z' to the time token
+            if (!timePart.empty() && (timePart.back() == 'Z' || timePart.back() == 'z'))
+                timePart.pop_back();
             accelX = accelY = accelZ = 0.0;
             iss >> accelX >> accelY >> accelZ;  // optional; leave zero if absent
 
@@ -162,10 +258,38 @@ bool extractGps(json& root,
 
     if (!gotAny) {
         std::cerr << "\n  No GPS records returned by exiftool.\n"
-                  << "  Verify the exiftoolOptions format string matches your camera.\n"
+                  << "  Verify the camera profile's gps_exiftool_args matches your camera.\n"
                   << "  If your camera's GPS format is not supported, contact the\n"
                   << "  ExifTool maintainer at https://exiftool.org\n";
         return false;
+    }
+
+    // Compute gpsLockSeconds: UTC epoch of first valid GPS record minus local epoch of
+    // the first segment's filename.  Same arithmetic as pm_gpsinfo --scan-all-trips so
+    // map and HUD overlay are always synced correctly after GPS extraction — no separate
+    // scan step required.
+    if (!trackArray.empty() && !firstSegFront.empty() && firstSegFront != "-") {
+        std::string baseName = fs::path(firstSegFront).filename().string();
+        if (baseName.size() >= 15 && baseName[8] == '_') {
+            struct tm ft = {};
+            std::istringstream fss(baseName.substr(0, 15));
+            fss >> std::get_time(&ft, "%Y%m%d_%H%M%S");
+            ft.tm_isdst = -1;
+            time_t fileEpoch = std::mktime(&ft);
+
+            std::string firstGpsTs = trackArray.front().value("timestamp", "");
+            if (firstGpsTs.size() >= 19) {
+                struct tm gt = {};
+                std::istringstream gss(firstGpsTs);
+                gss >> std::get_time(&gt, "%Y:%m:%d %H:%M:%S");
+                time_t gpsEpoch = timegm(&gt);
+                if (fileEpoch > 0 && gpsEpoch > 0) {
+                    int lockSec = static_cast<int>(gpsEpoch - fileEpoch);
+                    if (lockSec >= 0)
+                        jTrip["gpsLockSeconds"] = lockSec;
+                }
+            }
+        }
     }
 
     jTrip["gpsTrack"]                  = trackArray;
@@ -463,4 +587,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 }
 
 } // namespace Pathmux
-// SN: 00101
+// SN: 00104

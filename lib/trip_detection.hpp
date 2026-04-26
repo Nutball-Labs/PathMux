@@ -118,6 +118,7 @@ struct Trip {
     // can live anywhere and multiple outputs per trip are supported.
     std::vector<std::string> mapVideos;   // moving-map MP4s (map1, map2, …)
     std::vector<std::string> dashVideos;  // dashboard MP4s  (dash1, dash2, …)
+    std::vector<std::string> hudVideos;   // HUD overlay WebMs (hud1, hud2, …)
 
     // Full GPS track — one point per second extracted from all segments.
     // Empty until user requests GPS extraction.
@@ -149,15 +150,14 @@ public:
     // profile: camera layout description.  Defaults to the Pruveeo D90
     // built-in profile so existing callers compile without modification.
     std::vector<Trip> detectTrips(const std::string& path,
-                                  const CameraProfile& profile       = CameraProfile::d90Default(),
-                                  int gapThresholdSeconds            = 900,
-                                  int fuzzyWindowSeconds             = 5,
-                                  const std::string& ffprobePath     = "ffprobe",
-                                  const std::string& exiftoolPath    = "exiftool",
-                                  const std::string& exiftoolOptions = "-ee3");
+                                  const CameraProfile& profile    = CameraProfile::d90Default(),
+                                  int gapThresholdSeconds         = 900,
+                                  int fuzzyWindowSeconds          = 5,
+                                  const std::string& ffprobePath  = "ffprobe",
+                                  const std::string& exiftoolPath = "exiftool");
 };
 
 } // namespace Pathmux
 
 #endif
-// SN: 00101
+// SN: 00104

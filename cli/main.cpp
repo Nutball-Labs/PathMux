@@ -243,7 +243,6 @@ int main(int argc, char* argv[]) {
     if (doExport) {
         if (doScan) exportOpts.manifestPath = scanPath;
         exportOpts.exiftoolPath     = config.getExiftoolPath();
-        exportOpts.exiftoolOptions  = config.getExiftoolOptions();
         exportOpts.defaultExportDir = config.getDefaultExportDir();
         exporter.runInteractive(exportOpts);
         return 0;
@@ -277,32 +276,51 @@ int main(int argc, char* argv[]) {
         }
 
         // --- Camera profile detection ---
-        // If the manifest already has a profile_id recorded, use it without asking.
-        // Otherwise probe the directory and present the best guess for confirmation.
+        // If the manifest already exists, use its embedded profile (or profile_id
+        // fallback) so the same profile is used consistently across rescans.
+        // On first scan, probe the directory and ask for confirmation.
         CameraProfile scanProfile = config.getCameraProfile();
         {
-            std::string existingManifest = config.lookupManifestFilePath(scanPath);
-            std::string recordedProfile;
-            if (!existingManifest.empty()) {
-                std::ifstream mf(existingManifest);
-                if (mf.is_open()) {
-                    try {
-                        nlohmann::json mj; mf >> mj;
-                        recordedProfile = mj.value("profile_id", "");
-                    } catch (...) {}
+            bool hasManifest = !config.lookupManifestFilePath(scanPath).empty();
+            bool doProbeFlow = !hasManifest;
+
+            if (hasManifest) {
+                CameraProfile embedded = config.getManifestProfile(scanPath);
+                std::cout << "\n  Embedded profile: " << embedded.name
+                          << " (" << embedded.profileId << ")\n\n"
+                          << "  [Y]  Use this profile\n"
+                          << "  [C]  Change profile\n"
+                          << "  [Q]  Cancel\n\n"
+                          << "  Choice [Y]: ";
+                std::string choice;
+                std::getline(std::cin, choice);
+                if (choice == "Q" || choice == "q") { std::cout << "  Scan cancelled.\n"; return 0; }
+                if (choice == "C" || choice == "c") {
+                    doProbeFlow = true;
+                } else {
+                    scanProfile = embedded;
                 }
             }
 
-            if (!recordedProfile.empty()) {
-                // Re-use the profile that was used when this directory was first scanned.
-                auto s = config.getSettings();
-                s.activeProfileId = recordedProfile;
-                config.applySettings(s);
-                scanProfile = config.getCameraProfile();
-            } else {
+            if (doProbeFlow) {
                 // Probe the directory and suggest the best match.
                 auto allProfiles = config.loadAllProfiles();
                 auto match = Pathmux::detectProfile(scanPath, allProfiles);
+
+                // Mixed-content warning: multiple camera profiles found.
+                if (match.isMixedContent) {
+                    std::cout << "\n  WARNING: Multiple camera profiles found in this path:\n";
+                    for (const auto& p : match.mixedProfiles)
+                        std::cout << "    - " << p.name << " (" << p.profileId << ")\n";
+                    std::cout << "\n"
+                              << "  Scanning a path with mixed dashcam footage will produce\n"
+                              << "  incorrect trip groupings. It is strongly recommended to\n"
+                              << "  scan each camera's footage directory separately.\n\n"
+                              << "  Continue anyway? [y/N]: ";
+                    std::string choice;
+                    std::getline(std::cin, choice);
+                    if (choice != "y" && choice != "Y") { std::cout << "  Scan cancelled.\n"; return 0; }
+                }
 
                 if (match.hasMatch()) {
                     std::cout << "\n  Detected camera: " << match.profile.name
@@ -353,22 +371,22 @@ int main(int argc, char* argv[]) {
                     std::string choice;
                     std::getline(std::cin, choice);
                     if (choice != "y" && choice != "Y") { std::cout << "  Scan cancelled.\n"; return 0; }
+                    // scanProfile keeps the getCameraProfile() default from initialization
                 }
             }
         }
 
         std::cout << "Scanning: " << scanPath
-                  << "  (profile=" << config.getActiveProfileId()
+                  << "  (profile=" << scanProfile.profileId
                   << "  gap=" << config.getGapThreshold() << "s)\n";
         auto trips = detector.detectTrips(scanPath,
                                           scanProfile,
                                           config.getGapThreshold(),
                                           config.getFuzzyWindow(),
                                           config.getFfprobePath(),
-                                          config.getExiftoolPath(),
-                                          config.getExiftoolOptions());
+                                          config.getExiftoolPath());
         if (!trips.empty()) {
-            config.saveTripCache(scanPath, trips);
+            config.saveTripCache(scanPath, trips, scanProfile);
             auto saved = config.loadTripCache(scanPath);
             std::string mid = config.getManifestIdForPath(scanPath);
             finder.showTripSummary(saved, scanPath, config.getUseImperial(), mid);
@@ -421,4 +439,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00089
+// SN: 00104

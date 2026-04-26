@@ -351,14 +351,13 @@ int main(int argc, char* argv[])
     if (needsGps) {
         ConfigManager config;
         std::string etPath = config.getExiftoolPath();
-        std::string etOpts = config.getExiftoolOptions();
 
         int segCount = jTrip.contains("segments") && jTrip["segments"].is_array()
                        ? (int)jTrip["segments"].size() : 0;
         std::cerr << "Extracting GPS for " << midTid
                   << " (" << segCount << " segment" << (segCount != 1 ? "s" : "") << ")";
 
-        if (!Pathmux::extractGps(root, tripIdx, manifestFile, etPath, etOpts, verbose)) {
+        if (!Pathmux::extractGps(root, tripIdx, manifestFile, etPath, verbose)) {
             std::cerr << "GPS extraction failed.\n";
             return 1;
         }
@@ -389,4 +388,4 @@ int main(int argc, char* argv[])
 
     return exitCode;
 }
-// SN: 00089
+// SN: 00104
