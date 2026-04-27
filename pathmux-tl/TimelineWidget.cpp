@@ -3,6 +3,7 @@
 #include "TimelineWidget.h"
 #include <QPainter>
 #include <QMouseEvent>
+#include <QWheelEvent>
 #include <QContextMenuEvent>
 #include <QMenu>
 #include <QAction>
@@ -25,8 +26,11 @@ void TimelineWidget::setDuration(qint64 ms)
     m_marks.clear();
     m_nextId = 1;
     m_pendingStartMs = -1;
+    m_zoom = 1.0;
+    m_viewStartMs = 0;
     update();
     emit pendingStartChanged(-1);
+    emitViewChanged();
 }
 
 void TimelineWidget::setPosition(qint64 ms)
@@ -93,20 +97,104 @@ void TimelineWidget::clearPending()
 }
 
 // ---------------------------------------------------------------------------
-// Coordinate helpers
+// Zoom / scroll
+// ---------------------------------------------------------------------------
+qint64 TimelineWidget::visibleMs() const
+{
+    return (m_duration > 0) ? (qint64)(m_duration / m_zoom) : 0;
+}
+
+void TimelineWidget::clampView()
+{
+    if (m_duration <= 0) return;
+    qint64 vis = visibleMs();
+    m_viewStartMs = std::max((qint64)0,
+                             std::min(m_viewStartMs, m_duration - vis));
+}
+
+void TimelineWidget::emitViewChanged()
+{
+    emit viewChanged(m_viewStartMs, visibleMs(), m_duration);
+}
+
+void TimelineWidget::zoomIn()
+{
+    if (m_duration <= 0) return;
+    // Zoom centered on the current playhead if visible, else centre of view.
+    qint64 pivot = (m_position >= m_viewStartMs &&
+                    m_position <= m_viewStartMs + visibleMs())
+                   ? m_position
+                   : m_viewStartMs + visibleMs() / 2;
+    double newZoom = std::min(m_zoom * kZoomStep, kZoomMax);
+    // Cap so we don't zoom in past 1 second visible.
+    double minVis = 1000.0;
+    newZoom = std::min(newZoom, m_duration / minVis);
+    if (newZoom <= m_zoom) return;
+    m_zoom = newZoom;
+    m_viewStartMs = pivot - (qint64)(visibleMs() / 2);
+    clampView();
+    update();
+    emitViewChanged();
+}
+
+void TimelineWidget::zoomOut()
+{
+    if (m_duration <= 0) return;
+    double newZoom = std::max(m_zoom / kZoomStep, 1.0);
+    if (newZoom >= m_zoom) return;
+    qint64 pivot = m_viewStartMs + visibleMs() / 2;
+    m_zoom = newZoom;
+    m_viewStartMs = pivot - (qint64)(visibleMs() / 2);
+    clampView();
+    update();
+    emitViewChanged();
+}
+
+void TimelineWidget::zoomReset()
+{
+    m_zoom = 1.0;
+    m_viewStartMs = 0;
+    update();
+    emitViewChanged();
+}
+
+void TimelineWidget::setViewStartMs(qint64 ms)
+{
+    m_viewStartMs = ms;
+    clampView();
+    update();
+}
+
+void TimelineWidget::scrollToPosition()
+{
+    if (m_duration <= 0 || m_zoom <= 1.0) return;
+    qint64 vis = visibleMs();
+    if (m_position < m_viewStartMs || m_position > m_viewStartMs + vis) {
+        m_viewStartMs = m_position - vis / 2;
+        clampView();
+        update();
+        emitViewChanged();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Coordinate helpers  (zoom-aware)
 // ---------------------------------------------------------------------------
 qint64 TimelineWidget::pxToMs(int px) const
 {
     if (m_duration <= 0 || width() <= 0) return 0;
-    qint64 ms = (qint64)((double)std::max(0, std::min(px, width()))
-                         / width() * m_duration);
+    qint64 vis = visibleMs();
+    double t = (double)std::max(0, std::min(px, width())) / width();
+    qint64 ms = m_viewStartMs + (qint64)(t * vis);
     return std::max((qint64)0, std::min(ms, m_duration));
 }
 
 int TimelineWidget::msToPx(qint64 ms) const
 {
     if (m_duration <= 0) return 0;
-    return (int)((double)ms / m_duration * width());
+    qint64 vis = visibleMs();
+    if (vis <= 0) return 0;
+    return (int)((double)(ms - m_viewStartMs) / vis * width());
 }
 
 int TimelineWidget::markAt(int px) const
@@ -314,6 +402,40 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent* e)
         emit marksChanged();
     m_drag     = DragMode::None;
     m_dragMark = -1;
+}
+
+// ---------------------------------------------------------------------------
+// Wheel: Ctrl+scroll zooms centred on cursor; plain scroll pans
+// ---------------------------------------------------------------------------
+void TimelineWidget::wheelEvent(QWheelEvent* e)
+{
+    if (m_duration <= 0) return;
+    int delta = e->angleDelta().y();
+    if (delta == 0) return;
+
+    if (e->modifiers() & Qt::ControlModifier) {
+        // Zoom centred on cursor position
+        qint64 pivot = pxToMs(e->position().x());
+        double factor = (delta > 0) ? kZoomStep : 1.0 / kZoomStep;
+        double newZoom = std::clamp(m_zoom * factor, 1.0, kZoomMax);
+        double minVis = 1000.0;
+        newZoom = std::min(newZoom, m_duration / minVis);
+        if (newZoom == m_zoom) return;
+        m_zoom = newZoom;
+        m_viewStartMs = pivot - (qint64)(visibleMs() / 2);
+        clampView();
+        update();
+        emitViewChanged();
+    } else {
+        // Pan — scroll 10 % of visible range per notch
+        if (m_zoom <= 1.0) return;
+        qint64 step = visibleMs() / 10;
+        m_viewStartMs += (delta < 0) ? step : -step;
+        clampView();
+        update();
+        emitViewChanged();
+    }
+    e->accept();
 }
 
 // ---------------------------------------------------------------------------

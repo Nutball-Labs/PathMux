@@ -18,6 +18,11 @@
 #include <QDialog>
 #include <QPixmap>
 #include <QDir>
+#include <QScrollBar>
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
+#include <QKeySequence>
 #include <algorithm>
 #include <cmath>
 
@@ -74,9 +79,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     trow->addWidget(hlpLbl);
     vlay->addLayout(trow);
 
-    // ── Timeline ──────────────────────────────────────────────────────────────
+    // ── Timeline + scrollbar ──────────────────────────────────────────────────
     m_timeline = new TimelineWidget(this);
     vlay->addWidget(m_timeline);
+
+    m_timeScroll = new QScrollBar(Qt::Horizontal, this);
+    m_timeScroll->setRange(0, 0);
+    m_timeScroll->setSingleStep(1000);
+    m_timeScroll->setPageStep(1000);
+    m_timeScroll->setVisible(false);
+    vlay->addWidget(m_timeScroll);
 
     // ── Marks summary ─────────────────────────────────────────────────────────
     m_marksSummary = new QLabel("No timelapse marks. Right-click the timeline to add one.", this);
@@ -134,6 +146,36 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         m_timeline->clearAllMarks();
         m_timeline->clearPending();
     });
+    connect(m_timeline, &TimelineWidget::viewChanged,
+            this, [this](qint64 viewStart, qint64 visible, qint64 total){
+        bool zoomed = (visible < total && total > 0);
+        m_timeScroll->setVisible(zoomed);
+        if (zoomed) {
+            m_timeScroll->setRange(0, (int)(total - visible));
+            m_timeScroll->setPageStep((int)visible);
+            m_timeScroll->setSingleStep((int)(visible / 10));
+            QSignalBlocker sb(m_timeScroll);
+            m_timeScroll->setValue((int)viewStart);
+        }
+    });
+    connect(m_timeScroll, &QScrollBar::valueChanged,
+            this, [this](int val){
+        m_timeline->setViewStartMs((qint64)val);
+    });
+
+    // ── Menu bar ──────────────────────────────────────────────────────────────
+    auto* viewMenu = menuBar()->addMenu("&View");
+    auto* zoomInAct = viewMenu->addAction("Zoom &In");
+    zoomInAct->setShortcut(QKeySequence::ZoomIn);
+    connect(zoomInAct, &QAction::triggered, m_timeline, &TimelineWidget::zoomIn);
+
+    auto* zoomOutAct = viewMenu->addAction("Zoom &Out");
+    zoomOutAct->setShortcut(QKeySequence::ZoomOut);
+    connect(zoomOutAct, &QAction::triggered, m_timeline, &TimelineWidget::zoomOut);
+
+    auto* zoomResetAct = viewMenu->addAction("&Reset Zoom");
+    zoomResetAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+    connect(zoomResetAct, &QAction::triggered, m_timeline, &TimelineWidget::zoomReset);
     connect(m_timeline, &TimelineWidget::pendingStartChanged,
             this, [this](qint64 ms){
         if (ms >= 0)
@@ -191,6 +233,7 @@ void MainWindow::onBrowseOutput()
 void MainWindow::onPlayerPositionChanged(qint64 ms)
 {
     m_timeline->setPosition(ms);
+    m_timeline->scrollToPosition();
     m_posLabel->setText(formatMs(ms) + " / " + formatMs(m_player->duration()));
 }
 
@@ -310,6 +353,16 @@ void MainWindow::keyPressEvent(QKeyEvent* e)
         }
         break;
     }
+    case Qt::Key_Equal:
+    case Qt::Key_Plus:
+        if (e->modifiers() & Qt::ControlModifier) m_timeline->zoomIn();
+        break;
+    case Qt::Key_Minus:
+        if (e->modifiers() & Qt::ControlModifier) m_timeline->zoomOut();
+        break;
+    case Qt::Key_0:
+        if (e->modifiers() & Qt::ControlModifier) m_timeline->zoomReset();
+        break;
     case Qt::Key_Left:
         m_player->setPosition(std::max((qint64)0, m_player->position() - 5000));
         break;

@@ -3,6 +3,7 @@
 #pragma once
 #include <QMainWindow>
 #include <QMediaPlayer>
+#include <QProcess>
 #include <QString>
 #include "TimelineWidget.h"
 
@@ -13,6 +14,7 @@ class QSlider;
 class QLineEdit;
 class QProgressBar;
 class QProcess;
+class QScrollBar;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -67,9 +69,10 @@ private:
     QPushButton*  m_cancelBtn   = nullptr;
     QLabel*       m_posLabel    = nullptr;
     QLabel*       m_marksSummary= nullptr;
-    QProgressBar* m_progressBar = nullptr;
-    QLabel*       m_statusLabel = nullptr;
-    TimelineWidget* m_timeline  = nullptr;
+    QProgressBar*   m_progressBar = nullptr;
+    QLabel*         m_statusLabel = nullptr;
+    TimelineWidget* m_timeline    = nullptr;
+    QScrollBar*     m_timeScroll  = nullptr;
 
     // FFmpeg process
     QProcess* m_ffmpegProc = nullptr;
