@@ -17,8 +17,10 @@
 #include <QCloseEvent>
 #include <QDialog>
 #include <QPixmap>
+#include <QPalette>
 #include <QDir>
 #include <QScrollBar>
+#include <QApplication>
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
@@ -60,9 +62,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_videoWidget = new QVideoWidget(this);
     m_videoWidget->setMinimumHeight(280);
     m_videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    // Black background prevents the native XWindow from showing whatever is
-    // behind the widget before the first video frame is decoded on Linux.
-    m_videoWidget->setStyleSheet("background: black;");
+    // Force the native X11 window to be created immediately rather than lazily.
+    // Without this, the window is transparent until the first video frame arrives
+    // and the apps behind show through (z-order bleed-through on Linux).
+    m_videoWidget->setAttribute(Qt::WA_NativeWindow);
+    m_videoWidget->winId();   // triggers real window creation right now
+    // QPalette black background — setStyleSheet() does not reach native windows.
+    QPalette vpal = m_videoWidget->palette();
+    vpal.setColor(QPalette::Window, Qt::black);
+    m_videoWidget->setPalette(vpal);
+    m_videoWidget->setAutoFillBackground(true);
     m_player->setVideoOutput(m_videoWidget);
     vlay->addWidget(m_videoWidget, 1);
 
@@ -529,7 +538,7 @@ void MainWindow::onProcessReadyRead()
 {
     if (!m_ffmpegProc) return;
     QByteArrayList lines = m_ffmpegProc->readAllStandardError().split('\r');
-    for (const auto& l : qAsConst(lines)) {
+    for (const auto& l : std::as_const(lines)) {
         QByteArray t = l.trimmed();
         if (!t.isEmpty()) m_statusLabel->setText(QString::fromLocal8Bit(t));
     }
