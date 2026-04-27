@@ -439,7 +439,7 @@ QString MainWindow::buildFfmpegCmd() const
     fc += inputs + QString("concat=n=%1:v=1:a=0[vout]").arg(n);
 
     QString output = m_outputEdit->text().trimmed();
-    return QString("\"%1\" -y -i \"%2\" -filter_complex \"%3\" "
+    return QString("\"%1\" -y -progress pipe:1 -i \"%2\" -filter_complex \"%3\" "
                    "-map [vout] -an \"%4\"")
            .arg(findFfmpeg(), m_inputPath, fc, output);
 }
@@ -468,12 +468,17 @@ void MainWindow::onProcess()
         return;
     }
 
+    m_outputDurationUs = (qint64)(calcOutputDurationSecs() * 1e6);
     m_processBtn->setEnabled(false);
     m_cancelBtn->setEnabled(true);
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(0);
     m_progressBar->setVisible(true);
     m_statusLabel->setText("Processing\xe2\x80\xa6");
 
     m_ffmpegProc = new QProcess(this);
+    connect(m_ffmpegProc, &QProcess::readyReadStandardOutput,
+            this, &MainWindow::onProcessProgress);
     connect(m_ffmpegProc, &QProcess::readyReadStandardError,
             this, &MainWindow::onProcessReadyRead);
     connect(m_ffmpegProc,
@@ -487,6 +492,22 @@ void MainWindow::onCancelProcess()
     if (m_ffmpegProc && m_ffmpegProc->state() != QProcess::NotRunning) {
         m_ffmpegProc->kill();
         m_statusLabel->setText("Cancelled.");
+    }
+}
+
+void MainWindow::onProcessProgress()
+{
+    if (!m_ffmpegProc || m_outputDurationUs <= 0) return;
+    const QByteArrayList lines = m_ffmpegProc->readAllStandardOutput().split('\n');
+    for (const QByteArray& line : lines) {
+        if (line.startsWith("out_time_us=")) {
+            bool ok;
+            qint64 us = line.mid(12).trimmed().toLongLong(&ok);
+            if (ok && us >= 0) {
+                int pct = (int)(std::min(1.0, (double)us / m_outputDurationUs) * 100);
+                m_progressBar->setValue(pct);
+            }
+        }
     }
 }
 
@@ -507,6 +528,9 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
     m_progressBar->setVisible(false);
     m_ffmpegProc->deleteLater();
     m_ffmpegProc = nullptr;
+
+    if (status == QProcess::NormalExit && exitCode == 0)
+        m_progressBar->setValue(100);
 
     if (status == QProcess::CrashExit || exitCode != 0) {
         m_statusLabel->setText(QString("ffmpeg exited with code %1").arg(exitCode));
@@ -546,6 +570,24 @@ void MainWindow::updateMarksSummary()
     }
     m_marksSummary->setText(
         QString("%1 timelapse mark(s):  ").arg(marks.size()) + parts.join("   "));
+}
+
+double MainWindow::calcOutputDurationSecs() const
+{
+    const auto& marks = m_timeline->marks();
+    qint64 totalMs = m_timeline->duration();
+    if (totalMs <= 0) return 0;
+
+    double pos = 0, totalS = totalMs / 1000.0, outputS = 0;
+    for (const auto& m : marks) {
+        double mStart = m.startMs / 1000.0;
+        double mEnd   = m.endMs   / 1000.0;
+        if (mStart > pos + 0.02) outputS += mStart - pos;
+        outputS += (m.targetSecs > 0 ? m.targetSecs : 1.0);
+        pos = mEnd;
+    }
+    if (pos < totalS - 0.02) outputS += totalS - pos;
+    return outputS;
 }
 
 QString MainWindow::formatMs(qint64 ms) const

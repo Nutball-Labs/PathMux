@@ -44,14 +44,18 @@ private slots:
     void onMarkDeleteRequested(int id);
     void onMarksChanged();
 
-    void onProcessReadyRead();
+    void onProcessProgress();     // stdout: -progress pipe:1 key=value
+    void onProcessReadyRead();    // stderr: status messages
     void onProcessFinished(int exitCode, QProcess::ExitStatus);
 
 private:
-    void updateTransportButtons();
-    void updateMarksSummary();
+    void    updateTransportButtons();
+    void    updateMarksSummary();
     QString buildFfmpegCmd() const;
+    double  calcOutputDurationSecs() const;
     QString formatMs(qint64 ms) const;
+
+    qint64  m_outputDurationUs = 0;   // expected output duration for progress %
 
     // File
     QString m_inputPath;
