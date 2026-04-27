@@ -444,6 +444,37 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# pm_tl — PathMux Timelapse Editor (standalone Qt6 app)
+# Requires Qt6::Multimedia and Qt6::MultimediaWidgets in addition to Widgets.
+# On Alma Linux: dnf install qt6-qtmultimedia-devel gstreamer1-plugins-good
+# ---------------------------------------------------------------------------
+find_package(Qt6 QUIET COMPONENTS Widgets Multimedia MultimediaWidgets)
+if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
+    add_executable(pm_tl
+        pm_tl/main.cpp
+        pm_tl/MainWindow.cpp
+        pm_tl/TimelineWidget.cpp
+        pm_tl/MarkDialog.cpp
+    )
+    set_target_properties(pm_tl PROPERTIES
+        AUTOMOC ON
+        AUTOUIC ON
+        AUTORCC ON
+    )
+    target_include_directories(pm_tl PRIVATE pm_tl)
+    target_link_libraries(pm_tl
+        Qt6::Widgets
+        Qt6::Multimedia
+        Qt6::MultimediaWidgets
+    )
+    install(TARGETS pm_tl RUNTIME DESTINATION bin)
+    message(STATUS "Qt6 Multimedia found — pm_tl target enabled")
+else()
+    message(STATUS "Qt6 Multimedia not found — pm_tl skipped "
+                   "(install qt6-qtmultimedia-devel + gstreamer1-plugins-good)")
+endif()
+
+# ---------------------------------------------------------------------------
 # MSI installer — Windows only, requires WiX 6 (wix.exe in PATH)
 # Run: cmake --build build-win --target msi
 # Output: packages/pathmux-<version>-win64.msi
@@ -598,4 +629,4 @@ endif()
 
 include(CPack)
 
-# SN: 00105
+# SN: 00106

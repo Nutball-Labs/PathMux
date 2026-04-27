@@ -98,6 +98,17 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 | `CMakeLists.txt` | Primary build system |
 | `pathmux.1` | Man page (canonical location: `man1/pathmux.1`) |
 
+### pm_tl (`pm_tl/`) — standalone Qt6 timelapse editor
+
+| File | Role |
+|---|---|
+| `pm_tl/main.cpp` | Qt application entry point |
+| `pm_tl/MainWindow.cpp/.h` | Main window: file open, video player, process runner |
+| `pm_tl/TimelineWidget.cpp/.h` | Custom timeline: marks, playhead, right-click menu |
+| `pm_tl/MarkDialog.cpp/.h` | Mark settings popup (duration → target seconds) |
+
+Requires Qt6::Multimedia + Qt6::MultimediaWidgets. On Alma: `dnf install qt6-qtmultimedia-devel gstreamer1-plugins-good`
+
 ---
 
 ## Serial Number (SN) Convention
