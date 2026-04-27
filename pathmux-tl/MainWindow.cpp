@@ -60,6 +60,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_videoWidget = new QVideoWidget(this);
     m_videoWidget->setMinimumHeight(280);
     m_videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    // Black background prevents the native XWindow from showing whatever is
+    // behind the widget before the first video frame is decoded on Linux.
+    m_videoWidget->setStyleSheet("background: black;");
     m_player->setVideoOutput(m_videoWidget);
     vlay->addWidget(m_videoWidget, 1);
 
@@ -164,18 +167,29 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     });
 
     // ── Menu bar ──────────────────────────────────────────────────────────────
+    // View → Zoom scales the entire UI (fonts + timeline height).
+    // Timeline time-axis zoom is separate: Ctrl+scroll on the timeline widget.
+    m_baseFontPt = font().pointSizeF();
+    if (m_baseFontPt <= 0) m_baseFontPt = 10.0;   // fallback if px-based
+
     auto* viewMenu = menuBar()->addMenu("&View");
     auto* zoomInAct = viewMenu->addAction("Zoom &In");
     zoomInAct->setShortcut(QKeySequence::ZoomIn);
-    connect(zoomInAct, &QAction::triggered, m_timeline, &TimelineWidget::zoomIn);
+    connect(zoomInAct, &QAction::triggered, this, [this]{
+        applyUiScale(m_uiScale * 1.25);
+    });
 
     auto* zoomOutAct = viewMenu->addAction("Zoom &Out");
     zoomOutAct->setShortcut(QKeySequence::ZoomOut);
-    connect(zoomOutAct, &QAction::triggered, m_timeline, &TimelineWidget::zoomOut);
+    connect(zoomOutAct, &QAction::triggered, this, [this]{
+        applyUiScale(m_uiScale / 1.25);
+    });
 
     auto* zoomResetAct = viewMenu->addAction("&Reset Zoom");
     zoomResetAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
-    connect(zoomResetAct, &QAction::triggered, m_timeline, &TimelineWidget::zoomReset);
+    connect(zoomResetAct, &QAction::triggered, this, [this]{
+        applyUiScale(1.0);
+    });
     connect(m_timeline, &TimelineWidget::pendingStartChanged,
             this, [this](qint64 ms){
         if (ms >= 0)
@@ -355,13 +369,13 @@ void MainWindow::keyPressEvent(QKeyEvent* e)
     }
     case Qt::Key_Equal:
     case Qt::Key_Plus:
-        if (e->modifiers() & Qt::ControlModifier) m_timeline->zoomIn();
+        if (e->modifiers() & Qt::ControlModifier) applyUiScale(m_uiScale * 1.25);
         break;
     case Qt::Key_Minus:
-        if (e->modifiers() & Qt::ControlModifier) m_timeline->zoomOut();
+        if (e->modifiers() & Qt::ControlModifier) applyUiScale(m_uiScale / 1.25);
         break;
     case Qt::Key_0:
-        if (e->modifiers() & Qt::ControlModifier) m_timeline->zoomReset();
+        if (e->modifiers() & Qt::ControlModifier) applyUiScale(1.0);
         break;
     case Qt::Key_Left:
         m_player->setPosition(std::max((qint64)0, m_player->position() - 5000));
@@ -570,6 +584,20 @@ void MainWindow::updateMarksSummary()
     }
     m_marksSummary->setText(
         QString("%1 timelapse mark(s):  ").arg(marks.size()) + parts.join("   "));
+}
+
+void MainWindow::applyUiScale(double scale)
+{
+    m_uiScale = std::clamp(scale, 0.5, 3.0);
+    if (m_baseFontPt > 0) {
+        QFont f = qApp->font();
+        f.setPointSizeF(m_baseFontPt * m_uiScale);
+        qApp->setFont(f);
+    }
+    m_timeline->setUiScale(m_uiScale);
+    // Force layout to pick up the new font metrics.
+    if (centralWidget()) centralWidget()->updateGeometry();
+    adjustSize();
 }
 
 double MainWindow::calcOutputDurationSecs() const

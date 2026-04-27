@@ -51,11 +51,14 @@ private slots:
 private:
     void    updateTransportButtons();
     void    updateMarksSummary();
+    void    applyUiScale(double scale);
     QString buildFfmpegCmd() const;
     double  calcOutputDurationSecs() const;
     QString formatMs(qint64 ms) const;
 
-    qint64  m_outputDurationUs = 0;   // expected output duration for progress %
+    qint64  m_outputDurationUs = 0;
+    double  m_uiScale          = 1.0;
+    double  m_baseFontPt       = 0.0;   // captured once at startup
 
     // File
     QString m_inputPath;

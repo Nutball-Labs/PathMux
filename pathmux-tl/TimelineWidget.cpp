@@ -14,7 +14,14 @@ TimelineWidget::TimelineWidget(QWidget* parent) : QWidget(parent)
 {
     setMouseTracking(true);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    setFixedHeight(kRulerH + kTrackH + 8);
+    setFixedHeight(rulerH() + trackH() + 8);
+}
+
+void TimelineWidget::setUiScale(double s)
+{
+    m_uiScale = std::max(0.5, s);
+    setFixedHeight(rulerH() + trackH() + 8);
+    update();
 }
 
 // ---------------------------------------------------------------------------
@@ -212,8 +219,8 @@ bool TimelineWidget::nearEdge(int idx, int px, bool& isStart) const
     if (idx < 0 || idx >= m_marks.size()) return false;
     int x0 = msToPx(m_marks[idx].startMs);
     int x1 = msToPx(m_marks[idx].endMs);
-    if (std::abs(px - x0) <= kEdgeSlop) { isStart = true;  return true; }
-    if (std::abs(px - x1) <= kEdgeSlop) { isStart = false; return true; }
+    if (std::abs(px - x0) <= edgeSlop()) { isStart = true;  return true; }
+    if (std::abs(px - x1) <= edgeSlop()) { isStart = false; return true; }
     return false;
 }
 
@@ -260,7 +267,7 @@ void TimelineWidget::paintEvent(QPaintEvent*)
 
     const int W  = width();
     const int ry = 0;
-    const int ty = kRulerH;
+    const int ty = rulerH();
 
     p.fillRect(rect(), QColor(0x2a, 0x2a, 0x2a));
 
@@ -271,36 +278,36 @@ void TimelineWidget::paintEvent(QPaintEvent*)
     }
 
     // Ruler
-    p.fillRect(0, ry, W, kRulerH, QColor(0x1a, 0x1a, 0x1a));
+    p.fillRect(0, ry, W, rulerH(), QColor(0x1a, 0x1a, 0x1a));
     QVector<qint64> major, minor;
     buildRulerTicks(major, minor);
     p.setPen(QColor(0x66, 0x66, 0x66));
     for (qint64 ms : minor) {
         int x = msToPx(ms);
-        p.drawLine(x, ry + kRulerH - 4, x, ry + kRulerH);
+        p.drawLine(x, ry + rulerH() - 4, x, ry + rulerH());
     }
     p.setPen(QColor(0xaa, 0xaa, 0xaa));
     QFont f = font(); f.setPointSize(7); p.setFont(f);
     for (qint64 ms : major) {
         int x = msToPx(ms);
-        p.drawLine(x, ry, x, ry + kRulerH);
-        p.drawText(QRect(x + 2, ry, 60, kRulerH - 2),
+        p.drawLine(x, ry, x, ry + rulerH());
+        p.drawText(QRect(x + 2, ry, 60, rulerH() - 2),
                    Qt::AlignVCenter | Qt::AlignLeft, formatMs(ms));
     }
 
     // Track background
-    p.fillRect(0, ty, W, kTrackH, QColor(0x3a, 0x3a, 0x3a));
+    p.fillRect(0, ty, W, trackH(), QColor(0x3a, 0x3a, 0x3a));
 
     // Pending start indicator — green shaded region from pending to end of track
     if (m_pendingStartMs >= 0) {
         int px = msToPx(m_pendingStartMs);
-        p.fillRect(px, ty, W - px, kTrackH, QColor(0x27, 0xae, 0x60, 50));
+        p.fillRect(px, ty, W - px, trackH(), QColor(0x27, 0xae, 0x60, 50));
         p.setPen(QPen(QColor(0x27, 0xae, 0x60), 2, Qt::DashLine));
-        p.drawLine(px, ty, px, ty + kTrackH);
+        p.drawLine(px, ty, px, ty + trackH());
         // Label
         p.setPen(QColor(0x27, 0xae, 0x60));
         f.setPointSize(7); p.setFont(f);
-        p.drawText(QRect(px + 4, ty, 120, kTrackH),
+        p.drawText(QRect(px + 4, ty, 120, trackH()),
                    Qt::AlignVCenter | Qt::AlignLeft,
                    QString("Start: %1").arg(formatMs(m_pendingStartMs)));
     }
@@ -312,16 +319,16 @@ void TimelineWidget::paintEvent(QPaintEvent*)
         bool configured = (m.targetSecs > 0);
         QColor fill = configured ? QColor(0xe6, 0x7e, 0x22, 200)
                                  : QColor(0x27, 0xae, 0x60, 160);
-        p.fillRect(x0, ty, x1 - x0, kTrackH, fill);
-        p.fillRect(x0,      ty, 3, kTrackH, fill.lighter(150));
-        p.fillRect(x1 - 3,  ty, 3, kTrackH, fill.lighter(150));
+        p.fillRect(x0, ty, x1 - x0, trackH(), fill);
+        p.fillRect(x0,      ty, 3, trackH(), fill.lighter(150));
+        p.fillRect(x1 - 3,  ty, 3, trackH(), fill.lighter(150));
         if (x1 - x0 > 30) {
             p.setPen(Qt::white);
             f.setPointSize(7); p.setFont(f);
             QString lbl = configured
                 ? QString("\xe2\x86\x92%1s").arg(m.targetSecs, 0, 'f', 1)
                 : "TL (unconfigured)";
-            p.drawText(QRect(x0 + 4, ty, x1 - x0 - 8, kTrackH),
+            p.drawText(QRect(x0 + 4, ty, x1 - x0 - 8, trackH()),
                        Qt::AlignVCenter | Qt::AlignLeft, lbl);
         }
     }

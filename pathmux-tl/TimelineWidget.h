@@ -26,6 +26,7 @@ public:
     // Zoom / scroll — zoom 1.0 = full video visible; higher = zoomed in.
     double  zoom()        const { return m_zoom; }
     qint64  viewStartMs() const { return m_viewStartMs; }
+    void    setUiScale(double s);   // called by MainWindow for UI-wide zoom
     void    zoomIn();
     void    zoomOut();
     void    zoomReset();
@@ -76,6 +77,11 @@ private:
     static constexpr int    kEdgeSlop = 6;
     static constexpr double kZoomStep = 1.5;
     static constexpr double kZoomMax  = 200.0;
+
+    double m_uiScale = 1.0;
+    int rulerH() const { return (int)(kRulerH * m_uiScale); }
+    int trackH() const { return (int)(kTrackH * m_uiScale); }
+    int edgeSlop() const { return (int)(kEdgeSlop * m_uiScale); }
 
     qint64         m_duration       = 0;
     qint64         m_position       = 0;
