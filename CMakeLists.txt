@@ -305,6 +305,7 @@ if(Qt6_FOUND)
         gui/TripBuildDialog.cpp
         gui/BuildProgressDialog.cpp
         gui/MapProgressDialog.cpp
+        gui/BuildAllDialog.cpp
         gui/AboutDialog.cpp
         gui/SettingsDialog.cpp
         gui/CameraProfilesDialog.cpp
@@ -597,4 +598,4 @@ endif()
 
 include(CPack)
 
-# SN: 00104
+# SN: 00105

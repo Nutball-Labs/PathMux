@@ -4,6 +4,7 @@
 #include <QDialog>
 #include <string>
 #include "trip_detection.hpp"
+#include "BuildAllDialog.h"
 
 class QCheckBox;
 class QCloseEvent;
@@ -32,6 +33,7 @@ public:
 
 signals:
     void gpsExtracted();   // emitted immediately when GPS extraction succeeds
+    void videosChanged();  // emitted when mapVideos/dashVideos/hudVideos are updated
 
 protected:
     void reject() override;
@@ -39,6 +41,7 @@ protected:
 
 private slots:
     void onAccepted();
+    void onBuildAll();
     void onGenerateMap();
     void onGenerateDashboard();
     void onGenerateHud();
@@ -76,6 +79,7 @@ private:
     QComboBox*    m_exportFormatCombo = nullptr;
     QLineEdit*    m_exportPathEdit    = nullptr;
     QPushButton*  m_exportGpsBtn      = nullptr;
+    QPushButton*  m_buildAllBtn       = nullptr;
 
     // Map tab
     QLabel*       m_mapWarnLabel    = nullptr;
@@ -108,6 +112,7 @@ private:
     QSpinBox*       m_hudRsY           = nullptr;
     // Compass rose
     QSpinBox*       m_hudCompassRadius = nullptr;   // 0 = auto
+    QSpinBox*       m_hudCompassCrop   = nullptr;   // % of diameter below frame, 0-50
     QSpinBox*       m_hudCompassX      = nullptr;   // -1 = center
     QSpinBox*       m_hudCompassY      = nullptr;   // -1 = bottom
     // File list + button
@@ -118,4 +123,4 @@ private:
     void appendVideoToManifest(const QString& path, const std::string& key,
                                std::vector<std::string>& tripVec);
 };
-// SN: 00104
+// SN: 00106

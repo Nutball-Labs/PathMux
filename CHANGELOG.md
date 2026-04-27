@@ -1,5 +1,68 @@
 # CHANGELOG
 
+## [v1.9.1 / SN: 00106] - 2026-04-27
+
+### Added
+- **Build All button** (`gui/TripPropertiesDialog`, `gui/BuildAllDialog.cpp/.h`):
+  One-click consecutive GPS extract → Map → Dashboard → HUD from the GPS tab.
+  Honors all settings configured on each overlay tab; uses tab defaults when
+  nothing has been changed. GPS extraction is always run first so overlays
+  reflect the current segment set. Cancel halts the chain at the current stage.
+  `stageComplete` signal updates manifest and tab icons after each stage.
+- **Compass rose crop control** (`gui/TripPropertiesDialog`, `scripts/pm_hud.py`):
+  `--heading-crop` arg (0–50 %, default 20) sets how much of the ring diameter
+  sits below the frame edge. Exposed as a spinbox in the Compass Rose group.
+  Auto formula: `compass_cy = H − r + 2·r·crop / 100`.
+- **GPS gap compression** (`scripts/pm_maprender.py`, `pm_dashboard.py`, `pm_hud.py`):
+  `compress_gaps()` detects large time gaps (> 10 s between consecutive GPS
+  records) caused by archived trip segments and remaps point times to be
+  contiguous. Trips with middle segments archived now produce correctly-short
+  overlay videos instead of full-span renders.
+- **Position-derived compass heading** (`scripts/pm_hud.py`, `pm_dashboard.py`):
+  `compute_derived_headings()` replaces the D90's `GPSTrack` field (which
+  freezes at the last road heading below ~10 km/h) with bearing computed from
+  consecutive lat/lon pairs. Heading updates correctly on slow driveway maneuvers;
+  last known bearing is held when movement is < 2 m between records.
+
+### Changed
+- **GPS tab navigation** (`gui/TripPropertiesDialog`): both tab bars now use
+  `tabBarClicked` instead of `currentChanged`. GPS tab (index 0) and General
+  tab (index 0) were unreachable by click when already selected.
+- **Speed tape tick labels** (`scripts/pm_hud.py`): major ticks (× 20) rendered
+  in `pal["mid"]` (previously `pal["dim"]`, nearly invisible); minor ticks (× 10)
+  now also labeled in `pal["dim"]`.
+- **Compass rose UI note** (`gui/TripPropertiesDialog`): brief description added
+  above the Radius spinbox. Radius minimum clamped to 100 px (was 1 px — pressing
+  the up arrow from `auto` previously set radius to 1, which was nonsensical).
+  Step size changed to 10 px.
+- **GPS invalidation on archive/delete** (`gui/DangerousDialog`): archiving or
+  permanently deleting segments now clears `gpsTrack`, `gpsTrackStatus`, and
+  `gpsLockSeconds` from the manifest. Stale GPS data that covered the full
+  original span can no longer silently produce wrong-duration overlay renders.
+- **ETA smoothing in collage build** (`gui/BuildProgressDialog`): rolling 8-sample
+  speed average replaces instantaneous speed for ETA calculation. Prevents absurd
+  initial estimates (e.g. "62 minutes" for a 4:26 clip) caused by encoder warmup
+  reporting 0.05× for the first few seconds.
+- **`videosChanged` signal** (`gui/TripPropertiesDialog`, `gui/TripTile`): emitted
+  after each `appendVideoToManifest` call. Connected in `TripTile` to
+  `tripChanged()` → `TripGridPanel::loadManifest`, so TripBuildDialog opens with
+  fresh map/dashboard/HUD data after Build All completes without requiring a
+  manifest switch.
+
+### Fixed
+- **`gpsLockSeconds` not written after GPS extraction** (`lib/gps_export.cpp`):
+  previous code re-parsed the segment filename with `std::mktime` (timezone-
+  dependent, fragile). Now uses `start_epoch` already stored in the manifest at
+  scan time. Added `gpsEpoch > fileEpoch` strict check and `<= 300 s` sanity
+  guard. Manifests that lacked this key caused all three overlay scripts to
+  treat `gpsLockSeconds` as 0, running the HUD/dashboard/map 20–30 s ahead
+  of the video.
+- **`gpsLockSeconds` fallback in Python scripts** (`scripts/pm_maprender.py`,
+  `pm_dashboard.py`, `pm_hud.py`): when the manifest key is absent or invalid,
+  `gpsLockSeconds` is now derived from `start_epoch` (trip start UTC epoch) and
+  the first GPS track timestamp via `calendar.timegm` — no timezone ambiguity.
+  A 300 s sanity limit prevents nonsensical values.
+
 ## [v1.9.0 / SN: 00104] - 2026-04-26
 
 ### Added
@@ -1453,4 +1516,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00102 -->
+<!-- SN: 00106 -->

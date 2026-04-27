@@ -186,6 +186,40 @@ def build_points(gps_track, gps_lock_offset=0):
     return pts
 
 
+def compress_gaps(points, gap_threshold=10):
+    """
+    Compress large time gaps out of a GPS point list.
+    Gaps arise when trip segments have been archived — the remaining
+    segments span the original trip timeline but only cover a fraction
+    of it.  Without compression the render duration equals the full
+    original span rather than the actual covered footage duration.
+    Each contiguous run of points is remapped so runs follow each other
+    with a 1-second join; total_duration becomes the sum of run lengths.
+    """
+    if len(points) < 2:
+        return points
+    runs, run = [], [points[0]]
+    for i in range(1, len(points)):
+        if points[i]["t"] - points[i-1]["t"] > gap_threshold:
+            runs.append(run)
+            run = [points[i]]
+        else:
+            run.append(points[i])
+    runs.append(run)
+    if len(runs) == 1:
+        return points
+    remapped, t_cursor = [], runs[0][0]["t"]
+    for r in runs:
+        r_t0 = r[0]["t"]
+        for pt in r:
+            remapped.append({**pt, "t": t_cursor + (pt["t"] - r_t0)})
+        t_cursor += (r[-1]["t"] - r[0]["t"]) + 1
+    print(f"  Gap compression: {len(runs)} GPS run(s), "
+          f"{points[-1]['t']:.0f}s → {remapped[-1]['t']:.0f}s",
+          file=sys.stderr, flush=True)
+    return remapped
+
+
 def interp(points, t_sec):
     """
     Linear interpolation of lat, lon, speed at elapsed time t_sec.
@@ -264,15 +298,27 @@ def main():
 
     # gpsLockSeconds: how many seconds after video start before first GPS record.
     # -1 means not scanned; treat as 0 (no offset applied).
-    gps_lock_secs = trip.get("gpsLockSeconds", 0)
+    gps_lock_secs = trip.get("gpsLockSeconds")
     if not isinstance(gps_lock_secs, (int, float)) or gps_lock_secs < 0:
-        gps_lock_secs = 0
+        start_epoch = trip.get("start_epoch", 0)
+        if start_epoch and gps_track:
+            first_ts = gps_track[0].get("timestamp", "")
+            try:
+                import calendar as _cal
+                gt = datetime.datetime.strptime(first_ts[:19], "%Y:%m:%d %H:%M:%S")
+                derived = _cal.timegm(gt.timetuple()) - int(start_epoch)
+                gps_lock_secs = derived if 0 <= derived <= 300 else 0
+            except Exception:
+                gps_lock_secs = 0
+        else:
+            gps_lock_secs = 0
 
     print(f"  Trip {args.trip}: {len(gps_track)} GPS samples  "
           f"(GPS lock offset: {gps_lock_secs}s)", file=sys.stderr)
 
     # --- Build interpolation table ---
     points = build_points(gps_track, gps_lock_offset=gps_lock_secs)
+    points = compress_gaps(points)
     total_duration = points[-1]["t"]
 
     render_fps   = args.render_fps if args.render_fps else args.fps
@@ -498,3 +544,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# SN: 00106

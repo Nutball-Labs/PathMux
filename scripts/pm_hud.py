@@ -118,6 +118,74 @@ def build_points(gps_track, gps_lock_offset=0):
     return pts
 
 
+def compress_gaps(points, gap_threshold=10):
+    """Compress large time gaps from archived segments. See pm_maprender.py."""
+    if len(points) < 2:
+        return points
+    runs, run = [], [points[0]]
+    for i in range(1, len(points)):
+        if points[i]["t"] - points[i-1]["t"] > gap_threshold:
+            runs.append(run)
+            run = [points[i]]
+        else:
+            run.append(points[i])
+    runs.append(run)
+    if len(runs) == 1:
+        return points
+    remapped, t_cursor = [], runs[0][0]["t"]
+    for r in runs:
+        r_t0 = r[0]["t"]
+        for pt in r:
+            remapped.append({**pt, "t": t_cursor + (pt["t"] - r_t0)})
+        t_cursor += (r[-1]["t"] - r[0]["t"]) + 1
+    print(f"  Gap compression: {len(runs)} GPS run(s), "
+          f"{points[-1]['t']:.0f}s → {remapped[-1]['t']:.0f}s",
+          file=sys.stderr, flush=True)
+    return remapped
+
+
+def compute_derived_headings(points, min_move_m=2.0):
+    """
+    Replace GPS track headings with bearings computed from consecutive
+    lat/lon positions. The D90's GPSTrack field freezes at the last
+    road heading when speed drops below the chip's update threshold
+    (~10 km/h). Position-derived bearing is accurate at any speed
+    as long as the vehicle moved at least min_move_m between records.
+    When movement is below the threshold (stopped / GPS jitter), the
+    last valid bearing is held so the rose stays stable.
+    """
+    if len(points) < 2:
+        return points
+
+    def _bearing(lat1, lon1, lat2, lon2):
+        lat1, lon1, lat2, lon2 = (math.radians(v) for v in (lat1, lon1, lat2, lon2))
+        dlon = lon2 - lon1
+        x = math.sin(dlon) * math.cos(lat2)
+        y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+        return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+    def _dist_m(lat1, lon1, lat2, lon2):
+        R = 6_371_000.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2
+             + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+             * math.sin(dlon / 2) ** 2)
+        return 2 * R * math.asin(math.sqrt(min(a, 1.0)))
+
+    result = [dict(p) for p in points]
+    last_hdg = points[0].get("heading", 0.0)
+    for i in range(len(points) - 1):
+        d = _dist_m(points[i]["lat"], points[i]["lon"],
+                    points[i + 1]["lat"], points[i + 1]["lon"])
+        if d >= min_move_m:
+            last_hdg = _bearing(points[i]["lat"], points[i]["lon"],
+                                points[i + 1]["lat"], points[i + 1]["lon"])
+        result[i]["heading"] = last_hdg
+    result[-1]["heading"] = last_hdg
+    return result
+
+
 def interp_point(pts, t_sec):
     if t_sec <= pts[0]["t"]:
         return dict(pts[0])
@@ -254,24 +322,25 @@ def draw_speed_tape(img, draw, tx, ty, tw, th, speed_kmh, unit, side, pal, fonts
         else:
             tlen, tcol, tw_ = tick_sub,   pal["faint"],  1
 
+        lbl_col = pal["mid"] if is_major else pal["dim"]
         if side == "left":
             draw.line([(scale_x - tlen, y), (scale_x, y)], fill=tcol, width=tw_)
-            if is_major:
+            if is_major or is_minor:
                 lbl = str(V)
                 lw2, lh2 = _twh(draw, lbl, fonts["tiny"])
                 lx = scale_x - tlen - lw2 - 4
                 ly = y - lh2 // 2
                 if lx >= tx and ty <= ly and ly + lh2 <= ty + th:
-                    _hud_text(draw, (lx, ly), lbl, pal["dim"], fonts["tiny"])
+                    _hud_text(draw, (lx, ly), lbl, lbl_col, fonts["tiny"])
         else:
             draw.line([(scale_x, y), (scale_x + tlen, y)], fill=tcol, width=tw_)
-            if is_major:
+            if is_major or is_minor:
                 lbl = str(V)
                 lw2, lh2 = _twh(draw, lbl, fonts["tiny"])
                 lx = scale_x + tlen + 4
                 ly = y - lh2 // 2
                 if lx + lw2 <= tx + tw and ty <= ly and ly + lh2 <= ty + th:
-                    _hud_text(draw, (lx, ly), lbl, pal["dim"], fonts["tiny"])
+                    _hud_text(draw, (lx, ly), lbl, lbl_col, fonts["tiny"])
 
     # Unit label at top of tape
     uw, uh = _twh(draw, unit, fonts["micro"])
@@ -512,7 +581,9 @@ def main():
     parser.add_argument("--heading-x",      type=int, default=-1,
                         help="Compass center X in pixels (-1 = frame centre)")
     parser.add_argument("--heading-y",      type=int, default=-1,
-                        help="Top y of tape (-1=auto bottom edge)")
+                        help="Compass center Y in pixels (-1 = auto)")
+    parser.add_argument("--heading-crop",   type=int, default=20,
+                        help="Percent of ring diameter below frame edge (0-50, default 20)")
 
     args = parser.parse_args()
 
@@ -544,14 +615,28 @@ def main():
         print("Error: trip has no GPS track data — run GPS extraction first.", file=sys.stderr)
         sys.exit(1)
 
-    lock_secs = trip.get("gpsLockSeconds", 0)
+    lock_secs = trip.get("gpsLockSeconds")
     if not isinstance(lock_secs, (int, float)) or lock_secs < 0:
-        lock_secs = 0
+        # gpsLockSeconds absent or invalid — derive from start_epoch + first GPS timestamp.
+        start_epoch = trip.get("start_epoch", 0)
+        if start_epoch and gps_track:
+            first_ts = gps_track[0].get("timestamp", "")
+            try:
+                import calendar as _cal
+                gt = datetime.datetime.strptime(first_ts[:19], "%Y:%m:%d %H:%M:%S")
+                derived = _cal.timegm(gt.timetuple()) - int(start_epoch)
+                lock_secs = derived if 0 <= derived <= 300 else 0
+            except Exception:
+                lock_secs = 0
+        else:
+            lock_secs = 0
 
     print(f"  Trip {args.trip}: {len(gps_track)} GPS samples  "
           f"(GPS lock offset: {lock_secs}s)", file=sys.stderr)
 
     pts       = build_points(gps_track, gps_lock_offset=lock_secs)
+    pts       = compress_gaps(pts)
+    pts       = compute_derived_headings(pts)
     total_dur = pts[-1]["t"]
     rfps      = args.render_fps
     ofps      = args.fps
@@ -582,9 +667,10 @@ def main():
     compass_cx = args.heading_x if args.heading_x >= 0 else W // 2
     overhead   = compass_r // 2 + max(20, compass_r // 8)   # heading box + pointer above ring
     margin     = max(16, compass_r // 10)
-    # Default: sink the compass so the bottom 1/5 of the ring is off-screen.
-    # compass_cy + compass_r = H + (2*compass_r)/5  →  compass_cy = H - compass_r*3//5
-    compass_cy = args.heading_y if args.heading_y >= 0 else H - compass_r * 3 // 5
+    # Sink the rose so heading_crop% of the diameter hangs below the frame edge.
+    # compass_cy = H - compass_r + 2*compass_r*crop//100
+    crop = max(0, min(50, args.heading_crop))
+    compass_cy = args.heading_y if args.heading_y >= 0 else H - compass_r + compass_r * 2 * crop // 100
 
     # Bounding box for the compass strip (includes the heading readout above the ring).
     # Clamp bottom to frame height so the blit stays within frame_buf.
@@ -724,4 +810,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# SN: 00104
+# SN: 00106

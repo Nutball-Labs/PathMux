@@ -100,6 +100,11 @@ public slots:
             int64_t totalUs   = (int64_t)totalSecs * 1000000LL;
             int64_t outTimeUs = 0;
             double  speed     = 1.0;
+            // Rolling average over last 8 speed samples to smooth early-encode
+            // warmup spikes (VP9/HEVC init can report 0.05x for the first few
+            // seconds, projecting absurd ETAs for short clips).
+            std::vector<double> speedHist;
+            speedHist.reserve(8);
 
             // Emit cmd as a debug message (pct=-2 sentinel, etaSecs unused,
             // msg = the actual command line being run).
@@ -186,13 +191,20 @@ public slots:
                         if (!val.isEmpty() && val.back() == 'x') val.chop(1);
                         bool ok;
                         double s = val.toDouble(&ok);
-                        if (ok && s > 0.001) speed = s;
+                        if (ok && s > 0.001) {
+                            speed = s;
+                            if (speedHist.size() >= 8) speedHist.erase(speedHist.begin());
+                            speedHist.push_back(s);
+                        }
                     }
 
                     if (totalUs > 0) {
                         int pct = (int)(std::min(1.0, (double)outTimeUs / (double)totalUs) * 100);
-                        int eta = speed > 0.001
-                            ? (int)((totalUs - outTimeUs) / (speed * 1e6)) : 0;
+                        double avgSpeed = 0.0;
+                        for (double sv : speedHist) avgSpeed += sv;
+                        if (!speedHist.empty()) avgSpeed /= (double)speedHist.size();
+                        int eta = avgSpeed > 0.001
+                            ? (int)((totalUs - outTimeUs) / (avgSpeed * 1e6)) : 0;
                         emit progress(QString::fromStdString(label), pct, eta, "");
                     }
                 }
@@ -635,4 +647,4 @@ void BuildProgressDialog::closeEvent(QCloseEvent* event)
 }
 
 #include "BuildProgressDialog.moc"
-// SN: 00101
+// SN: 00106

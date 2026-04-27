@@ -449,6 +449,24 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
                 this, &TripPropertiesDialog::onExportGps);
 
         vlay->addWidget(exportGrp);
+
+        // --- Build All group ---
+        auto* buildGrp  = new QGroupBox("Build Overlay Videos", w);
+        auto* buildVlay = new QVBoxLayout(buildGrp);
+        buildVlay->setSpacing(6);
+        auto* buildNote = new QLabel(
+            "Generate map, dashboard, and HUD using the settings "
+            "configured on their respective tabs. Existing files are overwritten.", buildGrp);
+        buildNote->setWordWrap(true);
+        buildNote->setStyleSheet("font-size: 8pt; color: gray;");
+        buildVlay->addWidget(buildNote);
+        m_buildAllBtn = new QPushButton("Build All", buildGrp);
+        m_buildAllBtn->setEnabled(true);
+        connect(m_buildAllBtn, &QPushButton::clicked,
+                this, &TripPropertiesDialog::onBuildAll);
+        buildVlay->addWidget(m_buildAllBtn);
+        vlay->addWidget(buildGrp);
+
         vlay->addStretch();
 
         m_botTabBar->addTab(makeStatusIcon(hasGps), "GPS");
@@ -740,15 +758,39 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
             auto* glay = new QVBoxLayout(grp);
             glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
 
+            auto* roseNote = new QLabel(
+                "Auto = H\xc3\xb7" "8 (270 px at 4K). Rose is bottom-centered; "
+                "Crop sets how much of the ring sits below the frame edge.", grp);
+            roseNote->setWordWrap(true);
+            roseNote->setStyleSheet("font-size: 8pt; color: gray;");
+            glay->addWidget(roseNote);
+
             auto* rRow = new QHBoxLayout;
             rRow->addWidget(new QLabel("Radius:", grp));
             m_hudCompassRadius = new QSpinBox(grp);
             m_hudCompassRadius->setRange(0, 1000); m_hudCompassRadius->setValue(0);
             m_hudCompassRadius->setSpecialValueText("auto");
+            m_hudCompassRadius->setSingleStep(10);
+            connect(m_hudCompassRadius, QOverload<int>::of(&QSpinBox::valueChanged),
+                    grp, [this](int v) {
+                if (v > 0 && v < 100) {
+                    QSignalBlocker sb(m_hudCompassRadius);
+                    m_hudCompassRadius->setValue(100);
+                }
+            });
             rRow->addWidget(m_hudCompassRadius);
             rRow->addWidget(new QLabel("px", grp));
             rRow->addStretch();
             glay->addLayout(rRow);
+
+            auto* cropRow = new QHBoxLayout;
+            cropRow->addWidget(new QLabel("Crop:", grp));
+            m_hudCompassCrop = new QSpinBox(grp);
+            m_hudCompassCrop->setRange(0, 50); m_hudCompassCrop->setValue(20);
+            m_hudCompassCrop->setSingleStep(5); m_hudCompassCrop->setSuffix("%");
+            cropRow->addWidget(m_hudCompassCrop);
+            cropRow->addStretch();
+            glay->addLayout(cropRow);
 
             auto* cRow = new QHBoxLayout;
             cRow->addWidget(new QLabel("Center X:", grp));
@@ -801,7 +843,7 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
     // -----------------------------------------------------------------------
     // Wire tab bars → stack; mutual deactivation via stylesheet
     // -----------------------------------------------------------------------
-    connect(m_topTabBar, &QTabBar::currentChanged, this, [this](int idx) {
+    connect(m_topTabBar, &QTabBar::tabBarClicked, this, [this](int idx) {
         if (idx < 0) return;
         static const char* kInactive =
             "QTabBar::tab:selected { color: #888888; }";
@@ -809,7 +851,7 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
         m_topTabBar->setStyleSheet("");
         m_botTabBar->setStyleSheet(kInactive);
     });
-    connect(m_botTabBar, &QTabBar::currentChanged, this, [this](int idx) {
+    connect(m_botTabBar, &QTabBar::tabBarClicked, this, [this](int idx) {
         if (idx < 0) return;
         static const char* kInactive =
             "QTabBar::tab:selected { color: #888888; }";
@@ -1035,6 +1077,132 @@ void TripPropertiesDialog::onExportGps()
 }
 
 // ---------------------------------------------------------------------------
+// Build All — consecutive map → dashboard → HUD using each tab's settings.
+// ---------------------------------------------------------------------------
+void TripPropertiesDialog::onBuildAll()
+{
+    ConfigManager config;
+    config.loadSettings();
+    std::string manifestFile = config.lookupManifestFilePath(m_sourcePath);
+    if (manifestFile.empty()) return;
+    QString mf = QString::fromStdString(manifestFile);
+
+    QList<BuildAllStage> stages;
+
+    // --- GPS Extract (always first — ensures track reflects current segments) ---
+    {
+        BuildAllStage s;
+        s.type         = BuildAllStage::Type::GpsExtract;
+        s.name         = "Extract GPS";
+        s.exiftoolPath = QString::fromStdString(config.getExiftoolPath());
+        s.manifestKey  = "gpsExtract";
+        stages.append(s);
+    }
+
+    // --- Map ---
+    {
+        BuildAllStage s;
+        s.name        = "Map Video";
+        s.scriptName  = "pm_maprender.py";
+        s.outputPath  = m_mapOutputEdit ? m_mapOutputEdit->text().trimmed()
+                                        : QString::fromStdString(m_sourcePath)
+                          + "/pm_trip_" + QString::fromStdString(m_trip.id) + "_map.mp4";
+        s.width       = m_trip.videoProfile.width;
+        s.height      = m_trip.videoProfile.height;
+        s.manifestKey = "mapVideos";
+        stages.append(s);
+    }
+
+    // --- Dashboard ---
+    {
+        BuildAllStage s;
+        s.name        = "Dashboard Video";
+        s.scriptName  = "pm_dashboard.py";
+        s.outputPath  = m_dashOutputEdit ? m_dashOutputEdit->text().trimmed()
+                                         : QString::fromStdString(m_sourcePath)
+                           + "/pm_trip_" + QString::fromStdString(m_trip.id) + "_dash.mp4";
+        s.width       = 960;
+        s.height      = 540;
+        s.manifestKey = "dashVideos";
+        QString units = config.getUseImperial() ? "imperial" : "metric";
+        s.extraArgs << "--units" << units;
+        bool transparent = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
+        if (transparent) s.extraArgs << "--transparent";
+        stages.append(s);
+    }
+
+    // --- HUD ---
+    {
+        BuildAllStage s;
+        s.name        = "HUD Overlay";
+        s.scriptName  = "pm_hud.py";
+        s.outputPath  = m_hudOutputEdit ? m_hudOutputEdit->text().trimmed()
+                                        : QString::fromStdString(m_sourcePath)
+                          + "/pm_trip_" + QString::fromStdString(m_trip.id) + "_hud.webm";
+        if (!s.outputPath.endsWith(".webm", Qt::CaseInsensitive))
+            s.outputPath += ".webm";
+        s.width       = m_hudWidth  ? m_hudWidth->value()  : 3840;
+        s.height      = m_hudHeight ? m_hudHeight->value() : 2160;
+        s.manifestKey = "hudVideos";
+
+        QString hexColor = m_hudColorHex ? m_hudColorHex->text().trimmed() : "#00ff41";
+        if (hexColor.isEmpty() || !hexColor.startsWith('#')) hexColor = "#00ff41";
+        double fontSc = m_hudFontScale ? m_hudFontScale->value() : 1.0;
+        double lineSc = m_hudLineScale ? m_hudLineScale->value() : 1.0;
+        s.extraArgs << "--color-hex"  << hexColor
+                    << "--font-scale" << QString::number(fontSc, 'f', 2)
+                    << "--line-scale" << QString::number(lineSc, 'f', 2);
+        if (m_hudTapeWidth && m_hudTapeWidth->value() > 0)
+            s.extraArgs << "--tape-width" << QString::number(m_hudTapeWidth->value());
+        s.extraArgs << "--visible-range"
+                    << QString::number(m_hudVisibleRange ? m_hudVisibleRange->value() : 100);
+        auto addNeg = [&](const QString& flag, QSpinBox* sp) {
+            if (sp && sp->value() >= 0) s.extraArgs << flag << QString::number(sp->value());
+        };
+        addNeg("--left-speed-x",  m_hudLsX);
+        addNeg("--left-speed-y",  m_hudLsY);
+        addNeg("--right-speed-x", m_hudRsX);
+        addNeg("--right-speed-y", m_hudRsY);
+        if (m_hudCompassRadius && m_hudCompassRadius->value() > 0)
+            s.extraArgs << "--heading-height" << QString::number(m_hudCompassRadius->value());
+        if (m_hudCompassCrop && m_hudCompassCrop->value() != 20)
+            s.extraArgs << "--heading-crop" << QString::number(m_hudCompassCrop->value());
+        addNeg("--heading-x", m_hudCompassX);
+        addNeg("--heading-y", m_hudCompassY);
+        stages.append(s);
+    }
+
+    auto* dlg = new BuildAllDialog(m_trip, mf, stages, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dlg, &BuildAllDialog::stageComplete,
+            this, [this, stages](int idx, const QString& path, bool ok) {
+        if (idx < 0 || idx >= stages.size()) return;
+        const QString& key = stages[idx].manifestKey;
+        if (key == "gpsExtract") {
+            if (ok) {
+                m_trip.gpsTrackStatus = "complete";
+                if (m_gpsStatusLabel) {
+                    m_gpsStatusLabel->setText("Status: complete");
+                    m_gpsStatusLabel->setStyleSheet("color: green; font-weight: bold;");
+                }
+                if (m_exportGpsBtn)  m_exportGpsBtn->setEnabled(true);
+                if (m_mapGenerateBtn) m_mapGenerateBtn->setEnabled(true);
+                if (m_mapWarnLabel)  m_mapWarnLabel->hide();
+                if (m_dashWarnLabel) m_dashWarnLabel->hide();
+                if (m_hudWarnLabel)  m_hudWarnLabel->hide();
+                if (m_botTabBar)     m_botTabBar->setTabIcon(kBotTabGps, makeStatusIcon(true));
+            }
+        } else if (ok) {
+            if      (key == "mapVideos")  appendVideoToManifest(path, "mapVideos",  m_trip.mapVideos);
+            else if (key == "dashVideos") appendVideoToManifest(path, "dashVideos", m_trip.dashVideos);
+            else if (key == "hudVideos")  appendVideoToManifest(path, "hudVideos",  m_trip.hudVideos);
+        }
+    });
+    dlg->show();
+    dlg->startBuild();
+}
+
+// ---------------------------------------------------------------------------
 // Map
 // ---------------------------------------------------------------------------
 void TripPropertiesDialog::onGenerateMap()
@@ -1208,6 +1376,8 @@ void TripPropertiesDialog::onGenerateHud()
     // Compass rose
     if (m_hudCompassRadius && m_hudCompassRadius->value() > 0)
         extraArgs << "--heading-height" << QString::number(m_hudCompassRadius->value());
+    if (m_hudCompassCrop && m_hudCompassCrop->value() != 20)
+        extraArgs << "--heading-crop" << QString::number(m_hudCompassCrop->value());
     addNeg("--heading-x", m_hudCompassX);
     addNeg("--heading-y", m_hudCompassY);
 
@@ -1332,7 +1502,8 @@ void TripPropertiesDialog::appendVideoToManifest(const QString& path,
         populateVideoList(m_dashFileList, m_trip.dashVideos);
         if (m_botTabBar) m_botTabBar->setTabIcon(kBotTabDash, makeStatusIcon(true));
     }
+    emit videosChanged();
 }
 
 #include "TripPropertiesDialog.moc"
-// SN: 00104
+// SN: 00106

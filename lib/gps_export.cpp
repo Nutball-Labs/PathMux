@@ -264,28 +264,34 @@ bool extractGps(json& root,
         return false;
     }
 
-    // Compute gpsLockSeconds: UTC epoch of first valid GPS record minus local epoch of
-    // the first segment's filename.  Same arithmetic as pm_gpsinfo --scan-all-trips so
-    // map and HUD overlay are always synced correctly after GPS extraction — no separate
-    // scan step required.
-    if (!trackArray.empty() && !firstSegFront.empty() && firstSegFront != "-") {
-        std::string baseName = fs::path(firstSegFront).filename().string();
-        if (baseName.size() >= 15 && baseName[8] == '_') {
-            struct tm ft = {};
-            std::istringstream fss(baseName.substr(0, 15));
-            fss >> std::get_time(&ft, "%Y%m%d_%H%M%S");
-            ft.tm_isdst = -1;
-            time_t fileEpoch = std::mktime(&ft);
-
+    // Compute gpsLockSeconds: UTC epoch of first GPS record minus trip start epoch.
+    // Use start_epoch already stored in the manifest — it was computed at scan time
+    // from the segment filename via parseSegTimestamp() and is timezone-correct.
+    // Fallback to filename re-parse only if start_epoch is absent (old manifests).
+    if (!trackArray.empty()) {
+        time_t fileEpoch = 0;
+        if (jTrip.contains("start_epoch") && jTrip["start_epoch"].is_number_integer())
+            fileEpoch = static_cast<time_t>(jTrip["start_epoch"].get<int64_t>());
+        else if (!firstSegFront.empty() && firstSegFront != "-") {
+            std::string baseName = fs::path(firstSegFront).filename().string();
+            if (baseName.size() >= 15 && baseName[8] == '_') {
+                struct tm ft = {};
+                std::istringstream fss(baseName.substr(0, 15));
+                fss >> std::get_time(&ft, "%Y%m%d_%H%M%S");
+                ft.tm_isdst = -1;
+                fileEpoch = std::mktime(&ft);
+            }
+        }
+        if (fileEpoch > 0) {
             std::string firstGpsTs = trackArray.front().value("timestamp", "");
             if (firstGpsTs.size() >= 19) {
                 struct tm gt = {};
                 std::istringstream gss(firstGpsTs);
                 gss >> std::get_time(&gt, "%Y:%m:%d %H:%M:%S");
                 time_t gpsEpoch = timegm(&gt);
-                if (fileEpoch > 0 && gpsEpoch > 0) {
+                if (gpsEpoch > fileEpoch) {
                     int lockSec = static_cast<int>(gpsEpoch - fileEpoch);
-                    if (lockSec >= 0)
+                    if (lockSec <= 300)  // sanity: GPS lock should be within 5 minutes
                         jTrip["gpsLockSeconds"] = lockSec;
                 }
             }
@@ -587,4 +593,4 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
 }
 
 } // namespace Pathmux
-// SN: 00104
+// SN: 00106

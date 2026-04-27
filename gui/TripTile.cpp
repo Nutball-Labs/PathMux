@@ -221,6 +221,8 @@ void TripTile::contextMenuEvent(QContextMenuEvent* event)
         connect(dlg, &TripPropertiesDialog::gpsExtracted, this, [this]() {
             m_trip.gpsTrackStatus = "complete";
         });
+        connect(dlg, &TripPropertiesDialog::videosChanged,
+                this, &TripTile::tripChanged);
         dlg->show();
 
     } else if (chosen == dangerousAct) {
@@ -362,4 +364,4 @@ void TripTile::paintEvent(QPaintEvent*)
     p.setPen(QPen(QColor(0xc8c8c8), 1));
     p.drawLine(divX, badgeH + pad + 4, divX, height() - pad - 4);
 }
-// SN: 00098
+// SN: 00106

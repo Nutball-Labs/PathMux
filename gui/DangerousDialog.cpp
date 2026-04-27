@@ -369,6 +369,12 @@ void DangerousDialog::updateManifest(const std::vector<int>& removedSegIdx)
             t.firstThumbs.clear();
             t.lastThumbs.clear();
         }
+
+        // GPS track is now stale — clear it so re-extraction is required.
+        t.gpsTrackStatus = "none";
+        t.gpsLockSeconds = -1;
+        t.gpsTrack.clear();
+
         break;
     }
 
@@ -408,4 +414,4 @@ void DangerousDialog::refreshActionState()
     m_deleteBtn->setEnabled(n > 0);
     m_archiveBtn->setEnabled(n > 0);
 }
-// SN: 00097
+// SN: 00106

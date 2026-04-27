@@ -104,6 +104,66 @@ def build_points(gps_track, gps_lock_offset=0):
     return pts
 
 
+def compress_gaps(points, gap_threshold=10):
+    """Compress large time gaps from archived segments. See pm_maprender.py."""
+    if len(points) < 2:
+        return points
+    runs, run = [], [points[0]]
+    for i in range(1, len(points)):
+        if points[i]["t"] - points[i-1]["t"] > gap_threshold:
+            runs.append(run)
+            run = [points[i]]
+        else:
+            run.append(points[i])
+    runs.append(run)
+    if len(runs) == 1:
+        return points
+    remapped, t_cursor = [], runs[0][0]["t"]
+    for r in runs:
+        r_t0 = r[0]["t"]
+        for pt in r:
+            remapped.append({**pt, "t": t_cursor + (pt["t"] - r_t0)})
+        t_cursor += (r[-1]["t"] - r[0]["t"]) + 1
+    print(f"  Gap compression: {len(runs)} GPS run(s), "
+          f"{points[-1]['t']:.0f}s → {remapped[-1]['t']:.0f}s",
+          file=sys.stderr, flush=True)
+    return remapped
+
+
+def compute_derived_headings(points, min_move_m=2.0):
+    """Position-derived bearing replaces GPS track heading. See pm_hud.py."""
+    if len(points) < 2:
+        return points
+
+    def _bearing(lat1, lon1, lat2, lon2):
+        lat1, lon1, lat2, lon2 = (math.radians(v) for v in (lat1, lon1, lat2, lon2))
+        dlon = lon2 - lon1
+        x = math.sin(dlon) * math.cos(lat2)
+        y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+        return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+    def _dist_m(lat1, lon1, lat2, lon2):
+        R = 6_371_000.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2
+             + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+             * math.sin(dlon / 2) ** 2)
+        return 2 * R * math.asin(math.sqrt(min(a, 1.0)))
+
+    result = [dict(p) for p in points]
+    last_hdg = points[0].get("heading", 0.0)
+    for i in range(len(points) - 1):
+        d = _dist_m(points[i]["lat"], points[i]["lon"],
+                    points[i + 1]["lat"], points[i + 1]["lon"])
+        if d >= min_move_m:
+            last_hdg = _bearing(points[i]["lat"], points[i]["lon"],
+                                points[i + 1]["lat"], points[i + 1]["lon"])
+        result[i]["heading"] = last_hdg
+    result[-1]["heading"] = last_hdg
+    return result
+
+
 def interp_point(pts, t_sec):
     """Return a linearly interpolated point dict at elapsed time t_sec."""
     if t_sec <= pts[0]["t"]:
@@ -579,14 +639,27 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
-    lock_secs = trip.get("gpsLockSeconds", 0)
+    lock_secs = trip.get("gpsLockSeconds")
     if not isinstance(lock_secs, (int, float)) or lock_secs < 0:
-        lock_secs = 0
+        start_epoch = trip.get("start_epoch", 0)
+        if start_epoch and gps_track:
+            first_ts = gps_track[0].get("timestamp", "")
+            try:
+                import calendar as _cal
+                gt = datetime.datetime.strptime(first_ts[:19], "%Y:%m:%d %H:%M:%S")
+                derived = _cal.timegm(gt.timetuple()) - int(start_epoch)
+                lock_secs = derived if 0 <= derived <= 300 else 0
+            except Exception:
+                lock_secs = 0
+        else:
+            lock_secs = 0
 
     print(f"  Trip {args.trip}: {len(gps_track)} GPS samples  "
           f"(GPS lock offset: {lock_secs}s)", file=sys.stderr)
 
     pts        = build_points(gps_track, gps_lock_offset=lock_secs)
+    pts        = compress_gaps(pts)
+    pts        = compute_derived_headings(pts)
     total_dur  = pts[-1]["t"]
     render_fps = args.render_fps or args.fps
     output_fps = args.fps
@@ -716,4 +789,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# SN: 00103
+# SN: 00106
