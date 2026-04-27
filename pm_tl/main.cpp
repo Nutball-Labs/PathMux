@@ -10,6 +10,15 @@ int main(int argc, char* argv[])
     app.setOrganizationName("Nutball Labs");
 
     MainWindow w;
+
+    // Optional: open a file passed on the command line so pathmux-gui (or
+    // the shell) can launch directly into a specific collage MP4.
+    if (argc > 1) {
+        QString path = QString::fromLocal8Bit(argv[1]);
+        if (QFile::exists(path))
+            w.openFile(path);
+    }
+
     w.show();
     return app.exec();
 }

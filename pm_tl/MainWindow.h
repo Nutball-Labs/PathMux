@@ -20,6 +20,8 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+    void openFile(const QString& path);   // called by main() for CLI arg
+
 protected:
     void keyPressEvent(QKeyEvent*) override;
     void closeEvent(QCloseEvent*) override;

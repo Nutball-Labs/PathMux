@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "MainWindow.h"
 #include "MarkDialog.h"
+#include "compat.hpp"
 #include <QVideoWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -153,23 +154,25 @@ MainWindow::~MainWindow()
 // ---------------------------------------------------------------------------
 // File open / output
 // ---------------------------------------------------------------------------
+void MainWindow::openFile(const QString& path)
+{
+    if (path.isEmpty()) return;
+    m_inputPath = path;
+    m_inputEdit->setText(path);
+    QFileInfo fi(path);
+    m_outputPath = fi.dir().filePath(fi.baseName() + "_tl.mp4");
+    m_outputEdit->setText(m_outputPath);
+    m_player->setSource(QUrl::fromLocalFile(path));
+    m_player->pause();
+    setWindowTitle("pm_tl \xe2\x80\x94 " + fi.fileName());
+}
+
 void MainWindow::onOpenFile()
 {
     QString path = QFileDialog::getOpenFileName(
         this, "Open Collage MP4", QString(),
         "MP4 files (*.mp4);;All files (*)");
-    if (path.isEmpty()) return;
-
-    m_inputPath = path;
-    m_inputEdit->setText(path);
-
-    QFileInfo fi(path);
-    m_outputPath = fi.dir().filePath(fi.baseName() + "_tl.mp4");
-    m_outputEdit->setText(m_outputPath);
-
-    m_player->setSource(QUrl::fromLocalFile(path));
-    m_player->pause();
-    setWindowTitle("pm_tl \xe2\x80\x94 " + fi.fileName());
+    openFile(path);
 }
 
 void MainWindow::onBrowseOutput()
@@ -223,7 +226,8 @@ void MainWindow::onFrameViewRequested(qint64 ms)
     if (wasPlaying) m_player->pause();
 
     QProcess ffmpeg;
-    ffmpeg.start("ffmpeg", {
+    applyPlatformEnv(ffmpeg);
+    ffmpeg.start(findFfmpeg(), {
         "-y",
         "-ss", QString::number(secs, 'f', 3),
         "-i", m_inputPath,
@@ -382,9 +386,9 @@ QString MainWindow::buildFfmpegCmd() const
     fc += inputs + QString("concat=n=%1:v=1:a=0[vout]").arg(n);
 
     QString output = m_outputEdit->text().trimmed();
-    return QString("ffmpeg -y -i \"%1\" -filter_complex \"%2\" "
-                   "-map [vout] -an \"%3\"")
-           .arg(m_inputPath, fc, output);
+    return QString("\"%1\" -y -i \"%2\" -filter_complex \"%3\" "
+                   "-map [vout] -an \"%4\"")
+           .arg(findFfmpeg(), m_inputPath, fc, output);
 }
 
 void MainWindow::onProcess()
@@ -422,7 +426,7 @@ void MainWindow::onProcess()
     connect(m_ffmpegProc,
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MainWindow::onProcessFinished);
-    m_ffmpegProc->start("sh", {"-c", cmd});
+    startShellCmd(*m_ffmpegProc, cmd);
 }
 
 void MainWindow::onCancelProcess()

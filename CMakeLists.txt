@@ -467,7 +467,39 @@ if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
         Qt6::Multimedia
         Qt6::MultimediaWidgets
     )
-    install(TARGETS pm_tl RUNTIME DESTINATION bin)
+    if(WIN32)
+        install(TARGETS pm_tl RUNTIME DESTINATION ".")
+        if(WINDEPLOYQT_EXECUTABLE)
+            install(CODE "
+                message(STATUS \"Running windeployqt on pm_tl.exe ...\")
+                execute_process(
+                    COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
+                        --release --no-translations
+                        \"\${CMAKE_INSTALL_PREFIX}/pm_tl.exe\"
+                    RESULT_VARIABLE _wdqt_result
+                )
+                if(NOT _wdqt_result EQUAL 0)
+                    message(WARNING \"windeployqt (pm_tl) exited with \${_wdqt_result}\")
+                endif()
+            ")
+        endif()
+    elseif(APPLE)
+        set_target_properties(pm_tl PROPERTIES
+            SKIP_BUILD_RPATH   TRUE
+            SKIP_INSTALL_RPATH TRUE
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_BUNDLE_NAME "pm_tl"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        )
+        install(TARGETS pm_tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                                BUNDLE  DESTINATION .)
+    else()
+        install(TARGETS pm_tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        install(FILES "pm_tl/pm_tl.desktop"
+                DESTINATION "share/applications"
+                OPTIONAL)
+    endif()
     message(STATUS "Qt6 Multimedia found — pm_tl target enabled")
 else()
     message(STATUS "Qt6 Multimedia not found — pm_tl skipped "

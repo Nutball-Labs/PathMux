@@ -18,6 +18,9 @@
 #include <QAction>
 #include <QKeySequence>
 #include <QSizeGrip>
+#include <QProcess>
+#include <QCoreApplication>
+#include <QMessageBox>
 #include <QAbstractButton>
 #include <QPushButton>
 #include <QMessageBox>
@@ -129,6 +132,31 @@ void MainWindow::buildMenuBar()
 
     QAction* probeAct = toolsMenu->addAction("&Probe SD Card\u2026");
     probeAct->setEnabled(false);       // placeholder
+
+    toolsMenu->addSeparator();
+
+    QAction* tlAct = toolsMenu->addAction("&Timelapse Editor\u2026");
+    tlAct->setStatusTip("Open pm_tl \u2014 create timelapse sections from a collage MP4");
+    connect(tlAct, &QAction::triggered, this, [this]{
+        QString appDir = QCoreApplication::applicationDirPath();
+        // pm_tl lives alongside pathmux-gui in the same bin directory.
+        QStringList candidates = {
+            appDir + "/pm_tl",
+            appDir + "/../bin/pm_tl",
+            appDir + "/pm_tl.exe",     // Windows
+        };
+        QString exe;
+        for (const QString& c : candidates) {
+            if (QFile::exists(c)) { exe = c; break; }
+        }
+        if (exe.isEmpty()) {
+            QMessageBox::warning(this, "pm_tl not found",
+                "Could not find pm_tl alongside pathmux-gui.\n"
+                "Build it with: cmake --build build-linux --target pm_tl");
+            return;
+        }
+        QProcess::startDetached(exe, {});
+    });
 
     // ---- Help ----
     QMenu* helpMenu = menuBar()->addMenu("&Help");
@@ -357,4 +385,4 @@ void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
     m_tripGridPanel->loadManifest(entry);
     m_manifestPanel->selectEntry(entry);
 }
-// SN: 00104
+// SN: 00106
