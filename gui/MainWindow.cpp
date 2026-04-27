@@ -141,9 +141,9 @@ void MainWindow::buildMenuBar()
         QString appDir = QCoreApplication::applicationDirPath();
         // pm_tl lives alongside pathmux-gui in the same bin directory.
         QStringList candidates = {
-            appDir + "/pm_tl",
-            appDir + "/../bin/pm_tl",
-            appDir + "/pm_tl.exe",     // Windows
+            appDir + "/pathmux-tl",
+            appDir + "/../bin/pathmux-tl",
+            appDir + "/pathmux-tl.exe",     // Windows
         };
         QString exe;
         for (const QString& c : candidates) {

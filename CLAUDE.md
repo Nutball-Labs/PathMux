@@ -98,16 +98,19 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 | `CMakeLists.txt` | Primary build system |
 | `pathmux.1` | Man page (canonical location: `man1/pathmux.1`) |
 
-### pm_tl (`pm_tl/`) — standalone Qt6 timelapse editor
+### pathmux-tl (`pathmux-tl/`) — standalone Qt6 timelapse editor
 
 | File | Role |
 |---|---|
-| `pm_tl/main.cpp` | Qt application entry point |
-| `pm_tl/MainWindow.cpp/.h` | Main window: file open, video player, process runner |
-| `pm_tl/TimelineWidget.cpp/.h` | Custom timeline: marks, playhead, right-click menu |
-| `pm_tl/MarkDialog.cpp/.h` | Mark settings popup (duration → target seconds) |
+| `pathmux-tl/main.cpp` | Qt application entry point; accepts optional MP4 path as argv[1] |
+| `pathmux-tl/MainWindow.cpp/.h` | Main window: file open, video player, process runner |
+| `pathmux-tl/TimelineWidget.cpp/.h` | Custom timeline: marks, playhead, right-click menu |
+| `pathmux-tl/MarkDialog.cpp/.h` | Mark settings popup (duration → target seconds) |
+| `pathmux-tl/compat.hpp` | Cross-platform shims: shell launch, macOS PATH, ffmpeg location |
 
+Named `pathmux-tl` (not `pm_tl`) to follow the `pathmux-gui` convention for GUI binaries; `pm_*` names are reserved for CLI tools.
 Requires Qt6::Multimedia + Qt6::MultimediaWidgets. On Alma: `dnf install qt6-qtmultimedia-devel gstreamer1-plugins-good`
+Launched from pathmux-gui via **Tools → Timelapse Editor**.
 
 ---
 

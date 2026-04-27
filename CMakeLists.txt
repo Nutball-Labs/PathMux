@@ -444,65 +444,65 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# pm_tl — PathMux Timelapse Editor (standalone Qt6 app)
+# pathmux-tl — PathMux Timelapse Editor (standalone Qt6 GUI app)
 # Requires Qt6::Multimedia and Qt6::MultimediaWidgets in addition to Widgets.
 # On Alma Linux: dnf install qt6-qtmultimedia-devel gstreamer1-plugins-good
 # ---------------------------------------------------------------------------
 find_package(Qt6 QUIET COMPONENTS Widgets Multimedia MultimediaWidgets)
 if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
-    add_executable(pm_tl
-        pm_tl/main.cpp
-        pm_tl/MainWindow.cpp
-        pm_tl/TimelineWidget.cpp
-        pm_tl/MarkDialog.cpp
+    add_executable(pathmux-tl
+        pathmux-tl/main.cpp
+        pathmux-tl/MainWindow.cpp
+        pathmux-tl/TimelineWidget.cpp
+        pathmux-tl/MarkDialog.cpp
     )
-    set_target_properties(pm_tl PROPERTIES
+    set_target_properties(pathmux-tl PROPERTIES
         AUTOMOC ON
         AUTOUIC ON
         AUTORCC ON
     )
-    target_include_directories(pm_tl PRIVATE pm_tl)
-    target_link_libraries(pm_tl
+    target_include_directories(pathmux-tl PRIVATE pathmux-tl)
+    target_link_libraries(pathmux-tl
         Qt6::Widgets
         Qt6::Multimedia
         Qt6::MultimediaWidgets
     )
     if(WIN32)
-        install(TARGETS pm_tl RUNTIME DESTINATION ".")
+        install(TARGETS pathmux-tl RUNTIME DESTINATION ".")
         if(WINDEPLOYQT_EXECUTABLE)
             install(CODE "
-                message(STATUS \"Running windeployqt on pm_tl.exe ...\")
+                message(STATUS \"Running windeployqt on pathmux-tl.exe ...\")
                 execute_process(
                     COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
                         --release --no-translations
-                        \"\${CMAKE_INSTALL_PREFIX}/pm_tl.exe\"
+                        \"\${CMAKE_INSTALL_PREFIX}/pathmux-tl.exe\"
                     RESULT_VARIABLE _wdqt_result
                 )
                 if(NOT _wdqt_result EQUAL 0)
-                    message(WARNING \"windeployqt (pm_tl) exited with \${_wdqt_result}\")
+                    message(WARNING \"windeployqt (pathmux-tl) exited with \${_wdqt_result}\")
                 endif()
             ")
         endif()
     elseif(APPLE)
-        set_target_properties(pm_tl PROPERTIES
+        set_target_properties(pathmux-tl PROPERTIES
             SKIP_BUILD_RPATH   TRUE
             SKIP_INSTALL_RPATH TRUE
             MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_BUNDLE_NAME "pm_tl"
+            MACOSX_BUNDLE_BUNDLE_NAME "pathmux-tl"
             MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         )
-        install(TARGETS pm_tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-                                BUNDLE  DESTINATION .)
+        install(TARGETS pathmux-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                                    BUNDLE  DESTINATION .)
     else()
-        install(TARGETS pm_tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-        install(FILES "pm_tl/pm_tl.desktop"
+        install(TARGETS pathmux-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        install(FILES "pathmux-tl/pathmux-tl.desktop"
                 DESTINATION "share/applications"
                 OPTIONAL)
     endif()
-    message(STATUS "Qt6 Multimedia found — pm_tl target enabled")
+    message(STATUS "Qt6 Multimedia found — pathmux-tl target enabled")
 else()
-    message(STATUS "Qt6 Multimedia not found — pm_tl skipped "
+    message(STATUS "Qt6 Multimedia not found — pathmux-tl skipped "
                    "(install qt6-qtmultimedia-devel + gstreamer1-plugins-good)")
 endif()
 
