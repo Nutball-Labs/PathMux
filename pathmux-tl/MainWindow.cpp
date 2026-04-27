@@ -14,6 +14,7 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QKeyEvent>
+#include <QWheelEvent>
 #include <QCloseEvent>
 #include <QDialog>
 #include <QPixmap>
@@ -176,29 +177,26 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     });
 
     // ── Menu bar ──────────────────────────────────────────────────────────────
-    // View → Zoom scales the entire UI (fonts + timeline height).
-    // Timeline time-axis zoom is separate: Ctrl+scroll on the timeline widget.
+    // Ctrl+scroll anywhere in the window scales the UI — same mechanism as
+    // pathmux-gui's tile zoom (step 0.1, range 0.5–3.0). Install an event
+    // filter on the central widget so child widgets pass Ctrl+scroll events up.
     m_baseFontPt = font().pointSizeF();
-    if (m_baseFontPt <= 0) m_baseFontPt = 10.0;   // fallback if px-based
+    if (m_baseFontPt <= 0) m_baseFontPt = 10.0;
+
+    central->installEventFilter(this);
 
     auto* viewMenu = menuBar()->addMenu("&View");
-    auto* zoomInAct = viewMenu->addAction("Zoom &In");
+    auto* zoomInAct  = viewMenu->addAction("Zoom &In");
     zoomInAct->setShortcut(QKeySequence::ZoomIn);
-    connect(zoomInAct, &QAction::triggered, this, [this]{
-        applyUiScale(m_uiScale * 1.25);
-    });
+    zoomInAct->setEnabled(false);   // driven by Ctrl+scroll, same as pathmux-gui
 
     auto* zoomOutAct = viewMenu->addAction("Zoom &Out");
     zoomOutAct->setShortcut(QKeySequence::ZoomOut);
-    connect(zoomOutAct, &QAction::triggered, this, [this]{
-        applyUiScale(m_uiScale / 1.25);
-    });
+    zoomOutAct->setEnabled(false);
 
     auto* zoomResetAct = viewMenu->addAction("&Reset Zoom");
     zoomResetAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
-    connect(zoomResetAct, &QAction::triggered, this, [this]{
-        applyUiScale(1.0);
-    });
+    zoomResetAct->setEnabled(false);
     connect(m_timeline, &TimelineWidget::pendingStartChanged,
             this, [this](qint64 ms){
         if (ms >= 0)
@@ -376,16 +374,6 @@ void MainWindow::keyPressEvent(QKeyEvent* e)
         }
         break;
     }
-    case Qt::Key_Equal:
-    case Qt::Key_Plus:
-        if (e->modifiers() & Qt::ControlModifier) applyUiScale(m_uiScale * 1.25);
-        break;
-    case Qt::Key_Minus:
-        if (e->modifiers() & Qt::ControlModifier) applyUiScale(m_uiScale / 1.25);
-        break;
-    case Qt::Key_0:
-        if (e->modifiers() & Qt::ControlModifier) applyUiScale(1.0);
-        break;
     case Qt::Key_Left:
         m_player->setPosition(std::max((qint64)0, m_player->position() - 5000));
         break;
@@ -595,18 +583,29 @@ void MainWindow::updateMarksSummary()
         QString("%1 timelapse mark(s):  ").arg(marks.size()) + parts.join("   "));
 }
 
+bool MainWindow::eventFilter(QObject* obj, QEvent* event)
+{
+    if (event->type() == QEvent::Wheel) {
+        auto* we = static_cast<QWheelEvent*>(event);
+        if (we->modifiers() & Qt::ControlModifier) {
+            const double delta = we->angleDelta().y() > 0 ? 0.1 : -0.1;
+            applyUiScale(m_uiScale + delta);
+            we->accept();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
 void MainWindow::applyUiScale(double scale)
 {
-    m_uiScale = std::clamp(scale, 0.5, 3.0);
+    m_uiScale = qBound(0.5, scale, 3.0);
     if (m_baseFontPt > 0) {
         QFont f = qApp->font();
         f.setPointSizeF(m_baseFontPt * m_uiScale);
         qApp->setFont(f);
     }
     m_timeline->setUiScale(m_uiScale);
-    // Force layout to pick up the new font metrics.
-    if (centralWidget()) centralWidget()->updateGeometry();
-    adjustSize();
 }
 
 double MainWindow::calcOutputDurationSecs() const

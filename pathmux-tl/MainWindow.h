@@ -27,6 +27,7 @@ public:
 protected:
     void keyPressEvent(QKeyEvent*) override;
     void closeEvent(QCloseEvent*) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
     void onOpenFile();

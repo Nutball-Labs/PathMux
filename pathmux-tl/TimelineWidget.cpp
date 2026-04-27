@@ -412,36 +412,27 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent* e)
 }
 
 // ---------------------------------------------------------------------------
-// Wheel: Ctrl+scroll zooms centred on cursor; plain scroll pans
+// Wheel: plain scroll pans the time axis when zoomed in.
+// Ctrl+scroll is NOT handled here — it propagates up to MainWindow which
+// applies UI-wide scaling (same as pathmux-gui's tile zoom behaviour).
 // ---------------------------------------------------------------------------
 void TimelineWidget::wheelEvent(QWheelEvent* e)
 {
-    if (m_duration <= 0) return;
+    if (e->modifiers() & Qt::ControlModifier) {
+        // Let the event bubble to the parent for UI scale handling.
+        e->ignore();
+        return;
+    }
+
+    if (m_duration <= 0 || m_zoom <= 1.0) return;
     int delta = e->angleDelta().y();
     if (delta == 0) return;
 
-    if (e->modifiers() & Qt::ControlModifier) {
-        // Zoom centred on cursor position
-        qint64 pivot = pxToMs(e->position().x());
-        double factor = (delta > 0) ? kZoomStep : 1.0 / kZoomStep;
-        double newZoom = std::clamp(m_zoom * factor, 1.0, kZoomMax);
-        double minVis = 1000.0;
-        newZoom = std::min(newZoom, m_duration / minVis);
-        if (newZoom == m_zoom) return;
-        m_zoom = newZoom;
-        m_viewStartMs = pivot - (qint64)(visibleMs() / 2);
-        clampView();
-        update();
-        emitViewChanged();
-    } else {
-        // Pan — scroll 10 % of visible range per notch
-        if (m_zoom <= 1.0) return;
-        qint64 step = visibleMs() / 10;
-        m_viewStartMs += (delta < 0) ? step : -step;
-        clampView();
-        update();
-        emitViewChanged();
-    }
+    qint64 step = visibleMs() / 10;
+    m_viewStartMs += (delta < 0) ? step : -step;
+    clampView();
+    update();
+    emitViewChanged();
     e->accept();
 }
 
