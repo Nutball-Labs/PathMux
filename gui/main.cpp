@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QIcon>
 #include <QPixmap>
+#include <QLoggingCategory>
 #include <string>
 #include "MainWindow.h"
 #include "SetupWizard.h"
@@ -43,6 +44,8 @@ int main(int argc, char* argv[])
             qputenv("QT_SCALE_FACTOR", s.c_str());
         }
     }
+
+    QLoggingCategory::setFilterRules("qt.qpa.xcb*=false\n");
 
     QApplication app(argc, argv);
     app.setApplicationName("PathMux");
@@ -93,4 +96,4 @@ int main(int argc, char* argv[])
     w.show();
     return app.exec();
 }
-// SN: 00097
+// SN: 00106
