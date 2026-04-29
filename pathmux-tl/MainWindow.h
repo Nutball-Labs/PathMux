@@ -74,11 +74,18 @@ private:
     // UI widgets
     QLineEdit*    m_inputEdit   = nullptr;
     QLineEdit*    m_outputEdit  = nullptr;
-    QPushButton*  m_playBtn     = nullptr;
-    QPushButton*  m_processBtn  = nullptr;
-    QPushButton*  m_cancelBtn   = nullptr;
-    QLabel*       m_posLabel      = nullptr;
-    QLabel*       m_hlpLbl        = nullptr;
+    QPushButton*  m_setStartBtn  = nullptr;
+    QPushButton*  m_setEndBtn    = nullptr;
+    QPushButton*  m_skipBackBtn  = nullptr;
+    QPushButton*  m_skipFwdBtn   = nullptr;
+    QPushButton*  m_frameBackBtn = nullptr;
+    QPushButton*  m_frameFwdBtn  = nullptr;
+    QPushButton*  m_playBtn      = nullptr;
+    QPushButton*  m_processBtn   = nullptr;
+    QPushButton*  m_cancelBtn    = nullptr;
+    QLabel*       m_posLabel     = nullptr;
+    QLabel*       m_hlpLbl       = nullptr;
+    qint64        m_frameDurationMs = 33;
     QLabel*       m_marksSummary  = nullptr;
     QLabel*       m_srcInfoLabel  = nullptr;
     QLabel*       m_outEstLabel   = nullptr;
@@ -90,4 +97,4 @@ private:
     // FFmpeg process
     QProcess* m_ffmpegProc = nullptr;
 };
-// SN: 00106
+// SN: 00107

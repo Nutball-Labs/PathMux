@@ -35,28 +35,44 @@ MarkDialog::MarkDialog(const TLMark& mark, QWidget* parent)
         QString("Raw section:  <b>%1</b>").arg(fmtDuration(rawMs)), this);
     vlay->addWidget(rawLbl);
 
+    double rawS  = rawMs / 1000.0;
+    double maxS  = std::max(rawS * 20.0, 3600.0);
+
     auto* form = new QFormLayout;
     m_spin = new QDoubleSpinBox(this);
-    m_spin->setRange(0.5, rawMs / 1000.0);
+    m_spin->setRange(0.0, maxS);
     m_spin->setSingleStep(0.5);
     m_spin->setDecimals(1);
     m_spin->setSuffix(" s");
-    m_spin->setValue(mark.targetSecs > 0 ? mark.targetSecs
-                                          : std::max(1.0, rawMs / 1000.0 / 10.0));
-    form->addRow("Condense to:", m_spin);
+    double initVal = mark.targetSecs >= 0.0 ? mark.targetSecs
+                                             : std::max(0.5, rawS / 10.0);
+    m_spin->setValue(initVal);
+    form->addRow("Duration:", m_spin);
     vlay->addLayout(form);
 
-    double rawS = rawMs / 1000.0;
-    auto* ratioLbl = new QLabel(this);
-    ratioLbl->setStyleSheet("color: gray;");
-    auto updateRatio = [=]() {
-        double factor = rawS / m_spin->value();
-        ratioLbl->setText(QString("Speed-up: %1× realtime").arg(factor, 0, 'f', 1));
+    auto* infoLbl = new QLabel(this);
+    auto updateInfo = [=]() {
+        double v = m_spin->value();
+        if (v == 0.0) {
+            infoLbl->setStyleSheet("color: #c0392b;");
+            infoLbl->setText("Cut \xe2\x80\x94 this span will be removed from the output");
+        } else if (v > rawS + 0.05) {
+            infoLbl->setStyleSheet("color: #2980b9;");
+            infoLbl->setText(QString("Slow-motion: %1\xc3\x97 slower")
+                             .arg(v / rawS, 0, 'f', 1));
+        } else if (v < rawS - 0.05) {
+            infoLbl->setStyleSheet("color: #e67e22;");
+            infoLbl->setText(QString("Speed-up: %1\xc3\x97 realtime")
+                             .arg(rawS / v, 0, 'f', 1));
+        } else {
+            infoLbl->setStyleSheet("color: #27ae60;");
+            infoLbl->setText("Real-time \xe2\x80\x94 no change");
+        }
     };
     connect(m_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, [=](double){ updateRatio(); });
-    updateRatio();
-    vlay->addWidget(ratioLbl);
+            this, [=](double){ updateInfo(); });
+    updateInfo();
+    vlay->addWidget(infoLbl);
 
     auto* hlay = new QHBoxLayout;
     auto* delBtn = new QPushButton("Delete Mark", this);
@@ -76,4 +92,4 @@ MarkDialog::MarkDialog(const TLMark& mark, QWidget* parent)
 }
 
 double MarkDialog::targetSecs() const { return m_spin->value(); }
-// SN: 00106
+// SN: 00107

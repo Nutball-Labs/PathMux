@@ -13,7 +13,7 @@ groups video segments into trips, caches results as JSON manifests, and
 extracts/exports GPS tracks. Phase 2 Qt6 GUI is in active development.
 Private GitHub repo at https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
 
-**Current version:** 1.9.1 (SN 00106)
+**Current version:** 1.9.2 (SN 00107)
 **Config dir:** `~/.config/pathmux/`
 **Build system:** CMake (primary) + legacy Makefile
 
@@ -359,4 +359,4 @@ When a communication is prefaced with either label:
 - **Phase 2 (Qt6 GUI):** Active development — `gui/` directory; see `memory/project_qt6_gui_design.md`
 - All work on `main` branch
 
-<!-- SN: 00106 -->
+<!-- SN: 00107 -->

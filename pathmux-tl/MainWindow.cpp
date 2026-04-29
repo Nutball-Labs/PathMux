@@ -27,6 +27,7 @@
 #include <QMenu>
 #include <QAction>
 #include <QKeySequence>
+#include <QShortcut>
 #include <algorithm>
 #include <cmath>
 
@@ -76,20 +77,27 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_player->setVideoOutput(m_videoWidget);
     vlay->addWidget(m_videoWidget, 1);
 
-    // ── Transport row ─────────────────────────────────────────────────────────
-    auto* trow = new QHBoxLayout;
-    m_playBtn  = new QPushButton("\xe2\x96\xb6", this);
+    // ── Mark control row (above timeline) ────────────────────────────────────
+    auto* markRow = new QHBoxLayout;
+    m_setStartBtn = new QPushButton("Set Start", this);
+    m_setStartBtn->setToolTip("Set timelapse start at current position (I)");
+    m_setEndBtn   = new QPushButton("Set End", this);
+    m_setEndBtn->setToolTip("Complete timelapse mark at current position (O)");
+    m_setEndBtn->setEnabled(false);
     m_posLabel = new QLabel("--:-- / --:--", this);
     m_posLabel->setMinimumWidth(120);
     m_hlpLbl = new QLabel(
-        "Space=play/pause  \xe2\x80\x92  I=start timelapse  \xe2\x80\x92  "
-        "O=stop timelapse  \xe2\x80\x92  right-click timeline for menu", this);
+        "Space=play/pause  \xc2\xb7  "
+        "\xe2\x86\x90/\xe2\x86\x92=frame step  \xc2\xb7  "
+        "Shift+\xe2\x86\x90/\xe2\x86\x92=\xc2\xb1" "5s  \xc2\xb7  "
+        "I=set start  O=set end", this);
     m_hlpLbl->setStyleSheet("color: gray;");
-    trow->addWidget(m_playBtn);
-    trow->addWidget(m_posLabel);
-    trow->addStretch();
-    trow->addWidget(m_hlpLbl);
-    vlay->addLayout(trow);
+    markRow->addWidget(m_setStartBtn);
+    markRow->addWidget(m_setEndBtn);
+    markRow->addWidget(m_posLabel);
+    markRow->addStretch();
+    markRow->addWidget(m_hlpLbl);
+    vlay->addLayout(markRow);
 
     // ── Timeline + scrollbar ──────────────────────────────────────────────────
     m_timeline = new TimelineWidget(this);
@@ -102,8 +110,28 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_timeScroll->setVisible(false);
     vlay->addWidget(m_timeScroll);
 
+    // ── Transport row (below timeline) ───────────────────────────────────────
+    auto* trow = new QHBoxLayout;
+    m_skipBackBtn  = new QPushButton("-5s", this);
+    m_skipBackBtn->setToolTip("Skip back 5 seconds (Shift+\xe2\x86\x90)");
+    m_frameBackBtn = new QPushButton("\xe2\x97\x81", this);   // ◁
+    m_frameBackBtn->setToolTip("Step back 1 frame (\xe2\x86\x90)");
+    m_playBtn      = new QPushButton("\xe2\x96\xb6", this);   // ▶
+    m_frameFwdBtn  = new QPushButton("\xe2\x96\xb7", this);   // ▷
+    m_frameFwdBtn->setToolTip("Step forward 1 frame (\xe2\x86\x92)");
+    m_skipFwdBtn   = new QPushButton("+5s", this);
+    m_skipFwdBtn->setToolTip("Skip forward 5 seconds (Shift+\xe2\x86\x92)");
+    trow->addStretch();
+    trow->addWidget(m_skipBackBtn);
+    trow->addWidget(m_frameBackBtn);
+    trow->addWidget(m_playBtn);
+    trow->addWidget(m_frameFwdBtn);
+    trow->addWidget(m_skipFwdBtn);
+    trow->addStretch();
+    vlay->addLayout(trow);
+
     // ── Marks summary ─────────────────────────────────────────────────────────
-    m_marksSummary = new QLabel("No timelapse marks. Right-click the timeline to add one.", this);
+    m_marksSummary = new QLabel("No timelapse marks. Click Set Start, then Set End to define a timelapse section.", this);
     m_marksSummary->setStyleSheet("color: gray;");
     vlay->addWidget(m_marksSummary);
 
@@ -136,6 +164,27 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     // ── Connections ───────────────────────────────────────────────────────────
     connect(openBtn,       &QPushButton::clicked, this, &MainWindow::onOpenFile);
     connect(outBtn,        &QPushButton::clicked, this, &MainWindow::onBrowseOutput);
+    connect(m_setStartBtn, &QPushButton::clicked, this, [this]{
+        m_timeline->setPendingStart(m_player->position());
+    });
+    connect(m_setEndBtn, &QPushButton::clicked, this, [this]{
+        if (m_timeline->pendingStartMs() >= 0) {
+            m_timeline->addMark(m_timeline->pendingStartMs(), m_player->position());
+            m_timeline->clearPending();
+        }
+    });
+    connect(m_skipBackBtn, &QPushButton::clicked, this, [this]{
+        m_player->setPosition(std::max((qint64)0, m_player->position() - 5000));
+    });
+    connect(m_skipFwdBtn, &QPushButton::clicked, this, [this]{
+        m_player->setPosition(std::min(m_player->duration(), m_player->position() + 5000));
+    });
+    connect(m_frameBackBtn, &QPushButton::clicked, this, [this]{
+        m_player->setPosition(std::max((qint64)0, m_player->position() - m_frameDurationMs));
+    });
+    connect(m_frameFwdBtn, &QPushButton::clicked, this, [this]{
+        m_player->setPosition(std::min(m_player->duration(), m_player->position() + m_frameDurationMs));
+    });
     connect(m_playBtn,     &QPushButton::clicked, this, [this]{
         if (m_player->playbackState() == QMediaPlayer::PlayingState)
             m_player->pause();
@@ -184,6 +233,40 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         m_timeline->setViewStartMs((qint64)val);
     });
 
+    // ── Transport keyboard shortcuts ──────────────────────────────────────────
+    // QShortcut fires at window level regardless of which child has focus.
+    // Guard arrow shortcuts so they don't fire while a QLineEdit has focus.
+    auto noTextFocus = [this]{ return qobject_cast<QLineEdit*>(focusWidget()) == nullptr; };
+    auto* leftSC  = new QShortcut(Qt::Key_Left,  this);
+    auto* rightSC = new QShortcut(Qt::Key_Right, this);
+    auto* shiftLeftSC  = new QShortcut(Qt::SHIFT | Qt::Key_Left,  this);
+    auto* shiftRightSC = new QShortcut(Qt::SHIFT | Qt::Key_Right, this);
+    connect(leftSC,  &QShortcut::activated, this, [this, noTextFocus]{
+        if (noTextFocus())
+            m_player->setPosition(std::max((qint64)0, m_player->position() - m_frameDurationMs));
+    });
+    connect(rightSC, &QShortcut::activated, this, [this, noTextFocus]{
+        if (noTextFocus())
+            m_player->setPosition(std::min(m_player->duration(), m_player->position() + m_frameDurationMs));
+    });
+    connect(shiftLeftSC,  &QShortcut::activated, this, [this, noTextFocus]{
+        if (noTextFocus())
+            m_player->setPosition(std::max((qint64)0, m_player->position() - 5000));
+    });
+    connect(shiftRightSC, &QShortcut::activated, this, [this, noTextFocus]{
+        if (noTextFocus())
+            m_player->setPosition(std::min(m_player->duration(), m_player->position() + 5000));
+    });
+    auto* spaceSC = new QShortcut(Qt::Key_Space, this);
+    connect(spaceSC, &QShortcut::activated, this, [this, noTextFocus]{
+        if (noTextFocus()) {
+            if (m_player->playbackState() == QMediaPlayer::PlayingState)
+                m_player->pause();
+            else
+                m_player->play();
+        }
+    });
+
     // ── Menu bar ──────────────────────────────────────────────────────────────
     // Ctrl+scroll anywhere in the window scales the UI — same mechanism as
     // pathmux-gui's tile zoom (step 0.1, range 0.5–3.0). Install an event
@@ -208,9 +291,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     zoomResetAct->setEnabled(false);
     connect(m_timeline, &TimelineWidget::pendingStartChanged,
             this, [this](qint64 ms){
+        m_setEndBtn->setEnabled(ms >= 0);
         if (ms >= 0)
             m_statusLabel->setText(
-                QString("Timelapse start set at %1 — right-click \xe2\x80\x9cStop Timelapse\xe2\x80\x9d to complete the mark")
+                QString("Start set at %1 \xe2\x80\x94 click Set End or press O to complete")
                 .arg(formatMs(ms)));
         else
             m_statusLabel->clear();
@@ -313,8 +397,11 @@ void MainWindow::onFrameViewRequested(qint64 ms)
 
     QPixmap px(tmpPath);
     if (px.isNull()) {
-        QMessageBox::warning(this, "Frame View",
-            "Could not extract frame.\nIs ffmpeg installed and on PATH?");
+        QMessageBox mb(QMessageBox::Warning, "Frame View",
+                       "Could not extract frame.\nIs ffmpeg installed and on PATH?",
+                       QMessageBox::Ok, this);
+        mb.setWindowModality(Qt::WindowModal);
+        mb.exec();
         return;
     }
 
@@ -366,12 +453,6 @@ void MainWindow::onMarksChanged()
 void MainWindow::keyPressEvent(QKeyEvent* e)
 {
     switch (e->key()) {
-    case Qt::Key_Space:
-        if (m_player->playbackState() == QMediaPlayer::PlayingState)
-            m_player->pause();
-        else
-            m_player->play();
-        break;
     case Qt::Key_I:
         m_timeline->setPendingStart(m_player->position());
         break;
@@ -385,13 +466,6 @@ void MainWindow::keyPressEvent(QKeyEvent* e)
         }
         break;
     }
-    case Qt::Key_Left:
-        m_player->setPosition(std::max((qint64)0, m_player->position() - 5000));
-        break;
-    case Qt::Key_Right:
-        m_player->setPosition(std::min(m_player->duration(),
-                                       m_player->position() + 5000));
-        break;
     default:
         QMainWindow::keyPressEvent(e);
     }
@@ -426,8 +500,9 @@ QString MainWindow::buildFfmpegCmd() const
         double mEnd   = m.endMs   / 1000.0;
         if (mStart > pos + 0.02)
             secs.push_back({pos, mStart, false, 0.0});
-        secs.push_back({mStart, mEnd, true,
-                        m.targetSecs > 0 ? m.targetSecs : 1.0});
+        if (m.targetSecs != 0.0)   // skip cut spans entirely
+            secs.push_back({mStart, mEnd, true,
+                            m.targetSecs > 0 ? m.targetSecs : 1.0});
         pos = mEnd;
     }
     if (pos < totalS - 0.02)
@@ -470,24 +545,41 @@ void MainWindow::onProcess()
 {
     m_outputPath = m_outputEdit->text().trimmed();
     if (m_outputPath.isEmpty()) {
-        QMessageBox::warning(this, "No Output Path", "Set an output file path first.");
+        QMessageBox mb(QMessageBox::Warning, "No Output Path",
+                       "Set an output file path first.", QMessageBox::Ok, this);
+        mb.setWindowModality(Qt::WindowModal);
+        mb.exec();
         return;
     }
     for (const auto& m : m_timeline->marks()) {
-        if (m.targetSecs <= 0) {
-            auto btn = QMessageBox::question(this, "Unconfigured Marks",
+        if (m.targetSecs < 0) {
+            QMessageBox mb(QMessageBox::Question, "Unconfigured Marks",
                 "Some marks have no target duration set and will be condensed to 1 second.\n\nContinue?",
-                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-            if (btn != QMessageBox::Yes) return;
+                QMessageBox::Yes | QMessageBox::Cancel, this);
+            mb.setWindowModality(Qt::WindowModal);
+            mb.setDefaultButton(QMessageBox::Cancel);
+            if (mb.exec() != QMessageBox::Yes) return;
             break;
         }
     }
 
     QString cmd = buildFfmpegCmd();
     if (cmd.isEmpty()) {
-        QMessageBox::warning(this, "Nothing to process",
-            "No timelapse marks defined.");
+        QMessageBox mb(QMessageBox::Warning, "Nothing to process",
+                       "No timelapse marks defined.", QMessageBox::Ok, this);
+        mb.setWindowModality(Qt::WindowModal);
+        mb.exec();
         return;
+    }
+
+    if (QFileInfo::exists(m_outputPath)) {
+        QMessageBox mb(QMessageBox::Warning, "Overwrite File?",
+                       QString("Output file already exists:\n%1\n\nOverwrite it?")
+                       .arg(m_outputPath),
+                       QMessageBox::Yes | QMessageBox::Cancel, this);
+        mb.setWindowModality(Qt::WindowModal);
+        mb.setDefaultButton(QMessageBox::Cancel);
+        if (mb.exec() != QMessageBox::Yes) return;
     }
 
     m_outputDurationUs = (qint64)(calcOutputDurationSecs() * 1e6);
@@ -556,13 +648,18 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 
     if (status == QProcess::CrashExit || exitCode != 0) {
         m_statusLabel->setText(QString("ffmpeg exited with code %1").arg(exitCode));
-        QMessageBox::warning(this, "Processing Failed",
+        QMessageBox mb(QMessageBox::Warning, "Processing Failed",
             QString("ffmpeg exited with code %1.\n"
                     "Ensure ffmpeg is installed and the output path is writable.")
-            .arg(exitCode));
+            .arg(exitCode), QMessageBox::Ok, this);
+        mb.setWindowModality(Qt::WindowModal);
+        mb.exec();
     } else {
         m_statusLabel->setText("Done: " + m_outputPath);
-        QMessageBox::information(this, "Done", "Output written to:\n" + m_outputPath);
+        QMessageBox mb(QMessageBox::Information, "Done",
+                       "Output written to:\n" + m_outputPath, QMessageBox::Ok, this);
+        mb.setWindowModality(Qt::WindowModal);
+        mb.exec();
     }
 }
 
@@ -574,24 +671,28 @@ void MainWindow::updateMarksSummary()
     const auto& marks = m_timeline->marks();
     if (marks.isEmpty()) {
         m_marksSummary->setText(
-            "No timelapse marks. Right-click the timeline \xe2\x80\x94 "
-            "Start Timelapse, then Stop Timelapse.");
+            "No timelapse marks. Click Set Start, then Set End to define a timelapse section.");
         return;
     }
     QStringList parts;
     for (const auto& m : marks) {
-        if (m.targetSecs > 0)
-            parts << QString("[%1\xe2\x80\x93%2 \xe2\x86\x92 %3s]")
-                         .arg(formatMs(m.startMs))
-                         .arg(formatMs(m.endMs))
-                         .arg(m.targetSecs, 0, 'f', 1);
+        QString span = QString("%1\xe2\x80\x93%2")
+                       .arg(formatMs(m.startMs)).arg(formatMs(m.endMs));
+        if (m.targetSecs < 0)
+            parts << QString("[%1 unconfigured]").arg(span);
+        else if (m.targetSecs == 0.0)
+            parts << QString("[%1 CUT]").arg(span);
         else
-            parts << QString("[%1\xe2\x80\x93%2 unconfigured]")
-                         .arg(formatMs(m.startMs))
-                         .arg(formatMs(m.endMs));
+            parts << QString("[%1 \xe2\x86\x92 %2s]").arg(span)
+                         .arg(m.targetSecs, 0, 'f', 1);
     }
     m_marksSummary->setText(
         QString("%1 timelapse mark(s):  ").arg(marks.size()) + parts.join("   "));
+}
+
+void MainWindow::updateTransportButtons()
+{
+    m_setEndBtn->setEnabled(m_timeline->pendingStartMs() >= 0);
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
@@ -615,8 +716,10 @@ void MainWindow::applyUiScale(double scale)
         QFont f = qApp->font();
         f.setPointSizeF(m_baseFontPt * m_uiScale);
         qApp->setFont(f);
-        // Widgets with explicit setFont() calls don't inherit qApp font changes,
-        // so update the small-text labels directly.
+        // Buttons don't reliably reflow on ApplicationFontChanged — set explicitly.
+        for (auto* btn : findChildren<QPushButton*>())
+            btn->setFont(f);
+        // Small-text labels use a reduced point size.
         QFont small = f;
         small.setPointSizeF(m_baseFontPt * m_uiScale * 0.8);
         m_hlpLbl->setFont(small);
@@ -639,7 +742,9 @@ double MainWindow::calcOutputDurationSecs() const
         double mStart = m.startMs / 1000.0;
         double mEnd   = m.endMs   / 1000.0;
         if (mStart > pos + 0.02) outputS += mStart - pos;
-        outputS += (m.targetSecs > 0 ? m.targetSecs : 1.0);
+        if (m.targetSecs > 0)       outputS += m.targetSecs;
+        else if (m.targetSecs < 0)  outputS += 1.0;   // unconfigured fallback
+        // cut (== 0): contributes nothing
         pos = mEnd;
     }
     if (pos < totalS - 0.02) outputS += totalS - pos;
@@ -697,4 +802,4 @@ QString MainWindow::formatMs(qint64 ms) const
         return QString("%1:%2:%3").arg(h).arg(m,2,10,QChar('0')).arg(s,2,10,QChar('0'));
     return QString("%1:%2").arg(m).arg(s,2,10,QChar('0'));
 }
-// SN: 00106
+// SN: 00107

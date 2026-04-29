@@ -6,9 +6,13 @@
 // platforms behave consistently across the full suite.
 //
 #pragma once
+#include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QSysInfo>
 #include <QString>
 
 // Apply macOS Homebrew PATH prefix so ffmpeg and python3 are found in GUI apps
@@ -40,10 +44,27 @@ inline void startShellCmd(QProcess& proc, const QString& cmd)
 #endif
 }
 
-// Locate ffmpeg: if the user has a configured path use it, otherwise rely on
-// PATH. Returns "ffmpeg" as the bare command if nothing better is found.
+// Read the ffmpegPath key from pathmux's per-host settings file.
+// Returns empty string if the file is absent or has no ffmpegPath entry.
+inline QString readPathmuxFfmpegPath()
+{
+    QString host = QSysInfo::machineHostName();
+    int dot = host.indexOf('.');
+    if (dot > 0) host = host.left(dot);
+    QString path = QDir::homePath() + "/.config/pathmux/pathmux_" + host + ".json";
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    auto doc = QJsonDocument::fromJson(f.readAll());
+    if (!doc.isObject()) return {};
+    return doc.object().value("ffmpegPath").toString();
+}
+
+// Locate ffmpeg: prefer the path configured in pathmux host settings,
+// then fall back to Homebrew candidates (macOS) or bare PATH lookup.
 inline QString findFfmpeg()
 {
+    QString configured = readPathmuxFfmpegPath();
+    if (!configured.isEmpty()) return configured;
 #ifdef __APPLE__
     const QStringList candidates = {
         "/usr/local/bin/ffmpeg",
@@ -55,4 +76,18 @@ inline QString findFfmpeg()
 #endif
     return "ffmpeg";
 }
-// SN: 00106
+
+inline QString findFfprobe()
+{
+#ifdef __APPLE__
+    const QStringList candidates = {
+        "/usr/local/bin/ffprobe",
+        "/opt/homebrew/bin/ffprobe",
+    };
+    for (const QString& p : candidates) {
+        if (QFile::exists(p)) return p;
+    }
+#endif
+    return "ffprobe";
+}
+// SN: 00107

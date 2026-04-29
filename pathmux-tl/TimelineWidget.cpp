@@ -57,7 +57,7 @@ void TimelineWidget::addMark(qint64 startMs, qint64 endMs)
     mk.id         = m_nextId++;
     mk.startMs    = startMs;
     mk.endMs      = endMs;
-    mk.targetSecs = 0;
+    mk.targetSecs = -1;
     m_marks.append(mk);
     std::sort(m_marks.begin(), m_marks.end(),
         [](const TLMark& a, const TLMark& b){ return a.startMs < b.startMs; });
@@ -287,7 +287,7 @@ void TimelineWidget::paintEvent(QPaintEvent*)
         p.drawLine(x, ry + rulerH() - 4, x, ry + rulerH());
     }
     p.setPen(QColor(0xaa, 0xaa, 0xaa));
-    QFont f = font(); f.setPointSize(7); p.setFont(f);
+    QFont f = font(); f.setPointSizeF(7.0 * m_uiScale); p.setFont(f);
     for (qint64 ms : major) {
         int x = msToPx(ms);
         p.drawLine(x, ry, x, ry + rulerH());
@@ -306,28 +306,45 @@ void TimelineWidget::paintEvent(QPaintEvent*)
         p.drawLine(px, ty, px, ty + trackH());
         // Label
         p.setPen(QColor(0x27, 0xae, 0x60));
-        f.setPointSize(7); p.setFont(f);
+        f.setPointSizeF(7.0 * m_uiScale); p.setFont(f);
         p.drawText(QRect(px + 4, ty, 120, trackH()),
                    Qt::AlignVCenter | Qt::AlignLeft,
                    QString("Start: %1").arg(formatMs(m_pendingStartMs)));
     }
 
-    // Marks
+    // Marks — color by span type
     for (const auto& m : m_marks) {
         int x0 = msToPx(m.startMs);
         int x1 = msToPx(m.endMs);
-        bool configured = (m.targetSecs > 0);
-        QColor fill = configured ? QColor(0xe6, 0x7e, 0x22, 200)
-                                 : QColor(0x27, 0xae, 0x60, 160);
+        double srcS = (m.endMs - m.startMs) / 1000.0;
+        QColor fill;
+        QString lbl;
+        if (m.targetSecs < 0) {
+            fill = QColor(0x88, 0x88, 0x88, 180);   // gray — unconfigured
+            lbl  = "TL (unconfigured)";
+        } else if (m.targetSecs == 0.0) {
+            fill = QColor(0xc0, 0x39, 0x2b, 200);   // red — cut
+            lbl  = "Cut";
+        } else if (m.targetSecs > srcS + 0.05) {
+            fill = QColor(0x27, 0x6a, 0xae, 200);   // blue — slow-motion
+            lbl  = QString("\xe2\x86\x92%1s (%2\xc3\x97 slow)")
+                   .arg(m.targetSecs, 0, 'f', 1)
+                   .arg(m.targetSecs / srcS, 0, 'f', 1);
+        } else if (m.targetSecs < srcS - 0.05) {
+            fill = QColor(0xe6, 0x7e, 0x22, 200);   // orange — compressed
+            lbl  = QString("\xe2\x86\x92%1s (%2\xc3\x97)")
+                   .arg(m.targetSecs, 0, 'f', 1)
+                   .arg(srcS / m.targetSecs, 0, 'f', 1);
+        } else {
+            fill = QColor(0x27, 0xae, 0x60, 200);   // green — real-time
+            lbl  = QString("\xe2\x86\x92%1s (real-time)").arg(m.targetSecs, 0, 'f', 1);
+        }
         p.fillRect(x0, ty, x1 - x0, trackH(), fill);
-        p.fillRect(x0,      ty, 3, trackH(), fill.lighter(150));
-        p.fillRect(x1 - 3,  ty, 3, trackH(), fill.lighter(150));
+        p.fillRect(x0,     ty, 3, trackH(), fill.lighter(150));
+        p.fillRect(x1 - 3, ty, 3, trackH(), fill.lighter(150));
         if (x1 - x0 > 30) {
             p.setPen(Qt::white);
-            f.setPointSize(7); p.setFont(f);
-            QString lbl = configured
-                ? QString("\xe2\x86\x92%1s").arg(m.targetSecs, 0, 'f', 1)
-                : "TL (unconfigured)";
+            f.setPointSizeF(7.0 * m_uiScale); p.setFont(f);
             p.drawText(QRect(x0 + 4, ty, x1 - x0 - 8, trackH()),
                        Qt::AlignVCenter | Qt::AlignLeft, lbl);
         }
@@ -452,22 +469,12 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
     // Frame View — always
     auto* frameAct = menu.addAction(
         QString("Frame View at %1").arg(formatMs(ms)));
-    menu.addSeparator();
-
-    // Timelapse mark workflow
-    auto* startAct = menu.addAction("Start Timelapse Here");
-    auto* stopAct  = menu.addAction("Stop Timelapse Here");
-    stopAct->setEnabled(m_pendingStartMs >= 0 && ms > m_pendingStartMs + 500);
-    if (m_pendingStartMs >= 0) {
-        startAct->setText(
-            QString("Restart Timelapse (was %1)").arg(formatMs(m_pendingStartMs)));
-    }
 
     // Mark operations
-    menu.addSeparator();
-    QAction* editAct     = nullptr;
-    QAction* clearAct    = nullptr;
+    QAction* editAct  = nullptr;
+    QAction* clearAct = nullptr;
     if (mi >= 0) {
+        menu.addSeparator();
         editAct  = menu.addAction("Mark Settings\xe2\x80\xa6");
         clearAct = menu.addAction("Clear Mark");
     }
@@ -479,15 +486,6 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
 
     if (chosen == frameAct) {
         emit frameViewRequested(ms);
-    } else if (chosen == startAct) {
-        m_pendingStartMs = ms;
-        update();
-        emit pendingStartChanged(ms);
-    } else if (chosen == stopAct) {
-        addMark(m_pendingStartMs, ms);
-        m_pendingStartMs = -1;
-        update();
-        emit pendingStartChanged(-1);
     } else if (chosen == editAct  && mi >= 0) {
         emit markEditRequested(m_marks[mi].id);
     } else if (chosen == clearAct && mi >= 0) {
@@ -496,4 +494,4 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
         emit markClearAllRequested();
     }
 }
-// SN: 00106
+// SN: 00107
