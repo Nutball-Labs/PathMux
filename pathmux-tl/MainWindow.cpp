@@ -20,6 +20,7 @@
 #include <QPixmap>
 #include <QPalette>
 #include <QDir>
+#include <QFileInfo>
 #include <QScrollBar>
 #include <QApplication>
 #include <QMenuBar>
@@ -50,7 +51,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_outputEdit = new QLineEdit(this);
     m_outputEdit->setPlaceholderText("Output MP4 path");
     auto* outBtn = new QPushButton("\xe2\x80\xa6", this);
-    outBtn->setFixedWidth(28);
     fileRow->addWidget(openBtn);
     fileRow->addWidget(m_inputEdit, 3);
     fileRow->addWidget(outLbl);
@@ -79,17 +79,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     // ── Transport row ─────────────────────────────────────────────────────────
     auto* trow = new QHBoxLayout;
     m_playBtn  = new QPushButton("\xe2\x96\xb6", this);
-    m_playBtn->setFixedWidth(36);
     m_posLabel = new QLabel("--:-- / --:--", this);
     m_posLabel->setMinimumWidth(120);
-    auto* hlpLbl = new QLabel(
+    m_hlpLbl = new QLabel(
         "Space=play/pause  \xe2\x80\x92  I=start timelapse  \xe2\x80\x92  "
         "O=stop timelapse  \xe2\x80\x92  right-click timeline for menu", this);
-    hlpLbl->setStyleSheet("color: gray; font-size: 8pt;");
+    m_hlpLbl->setStyleSheet("color: gray;");
     trow->addWidget(m_playBtn);
     trow->addWidget(m_posLabel);
     trow->addStretch();
-    trow->addWidget(hlpLbl);
+    trow->addWidget(m_hlpLbl);
     vlay->addLayout(trow);
 
     // ── Timeline + scrollbar ──────────────────────────────────────────────────
@@ -105,8 +104,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     // ── Marks summary ─────────────────────────────────────────────────────────
     m_marksSummary = new QLabel("No timelapse marks. Right-click the timeline to add one.", this);
-    m_marksSummary->setStyleSheet("font-size: 8pt; color: gray;");
+    m_marksSummary->setStyleSheet("color: gray;");
     vlay->addWidget(m_marksSummary);
+
+    // ── Source / output info bar ─────────────────────────────────────────────
+    auto* infoRow    = new QHBoxLayout;
+    m_srcInfoLabel   = new QLabel(this);
+    m_outEstLabel    = new QLabel(this);
+    m_outEstLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    infoRow->addWidget(m_srcInfoLabel);
+    infoRow->addStretch();
+    infoRow->addWidget(m_outEstLabel);
+    vlay->addLayout(infoRow);
 
     // ── Process row ───────────────────────────────────────────────────────────
     auto* prow   = new QHBoxLayout;
@@ -118,7 +127,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_progressBar->setRange(0, 0);
     m_progressBar->setVisible(false);
     m_statusLabel= new QLabel(this);
-    m_statusLabel->setStyleSheet("font-size: 8pt;");
     prow->addWidget(m_processBtn);
     prow->addWidget(m_cancelBtn);
     prow->addWidget(m_progressBar, 1);
@@ -184,6 +192,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     if (m_baseFontPt <= 0) m_baseFontPt = 10.0;
 
     central->installEventFilter(this);
+    applyUiScale(m_uiScale);
 
     auto* viewMenu = menuBar()->addMenu("&View");
     auto* zoomInAct  = viewMenu->addAction("Zoom &In");
@@ -263,6 +272,7 @@ void MainWindow::onPlayerDurationChanged(qint64 ms)
     m_timeline->setDuration(ms);
     m_processBtn->setEnabled(ms > 0 && !m_outputEdit->text().isEmpty());
     updateMarksSummary();
+    updateInfoBar();
 }
 
 void MainWindow::onPlayerStateChanged(QMediaPlayer::PlaybackState state)
@@ -345,6 +355,7 @@ void MainWindow::onMarkDeleteRequested(int id)
 void MainWindow::onMarksChanged()
 {
     updateMarksSummary();
+    updateInfoBar();
     m_processBtn->setEnabled(m_player->duration() > 0
                               && !m_outputEdit->text().isEmpty());
 }
@@ -604,6 +615,15 @@ void MainWindow::applyUiScale(double scale)
         QFont f = qApp->font();
         f.setPointSizeF(m_baseFontPt * m_uiScale);
         qApp->setFont(f);
+        // Widgets with explicit setFont() calls don't inherit qApp font changes,
+        // so update the small-text labels directly.
+        QFont small = f;
+        small.setPointSizeF(m_baseFontPt * m_uiScale * 0.8);
+        m_hlpLbl->setFont(small);
+        m_marksSummary->setFont(small);
+        m_srcInfoLabel->setFont(small);
+        m_outEstLabel->setFont(small);
+        m_statusLabel->setFont(small);
     }
     m_timeline->setUiScale(m_uiScale);
 }
@@ -624,6 +644,47 @@ double MainWindow::calcOutputDurationSecs() const
     }
     if (pos < totalS - 0.02) outputS += totalS - pos;
     return outputS;
+}
+
+QString MainWindow::fmtBytes(qint64 bytes)
+{
+    if (bytes >= (1LL << 30))
+        return QString("%1 GB").arg((double)bytes / (1LL << 30), 0, 'f', 2);
+    if (bytes >= (1LL << 20))
+        return QString("%1 MB").arg((double)bytes / (1LL << 20), 0, 'f', 0);
+    return QString("%1 KB").arg(bytes >> 10);
+}
+
+void MainWindow::updateInfoBar()
+{
+    qint64 srcMs = m_player->duration();
+    if (m_inputPath.isEmpty() || srcMs <= 0) {
+        m_srcInfoLabel->clear();
+        m_outEstLabel->clear();
+        return;
+    }
+
+    qint64 srcBytes = QFileInfo(m_inputPath).size();
+    m_srcInfoLabel->setText(
+        QString("Source:  %1  \xc2\xb7  %2")
+        .arg(fmtBytes(srcBytes))
+        .arg(formatMs(srcMs)));
+
+    double outSecs = calcOutputDurationSecs();
+    if (outSecs <= 0) { m_outEstLabel->clear(); return; }
+
+    // Estimate output size proportional to source bitrate × output duration.
+    double srcSecs  = srcMs / 1000.0;
+    qint64 estBytes = (qint64)((double)srcBytes / srcSecs * outSecs);
+    qint64 outMs    = (qint64)(outSecs * 1000.0);
+
+    QString outText = QString("Est. output:  ~%1  \xc2\xb7  %2")
+                      .arg(fmtBytes(estBytes))
+                      .arg(formatMs(outMs));
+    // Highlight when there's a meaningful size reduction.
+    if (estBytes < (qint64)(srcBytes * 0.95))
+        outText = "\xe2\x86\x93 " + outText;   // ↓ prefix
+    m_outEstLabel->setText(outText);
 }
 
 QString MainWindow::formatMs(qint64 ms) const

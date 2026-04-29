@@ -17,6 +17,7 @@
 #include <QHeaderView>
 #include <QPushButton>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QInputDialog>
@@ -549,10 +550,10 @@ void SettingsDialog::saveToConfig()
     s.encode.extraDownArgs    = m_extraDown->text().toStdString();
 
     // Host fields (written to host file AND base file for host-specific paths)
-    s.ffmpegPath       = m_hostFfmpeg->text().toStdString();
-    s.exiftoolPath     = m_hostExiftool->text().toStdString();
-    s.defaultExportDir = m_hostExportDir->text().toStdString();
-    s.tmpDir           = m_hostTmpDir->text().toStdString();
+    s.ffmpegPath       = QDir::toNativeSeparators(m_hostFfmpeg->text()).toStdString();
+    s.exiftoolPath     = QDir::toNativeSeparators(m_hostExiftool->text()).toStdString();
+    s.defaultExportDir = QDir::toNativeSeparators(m_hostExportDir->text()).toStdString();
+    s.tmpDir           = QDir::toNativeSeparators(m_hostTmpDir->text()).toStdString();
     // logLevel: host tab wins if different from general tab
     s.logLevel         = m_hostLogLevel->currentText().toStdString();
 
@@ -699,4 +700,4 @@ void SettingsDialog::onAccepted()
     saveToConfig();
     accept();
 }
-// SN: 00104
+// SN: 00106

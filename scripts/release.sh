@@ -41,10 +41,10 @@ esac
 # ---------------------------------------------------------------------------
 # Parse current version from lib/version.hpp
 # ---------------------------------------------------------------------------
-MAJOR=$(grep -m1 '#define VERSION_MAJOR' "$VHP" | awk '{print $3}')
-MINOR=$(grep -m1 '#define VERSION_MINOR' "$VHP" | awk '{print $3}')
-PATCH=$(grep -m1 '#define VERSION_PATCH' "$VHP" | awk '{print $3}')
-SUFFIX=$(grep -m1 '#define VERSION_SUFFIX' "$VHP" | grep -oP '(?<=")[^"]*' || true)
+MAJOR=$(grep -m1 '#define VERSION_MAJOR'  "$VHP" | awk '{print $3}' | tr -d '\r')
+MINOR=$(grep -m1 '#define VERSION_MINOR'  "$VHP" | awk '{print $3}' | tr -d '\r')
+PATCH=$(grep -m1 '#define VERSION_PATCH'  "$VHP" | awk '{print $3}' | tr -d '\r')
+SUFFIX=$(grep -m1 '#define VERSION_SUFFIX' "$VHP" | grep -oP '(?<=")[^"]*' | tr -d '\r' || true)
 CURRENT="${MAJOR}.${MINOR}.${PATCH}${SUFFIX}"
 
 echo "PathMux release uploader"
@@ -135,4 +135,4 @@ fi
 echo ""
 echo "Done. https://github.com/${REPO}/releases/tag/${TAG}"
 
-# SN: 00095
+# SN: 00106

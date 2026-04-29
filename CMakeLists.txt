@@ -222,6 +222,13 @@ if(WIN32)
             "${CMAKE_SOURCE_DIR}/README.md"
         DESTINATION "."
     )
+    # Python overlay scripts — installed into scripts\ so the GUI can find them
+    install(FILES
+            "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
+            "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
+            "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
+        DESTINATION "scripts"
+    )
 else()
     install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -377,9 +384,25 @@ if(Qt6_FOUND)
         )
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
+        # Python overlay scripts — installed into the bundle's Contents/scripts/
+        # so findScript() can locate them via applicationDirPath()/../scripts/
+        install(FILES
+                "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
+                "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
+                "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
+            DESTINATION "pathmux-gui.app/Contents/scripts"
+        )
     else()
         install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
+        # Python overlay scripts — installed into share/pathmux/scripts/ so
+        # findScript() can locate them via applicationDirPath()/../share/pathmux/scripts/
+        install(FILES
+                "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
+                "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
+                "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/pathmux/scripts"
+        )
         # XDG icon hierarchy for Linux desktop environments
         foreach(sz 16 32 48 64 128 256 512)
             install(FILES "gui/resources/pathmux_${sz}.png"

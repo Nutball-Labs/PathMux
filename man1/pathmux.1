@@ -558,6 +558,47 @@ records the build timestamp, manifest ID, trip ID, output path and filename,
 output duration in seconds, which cameras were included, and the full list of
 source segments consumed.  Entries are never removed by PathMux; the file
 grows over time as builds accumulate.
+.SH "REQUIREMENTS"
+The following external tools are required at runtime.
+PathMux does not install them; the user is responsible for having them available.
+.TP
+.BR ffmpeg (1) " / " ffprobe (1)
+Required for all video build operations.
+Not included in base RHEL/Alma repos \(em install from RPM Fusion or use a
+static build.
+.TP
+.BR exiftool (1)
+Required for GPS extraction from cameras that embed GPS data.
+PathMux does not validate the ExifTool version; if extraction fails,
+update ExifTool first.
+.TP
+.B Python\ 3
+Required for moving map, instrument dashboard, and HUD overlay generation
+.RI ( pm_maprender.py ", " pm_dashboard.py ", " pm_hud.py ).
+Install the required modules with:
+.PP
+.RS
+.EX
+pip install Pillow requests
+.EE
+.RE
+.PP
+.B Pillow
+is required by all three scripts.
+.B requests
+is required by
+.I pm_maprender.py
+(OSM tile fetching) and used optionally by
+.I pm_dashboard.py
+(weather lookup via Open-Meteo; skipped gracefully if absent).
+.PP
+On Windows, install Python 3.11 or later from
+.I https://python.org
+with
+.B "Add Python to PATH"
+checked, then run
+.B "python3 \-m pip install Pillow requests"
+from a command prompt.
 .SH "EXIT STATUS"
 .TP
 .B 0
@@ -605,4 +646,4 @@ issue on the PathMux GitHub tracker.
 .BR pm_tripdebug (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-." SN: 00104
+." SN: 00106

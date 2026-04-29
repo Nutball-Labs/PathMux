@@ -6,6 +6,7 @@
 // platforms behave consistently across the full suite.
 //
 #pragma once
+#include <QFile>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QString>

@@ -1229,13 +1229,21 @@ void TripPropertiesDialog::onGenerateMap()
         return;
     }
 
+    QStringList extraArgs;
+    {
+        QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
+        if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
+    }
     auto* dlg = new MapProgressDialog(
         m_trip,
         QString::fromStdString(manifestFile),
         output,
         m_trip.videoProfile.width,
         m_trip.videoProfile.height,
-        this);
+        this,
+        {},
+        {},
+        extraArgs);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     connect(dlg, &MapProgressDialog::renderComplete,
             this, [this, output](bool ok) {
@@ -1286,6 +1294,10 @@ void TripPropertiesDialog::onGenerateDashboard()
     bool transparent = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
     QStringList extraArgs{"--units", units};
     if (transparent) extraArgs << "--transparent";
+    {
+        QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
+        if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
+    }
     auto* dlg = new MapProgressDialog(
         m_trip,
         QString::fromStdString(manifestFile),
@@ -1381,6 +1393,10 @@ void TripPropertiesDialog::onGenerateHud()
     addNeg("--heading-x", m_hudCompassX);
     addNeg("--heading-y", m_hudCompassY);
 
+    {
+        QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
+        if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
+    }
     auto* dlg = new MapProgressDialog(
         m_trip,
         QString::fromStdString(manifestFile),

@@ -26,7 +26,6 @@ MarkDialog::MarkDialog(const TLMark& mark, QWidget* parent)
     : QDialog(parent), m_id(mark.id)
 {
     setWindowTitle("Timelapse Mark Settings");
-    setFixedWidth(280);
 
     auto* vlay = new QVBoxLayout(this);
     vlay->setSpacing(10);
@@ -49,7 +48,7 @@ MarkDialog::MarkDialog(const TLMark& mark, QWidget* parent)
 
     double rawS = rawMs / 1000.0;
     auto* ratioLbl = new QLabel(this);
-    ratioLbl->setStyleSheet("color: gray; font-size: 8pt;");
+    ratioLbl->setStyleSheet("color: gray;");
     auto updateRatio = [=]() {
         double factor = rawS / m_spin->value();
         ratioLbl->setText(QString("Speed-up: %1× realtime").arg(factor, 0, 'f', 1));

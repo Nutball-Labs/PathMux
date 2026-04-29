@@ -52,10 +52,12 @@ private slots:
 private:
     void    updateTransportButtons();
     void    updateMarksSummary();
+    void    updateInfoBar();
     void    applyUiScale(double scale);
     QString buildFfmpegCmd() const;
     double  calcOutputDurationSecs() const;
     QString formatMs(qint64 ms) const;
+    static QString fmtBytes(qint64 bytes);
 
     qint64  m_outputDurationUs = 0;
     double  m_uiScale          = 1.0;
@@ -75,8 +77,11 @@ private:
     QPushButton*  m_playBtn     = nullptr;
     QPushButton*  m_processBtn  = nullptr;
     QPushButton*  m_cancelBtn   = nullptr;
-    QLabel*       m_posLabel    = nullptr;
-    QLabel*       m_marksSummary= nullptr;
+    QLabel*       m_posLabel      = nullptr;
+    QLabel*       m_hlpLbl        = nullptr;
+    QLabel*       m_marksSummary  = nullptr;
+    QLabel*       m_srcInfoLabel  = nullptr;
+    QLabel*       m_outEstLabel   = nullptr;
     QProgressBar*   m_progressBar = nullptr;
     QLabel*         m_statusLabel = nullptr;
     TimelineWidget* m_timeline    = nullptr;

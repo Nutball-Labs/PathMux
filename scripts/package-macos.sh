@@ -16,12 +16,15 @@ set -euo pipefail
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$PROJ/build-mac"
 
-# Remove any AppleDouble ._* sidecars before packaging — NFS/SMB mounts create
-# these automatically and they break codesign and can pollute archives.
-APP="$BUILD/pathmux-gui.app"
-if [[ -d "$APP" ]]; then
-    dot_clean -m "$APP"
-fi
+# Remove AppleDouble ._* sidecars before packaging.  dot_clean fails on NFS
+# (requires listxattr); use find instead.  Also fix any directory permissions
+# that macdeployqt set incorrectly on the NFS mount (manifests as CPack
+# "Permission denied" on Versions/A/Resources inside Qt framework bundles).
+for APP in "$BUILD/pathmux-gui.app" "$BUILD/pathmux-tl.app"; do
+    [[ -d "$APP" ]] || continue
+    find "$APP" -name "._*" -delete
+    chmod -R a+rX "$APP"
+done
 
 echo "=== Packaging TGZ + ZIP (CPack) ==="
 (cd "$BUILD" && cpack)
@@ -35,4 +38,4 @@ echo "Packages:"
 ls -lh "$PROJ/packages"/pathmux-*macOS* 2>/dev/null \
     | awk '{print "  "$NF, "("$5")"}'
 
-# SN: 00095
+# SN: 00106

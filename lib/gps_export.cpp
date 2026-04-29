@@ -118,6 +118,14 @@ bool extractGps(json& root,
                 }
         }
     }
+#ifdef _WIN32
+    // cmd.exe does not treat single quotes as grouping characters, so the -p
+    // format string (e.g. '-p '$GPSDateTime ...'') is split on its interior
+    // spaces and reaches ExifTool as many separate broken arguments.
+    // Replace single quotes with double quotes; $ is not expanded by cmd.exe.
+    for (char& c : effectiveArgs)
+        if (c == '\'') c = '"';
+#endif
     const std::string exifCmd = exiftoolPath + " " + effectiveArgs + " ";
 
     // Resolve source root so relative segment paths (schema 3) become absolute.

@@ -1,6 +1,5 @@
 # package-windows.ps1 — Produce ZIP and MSI packages for Windows via CPack and WiX
-# Assumes build-windows.ps1 has already been run successfully,
-# AND windeployqt has been run on pathmux-gui.exe (run-build.ps1 does both).
+# Assumes build-windows.ps1 has already been run successfully (includes windeployqt).
 #
 # Usage:
 #   .\scripts\package-windows.ps1
@@ -50,4 +49,4 @@ Get-ChildItem "$src\packages\pathmux-*-win64.*" |
     Where-Object { $_.Extension -ne ".wixpdb" } |
     Select-Object Name, @{N="Size";E={"{0:N0} KB" -f ($_.Length/1KB)}}
 
-# SN: 00095
+# SN: 00106

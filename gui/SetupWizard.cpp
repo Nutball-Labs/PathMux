@@ -420,13 +420,13 @@ void SetupWizard::applyToConfig(ConfigManager& config)
     QString exportDir = field("exportDir").toString().trimmed();
     QString preset    = field("encoderPreset").toString();
 
-    s.ffmpegPath       = ffmpeg.toStdString();
-    s.exiftoolPath     = exiftool.toStdString();
-    s.defaultExportDir = exportDir.toStdString();
+    s.ffmpegPath       = QDir::toNativeSeparators(ffmpeg).toStdString();
+    s.exiftoolPath     = QDir::toNativeSeparators(exiftool).toStdString();
+    s.defaultExportDir = QDir::toNativeSeparators(exportDir).toStdString();
 
     config.applySettings(s);
     config.applyEncodePreset(preset.toStdString());
     config.saveSettings();
     config.saveHostSettings();
 }
-// SN: 00100
+// SN: 00106

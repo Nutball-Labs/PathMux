@@ -11,7 +11,7 @@
 #define VERSION_MINOR 9
 #define VERSION_PATCH 1
 #define VERSION_BUILD 1
-#define VERSION_SUFFIX ""
+#define VERSION_SUFFIX "c"
 
 // 2. Stringification macros
 #define STRINGIFY_HELPER(x) #x

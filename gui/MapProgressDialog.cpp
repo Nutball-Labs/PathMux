@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "MapProgressDialog.h"
+#include "config_manager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -240,6 +241,17 @@ void MapProgressDialog::startRender()
         return;
     }
 
+    // Ensure --ffmpeg is set. Call sites may pass it via extraArgs; if not,
+    // fall back to whatever is in settings so the user's configured path is
+    // always honoured regardless of which call site launched the dialog.
+    if (!m_extraArgs.contains("--ffmpeg")) {
+        ConfigManager cfg;
+        cfg.loadSettings();
+        std::string fp = cfg.getSettings().ffmpegPath;
+        if (!fp.empty())
+            m_extraArgs << "--ffmpeg" << QString::fromStdString(fp);
+    }
+
     QStringList args;
     args << "--manifest"   << m_manifestFile
          << "--trip"       << QString::fromStdString(m_trip.id)
@@ -344,8 +356,9 @@ QString MapProgressDialog::findScript() const
 {
     QString appDir = QCoreApplication::applicationDirPath();
     const QStringList candidates = {
-        appDir + "/scripts/" + m_scriptName,
-        appDir + "/../scripts/" + m_scriptName,
+        appDir + "/scripts/" + m_scriptName,                           // Windows: next to binary
+        appDir + "/../scripts/" + m_scriptName,                        // macOS: app bundle Contents/scripts
+        appDir + "/../share/pathmux/scripts/" + m_scriptName,         // Linux: /usr/share/pathmux/scripts
         appDir + "/" + m_scriptName,
     };
     for (const QString& p : candidates) {
@@ -356,4 +369,4 @@ QString MapProgressDialog::findScript() const
 }
 
 #include "MapProgressDialog.moc"
-// SN: 00104
+// SN: 00106

@@ -7,13 +7,18 @@
 
 int main(int argc, char* argv[])
 {
+#ifdef __linux__
+    // Qt6 Multimedia's FFmpeg backend probes VA-API and VDPAU for HW decode.
+    // On Intel iGPU configs where vaExportSurfaceHandle fails, the fallback
+    // path corrupts the heap in the texture upload path and crashes the app.
+    // Force software decode — acceptable for a UI preview tool.
+    qputenv("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", "");
+#endif
+
     // Suppress known-noisy Qt log categories before QApplication so the
     // messages don't appear even during early initialisation.
     //   qt.multimedia.ffmpeg* — VAAPI/VDPAU/CUDA symbol-resolver probes
     //   qt.qpa.xcb*           — Adwaita decoration "not found" noise
-    // Note: [h264]/[swscaler]/libvdpau_nvidia messages come from Qt
-    // Multimedia's internal FFmpeg via av_log (not Qt logging) and cannot
-    // be suppressed here — they are harmless hw-probe fallbacks.
     QLoggingCategory::setFilterRules(
         "qt.multimedia.ffmpeg*=false\n"
         "qt.qpa.xcb*=false\n"

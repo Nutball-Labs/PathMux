@@ -37,6 +37,9 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="PathMux">
 
+        <!-- Python overlay scripts subdirectory -->
+        <Directory Id="dir_scripts"             Name="scripts" />
+
         <!-- Qt plugin subdirectories — must exist before ComponentGroups reference them -->
         <Directory Id="dir_platforms"           Name="platforms" />
         <Directory Id="dir_styles"              Name="styles" />
@@ -77,6 +80,7 @@
       <ComponentRef Id="C_LICENSE" />
       <ComponentRef Id="C_README" />
       <ComponentRef Id="C_PATH" />
+      <ComponentGroupRef Id="grp_scripts" />
     </Feature>
 
   </Package>
@@ -88,6 +92,14 @@
     windeployqt must have been run before wix build so these globs resolve.
   -->
   <Fragment>
+    <!-- Python overlay scripts — must live in scripts\ relative to the exe.
+         Source these from SrcDir, not BinDir; they are source files, not build
+         artifacts, and are never copied into the build directory. Use pm_*.py
+         to exclude build-time tools (gen_logo_morph.py, etc.). -->
+    <ComponentGroup Id="grp_scripts" Directory="dir_scripts">
+      <Files Include="$(var.SrcDir)\scripts\pm_*.py" />
+    </ComponentGroup>
+
     <!-- Root: all EXEs + all DLLs (Qt, MinGW runtime, libpathmux, support DLLs) -->
     <ComponentGroup Id="grp_root" Directory="INSTALLDIR">
       <Files Include="$(var.BinDir)\*.exe" />
@@ -131,4 +143,4 @@
   </Fragment>
 
 </Wix>
-<!-- SN: 00092 -->
+<!-- SN: 00106 -->

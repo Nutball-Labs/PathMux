@@ -85,7 +85,7 @@ function Check-Tools {
 
     if ($script:FfprobePath) {
         $ver = (& $script:FfprobePath -version 2>&1 | Select-Object -First 1)
-        Write-Ok "ffprobe   — $ver"
+        Write-Ok "ffprobe   - $ver"
         $script:HasFfprobe = $true
     } else {
         Write-Warn "ffprobe not found."
@@ -95,7 +95,7 @@ function Check-Tools {
 
     if ($script:ExiftoolPath) {
         $ver = (& $script:ExiftoolPath -ver 2>&1 | Select-Object -First 1).Trim()
-        Write-Ok "exiftool  — v$ver"
+        Write-Ok "exiftool  - v$ver"
         $script:HasExiftool = $true
         # Warn if older than 13.51
         $parts = $ver -split '\.'
@@ -331,7 +331,7 @@ function Run-Exiftool {
         $script:VideoFile)
     $gpsALines = ($gpsA -split "`n" | Select-Object -First 10) -join "`n"
 
-    Write-Info "GPS check B — tag name scan for GPS/LIGO/NMEA groups..."
+    Write-Info "GPS check B - tag name scan for GPS/LIGO/NMEA groups..."
     $rawAll = Run-Tool $script:ExiftoolPath @("-G1","-s",$script:VideoFile)
     $gpsB = ($rawAll -split "`n" | Where-Object { $_ -match 'gps|ligo|nmea|location' }) -join "`n"
 
@@ -484,5 +484,5 @@ Run-Exiftool
 Collect-UserNotes
 Write-Report
 
-# SN: 00089
+# SN: 00106
 

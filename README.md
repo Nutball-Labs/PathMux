@@ -25,7 +25,8 @@ Pre-built packages for the latest release are on the
 
 All packages require `ffmpeg`/`ffprobe` installed separately
 (see [Requirements](#requirements)). ExifTool is required only for GPS
-extraction from cameras that embed GPS data.
+extraction. Python 3 with the `Pillow` and `requests` modules is required
+for moving map, dashboard, and HUD overlay generation.
 
 To build from source instead, see [Building from Source](#building-from-source).
 
@@ -121,8 +122,26 @@ testing is on Linux (Alma 9.x / RHEL 9).
 - `exiftool` — for GPS extraction from cameras that embed GPS in footage.
   Version requirements vary by camera GPS format; if extraction fails,
   try updating ExifTool first.
-- Python3 + Pillow + requests — for moving map and dashboard generation
-  (`scripts/pm_maprender.py`, `scripts/pm_dashboard.py`)
+- **Python 3 + Pillow + requests** — required for moving map, instrument
+  dashboard, and HUD overlay generation. PathMux does not install Python or
+  its modules; you are responsible for having a working Python 3 environment
+  with these packages installed before using those features.
+
+  Install the modules with pip (any platform):
+  ```
+  pip install Pillow requests
+  ```
+
+  **Linux:** Python 3 is typically pre-installed. Use your distro's package
+  manager or pip. On Alma/RHEL: `dnf install python3-pillow python3-requests`
+
+  **macOS:** Install Python 3 via [Homebrew](https://brew.sh/) (`brew install python`)
+  or from [python.org](https://www.python.org/downloads/), then `pip3 install Pillow requests`
+
+  **Windows:** Install Python 3.11+ from [python.org](https://www.python.org/downloads/)
+  with **"Add Python to PATH"** checked. Then from a command prompt:
+  `python3 -m pip install Pillow requests`. Verify with `python3 --version`
+  before using map/dashboard/HUD generation.
 
 ---
 
@@ -374,4 +393,4 @@ dashboard, and video build with full collage layout control.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
-<!-- SN: 00102 -->
+<!-- SN: 00106 -->
