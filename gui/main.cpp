@@ -4,14 +4,39 @@
 #include <QIcon>
 #include <QPixmap>
 #include <QLoggingCategory>
+#include <cstdio>
 #include <string>
 #include "MainWindow.h"
 #include "SetupWizard.h"
 #include "config_manager.hpp"
 #include "version.hpp"
 
+static void verboseHandler(QtMsgType type, const QMessageLogContext&, const QString& msg)
+{
+    const char* t = "DBG";
+    switch (type) {
+        case QtInfoMsg:     t = "INF"; break;
+        case QtWarningMsg:  t = "WRN"; break;
+        case QtCriticalMsg: t = "CRT"; break;
+        case QtFatalMsg:    t = "FAT"; break;
+        default: break;
+    }
+    fprintf(stderr, "[%s] %s\n", t, msg.toLocal8Bit().constData());
+    if (type == QtFatalMsg) abort();
+}
+
 int main(int argc, char* argv[])
 {
+    // Scan for --verbose before QApplication so the handler is in place early.
+    for (int i = 1; i < argc; ++i) {
+        if (QByteArray(argv[i]) == "--verbose") {
+            qInstallMessageHandler(verboseHandler);
+            QLoggingCategory::setFilterRules("*.debug=true\n");
+            fprintf(stderr, "[INF] pathmux-gui verbose mode\n");
+            break;
+        }
+    }
+
     // Apply UI scale BEFORE QApplication — Qt bakes DPI metrics at startup.
     // Priority: QT_SCALE_FACTOR env var > --scale arg > uiScale in settings.
     if (!qEnvironmentVariableIsSet("QT_SCALE_FACTOR")) {
@@ -74,6 +99,11 @@ int main(int argc, char* argv[])
         "QFrame[frameShape=\"4\"], QFrame[frameShape=\"5\"] {" // HLine / VLine
         "  color: #909090;"
         "}"
+        // Give all top-level windows a visible inner border so window edges are
+        // clear under GNOME/Adwaita compositing which renders nearly-invisible frames.
+        "QDialog, QMainWindow {"
+        "  border: 2px solid #5a5a5a;"
+        "}"
     );
 
     // Build a multi-resolution icon so the OS can pick the best size.
@@ -96,4 +126,4 @@ int main(int argc, char* argv[])
     w.show();
     return app.exec();
 }
-// SN: 00106
+// SN: 00109

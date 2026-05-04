@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 #include <QWidget>
+#include <QPixmap>
 #include <deque>
 #include <tuple>
 #include <vector>
@@ -34,6 +35,7 @@ signals:
     void zoomChanged(double factor);
 
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -47,6 +49,7 @@ private:
     static constexpr double ZOOM_MAX     = 3.0;
     static constexpr double ZOOM_STEP    = 0.1;
 
+    QPixmap              m_bgLogo;
     QStackedWidget*      m_stack;
     EmptyManifestWidget* m_emptyWidget;
     QLabel*              m_noSelLabel;
@@ -71,4 +74,4 @@ private slots:
     void loadNextThumbnail();
     void onBuildRequested(const Pathmux::Trip& trip);
 };
-// SN: 00097
+// SN: 00109

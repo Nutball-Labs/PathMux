@@ -679,22 +679,26 @@ std::string VideoBuilder::makeOutputName(const Trip& trip,
 }
 
 std::string VideoBuilder::writeConcatList(const std::vector<std::string>& files,
-                                           const std::string& tmpPath) {
+                                           const std::string& tmpPath,
+                                           const std::vector<double>& durations,
+                                           const std::vector<double>& inpoints) {
     std::ofstream ofs(tmpPath);
     if (!ofs.is_open()) {
         std::cerr << "Error: Could not write concat list to " << tmpPath << "\n";
         return "";
     }
-    for (const auto& f : files) {
-        // ffmpeg concat demuxer requires escaped single quotes
-        std::string escaped = f;
-        // Replace ' with '\'' for shell safety
+    for (size_t i = 0; i < files.size(); ++i) {
+        std::string escaped = files[i];
         size_t pos = 0;
         while ((pos = escaped.find('\'', pos)) != std::string::npos) {
             escaped.replace(pos, 1, "'\\''");
             pos += 4;
         }
         ofs << "file '" << escaped << "'\n";
+        if (i < inpoints.size() && inpoints[i] > 0.0001)
+            ofs << "inpoint " << std::fixed << std::setprecision(6) << inpoints[i] << "\n";
+        if (i < durations.size() && durations[i] > 0.0)
+            ofs << "duration " << std::fixed << std::setprecision(6) << durations[i] << "\n";
     }
     return tmpPath;
 }
@@ -711,6 +715,46 @@ int VideoBuilder::getFrameCount(const std::string& file,
     fscanf(pipe, "%d", &count);
     pclose(pipe);
     return count;
+}
+
+// ---------------------------------------------------------------------------
+// probeSegmentDurations — probe per-segment duration as frame_count / fps.
+// Using frame count avoids MPEG-TS bitrate estimation, giving ~1-frame
+// accuracy (~33ms at 30fps).  All four cameras' concat lists share these
+// durations so their demuxers advance in lockstep — no drift accumulation.
+// Falls back to format=duration probe if frame count or fps parse fails.
+// ---------------------------------------------------------------------------
+std::vector<double> VideoBuilder::probeSegmentDurations(
+        const std::vector<std::string>& files,
+        const std::string& ffprobePath,
+        const std::string& frameRate) {
+
+    // Parse "num/den" or bare "num" from frameRate string.
+    double fps = 0.0;
+    if (!frameRate.empty()) {
+        auto slash = frameRate.find('/');
+        if (slash != std::string::npos) {
+            double num = std::stod(frameRate.substr(0, slash));
+            double den = std::stod(frameRate.substr(slash + 1));
+            if (den > 0.0) fps = num / den;
+        } else {
+            try { fps = std::stod(frameRate); } catch (...) {}
+        }
+    }
+
+    std::vector<double> result;
+    result.reserve(files.size());
+    for (const auto& f : files) {
+        double dur = 0.0;
+        if (fps > 0.0) {
+            int frames = getFrameCount(f, ffprobePath);
+            if (frames > 0) dur = frames / fps;
+        }
+        if (dur <= 0.0)
+            dur = getFileDuration(f, ffprobePath);  // bitrate-estimate fallback
+        result.push_back(dur);
+    }
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -738,7 +782,11 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
     }
     std::string listFile = (fs::path(outDir) / ("pm_tmp_concat_" + camera + ".txt")).string();
 
-    if (writeConcatList(segments, listFile).empty()) return false;
+    {
+        std::vector<double> segDurations = probeSegmentDurations(
+            segments, ffprobeFromFfmpeg(opts.ffmpegPath), trip.videoProfile.frameRate);
+        if (writeConcatList(segments, listFile, segDurations).empty()) return false;
+    }
 
     // -map 0:v:0 -map 0:a:0  — video track 0 and audio track 0 only.
     // This drops the LIGOGPSINFO data stream from the .ts container.
@@ -877,16 +925,240 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         }
     }
 
-    // Write concat lists for cameras that have segments
+    auto isBlank = [&](const std::string& slot) {
+        return opts.blankSlots.count(slot) > 0;
+    };
+
+    // Probe front-slot segment durations once — used by both paths for Tier 1
+    // lockstep (concat path) and for per-segment hold durations (sync-pad path).
+    std::vector<double> refDurations;
+    const auto& refSegs = effectiveSegs("front");
+    if (!refSegs.empty() && !extReplacesFront && !isBlank("front")) {
+        std::cout << "  Probing segment durations (" << refSegs.size() << " segments)...\n";
+        refDurations = probeSegmentDurations(refSegs, ffprobeFromFfmpeg(opts.ffmpegPath),
+                                            trip.videoProfile.frameRate);
+    }
+
+    // ── Per-segment sync-pad path ─────────────────────────────────────────────
+    // When cameraSync data is present and all four camera slots carry real source
+    // segments (no external replacements, no blank slots), bypass the concat-file
+    // path entirely.  Each segment file becomes a direct ffmpeg input.  The
+    // filter_complex prepends a subdued ghost of the first frame for cameras that
+    // started later than the earliest (the "pad"), and appends a clone-hold of the
+    // last frame for cameras that started earlier (the "hold"), so every camera
+    // contributes the same wall-clock duration per segment.  Zero frames are
+    // discarded from any camera.  When cameraSync data is absent the function
+    // falls through to the standard Tier-1 concat path below.
+    bool canSyncPad = trip.cameraSync.valid
+                   && !trip.cameraSync.segmentTrims.empty()
+                   && !extReplacesFront
+                   && !isBlank("front") && !isBlank("rear")
+                   && !isBlank("left")  && !isBlank("right")
+                   && extSlotPath("rear").empty()
+                   && extSlotPath("left").empty()
+                   && extSlotPath("right").empty();
+
+    if (canSyncPad) {
+        const auto& syncTrims = trip.cameraSync.segmentTrims;
+        size_t nSync = syncTrims.size();
+
+        // For segment i, camera c:
+        //   delay[i][c] = pad duration  = maxTrim[i] - segTrim[i][c]
+        //   hold[i][c]  = hold duration = segTrim[i][c]
+        // Invariant: delay[i][c] + hold[i][c] = maxTrim[i] = constant for all c.
+        // All cameras therefore contribute the same total duration per segment.
+        std::vector<std::map<std::string, double>> segDelay(nSync), segHold(nSync);
+        for (size_t i = 0; i < nSync; ++i) {
+            double maxTrim = 0.0;
+            for (const auto& [cam, t] : syncTrims[i])
+                maxTrim = std::max(maxTrim, double(t));
+            for (const auto& [cam, t] : syncTrims[i]) {
+                segDelay[i][cam] = maxTrim - double(t);
+                segHold[i][cam]  = double(t);
+            }
+        }
+
+        auto fmtD = [](double d) -> std::string {
+            std::ostringstream o;
+            o << std::fixed << std::setprecision(6) << d;
+            return o.str();
+        };
+
+        const std::vector<std::string> slotOrder = {"front","rear","left","right"};
+        const std::vector<const std::vector<std::string>*> slotSegs = {
+            &effectiveSegs("front"), &effectiveSegs("rear"),
+            &effectiveSegs("left"),  &effectiveSegs("right")
+        };
+        size_t nSegs = effectiveSegs("front").size();
+
+        std::string audioSrc4K = opts.audioSource;
+        int audioSlotCI = 2;
+        if      (audioSrc4K == "right") audioSlotCI = 3;
+        else if (audioSrc4K == "front") audioSlotCI = 0;
+        else if (audioSrc4K == "rear")  audioSlotCI = 1;
+
+        int totalSecs4K = (trip.durationFFProbed > 0) ? trip.durationFFProbed
+                                                       : trip.segDetectedDuration;
+
+        std::cout << "  Per-segment sync pad: " << nSegs << " segments, "
+                  << "syncCam=" << trip.cameraSync.syncCam
+                  << ", 0 frames discarded\n";
+
+        // Build ffmpeg command
+        std::ostringstream cmd4K;
+        cmd4K << opts.ffmpegPath << " -y";
+        if (!opts.encode.hwDevice.empty())
+            cmd4K << " -init_hw_device " << opts.encode.hwDeviceType
+                  << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
+
+        // Add 4*nSegs segment inputs: [si*4+0]=front, [si*4+1]=rear,
+        //                              [si*4+2]=left,  [si*4+3]=right
+        for (size_t si = 0; si < nSegs; ++si) {
+            for (size_t ci = 0; ci < 4; ++ci) {
+                const auto& sv = *slotSegs[ci];
+                if (si < sv.size())
+                    cmd4K << " -i \"" << sv[si] << "\"";
+                else
+                    cmd4K << " -f lavfi -i \"color=c=black:s=1920x1080:r=25,format="
+                          << opts.encode.pixFmt << "\"";
+            }
+        }
+
+        int baseIdx4K = int(nSegs) * 4;   // first non-segment input index
+
+        bool hasOverlay4K = !opts.overlayCamera.empty() || !opts.mapOverlayPath.empty();
+        if (!opts.overlayCamera.empty()) {
+            const auto& ovSegs = effectiveSegs(opts.overlayCamera);
+            if (!ovSegs.empty()) {
+                std::string ovList = writeConcatList(ovSegs,
+                    (fs::path(tmpDir) / "pm_tmp_col_ov.txt").string(), refDurations);
+                cmd4K << " -f concat -safe 0 -i \"" << ovList << "\"";
+            } else { hasOverlay4K = false; }
+        } else if (!opts.mapOverlayPath.empty()) {
+            if (opts.mapOverlayLoop) cmd4K << " -stream_loop -1";
+            cmd4K << " -i \"" << opts.mapOverlayPath << "\"";
+        }
+        bool hasHud4K = !opts.hudOverlayPath.empty();
+        if (hasHud4K) {
+            if (opts.hudOverlayLoop) cmd4K << " -stream_loop -1";
+            cmd4K << " -c:v libvpx-vp9 -i \"" << opts.hudOverlayPath << "\"";
+        }
+        int hudIdx4K = baseIdx4K + (hasOverlay4K ? 1 : 0);
+
+        std::string collageFps4K = trip.videoProfile.frameRate.empty()
+                                   ? "30" : trip.videoProfile.frameRate;
+        const std::string sf4K = "scale=1920:1080,format=" + opts.encode.pixFmt;
+
+        // Build filter_complex
+        std::ostringstream fc4K;
+
+        // Per-segment per-camera filter chains
+        for (size_t si = 0; si < nSegs; ++si) {
+            for (size_t ci = 0; ci < 4; ++ci) {
+                int idx = int(si) * 4 + int(ci);
+                const std::string& slot = slotOrder[ci];
+                double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
+                double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
+                std::string tag = std::to_string(si) + "_" + std::to_string(ci);
+                std::string qL  = "q" + tag;
+
+                if (D > 0.001) {
+                    fc4K << "[" << idx << ":v]split=2[sfi" << tag << "][mn" << tag << "];"
+                         << "[sfi" << tag << "]trim=end_frame=1,setpts=PTS-STARTPTS,"
+                         << "loop=loop=-1:size=1:start=0,"
+                         << "trim=duration=" << fmtD(D) << ",setpts=PTS-STARTPTS,"
+                         << "eq=brightness=-0.25:saturation=0.1[sfp" << tag << "];"
+                         << "[sfp" << tag << "][mn" << tag << "]concat=n=2:v=1:a=0";
+                    if (H > 0.001)
+                        fc4K << ",tpad=stop_mode=clone:stop_duration=" << fmtD(H);
+                    fc4K << "," << sf4K << "[" << qL << "];";
+                } else if (H > 0.001) {
+                    fc4K << "[" << idx << ":v]"
+                         << "tpad=stop_mode=clone:stop_duration=" << fmtD(H)
+                         << "," << sf4K << "[" << qL << "];";
+                } else {
+                    fc4K << "[" << idx << ":v]" << sf4K << "[" << qL << "];";
+                }
+            }
+        }
+
+        // Per-camera segment concat → [fcam][rcam][lcam][gcam]
+        const std::vector<std::string> camLbl4K = {"fcam","rcam","lcam","gcam"};
+        for (size_t ci = 0; ci < 4; ++ci) {
+            for (size_t si = 0; si < nSegs; ++si)
+                fc4K << "[q" << si << "_" << ci << "]";
+            fc4K << "concat=n=" << nSegs << ":v=1:a=0[" << camLbl4K[ci] << "];";
+        }
+
+        // Audio concat for the audio source camera
+        for (size_t si = 0; si < nSegs; ++si) {
+            int idx = int(si) * 4 + audioSlotCI;
+            const std::string& slot = slotOrder[audioSlotCI];
+            double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
+            double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
+            int dMs = int(D * 1000.0 + 0.5);
+            fc4K << "[" << idx << ":a]";
+            if      (D > 0.001 && H > 0.001)
+                fc4K << "adelay=" << dMs << "|" << dMs
+                     << ",apad=pad_dur=" << fmtD(H);
+            else if (D > 0.001)
+                fc4K << "adelay=" << dMs << "|" << dMs;
+            else if (H > 0.001)
+                fc4K << "apad=pad_dur=" << fmtD(H);
+            else
+                fc4K << "anull";
+            fc4K << "[ai" << si << "];";
+        }
+        for (size_t si = 0; si < nSegs; ++si) fc4K << "[ai" << si << "]";
+        fc4K << "concat=n=" << nSegs << ":v=0:a=1[aout];";
+
+        // xstack: front TL, rear TR, right BL, left BR
+        bool needsInter4K = hasOverlay4K || hasHud4K;
+        fc4K << "[fcam][rcam][gcam][lcam]xstack=inputs=4"
+             << ":layout=0_0|w0_0|0_h0|w0_h0,fps=" << collageFps4K
+             << (needsInter4K ? "[base]" : "[vout]");
+
+        if (hasOverlay4K) {
+            fc4K << ";[" << baseIdx4K << ":v]scale=" << opts.mapOverlayWidth
+                 << ":" << opts.mapOverlayHeight
+                 << ",format=" << opts.encode.pixFmt << "[ovl]"
+                 << ";[base][ovl]overlay=(W-w)/2:(H-h)/2:eof_action=pass"
+                 << (hasHud4K ? "[afterovl]" : "[vout]");
+        }
+        if (hasHud4K) {
+            std::string hb4K = hasOverlay4K ? "afterovl" : "base";
+            fc4K << ";[" << hudIdx4K << ":v]format=yuva420p[hud4k]"
+                 << ";[" << hb4K << "][hud4k]overlay=0:0:eof_action=pass[vout]";
+        }
+
+        cmd4K << " -filter_complex \"" << fc4K.str() << "\""
+              << " -map \"[vout]\" -map \"[aout]\""
+              << " -shortest"
+              << " -c:v " << opts.encode.collageEncoder;
+        if (opts.encode.collageEncoder.find("nvenc") != std::string::npos)
+            ;
+        else if (opts.encode.collageEncoder.find("videotoolbox") != std::string::npos)
+            cmd4K << " -b:v " << opts.encode.collageQuality << "M";
+        else
+            cmd4K << " -q " << opts.encode.collageQuality;
+        if (!opts.encode.extraCollageArgs.empty())
+            cmd4K << " " << opts.encode.extraCollageArgs;
+        cmd4K << " -c:a aac -b:a 96k -movflags +faststart"
+              << " \"" << outFile << "\"";
+
+        bool ok4K = runFfmpegWithProgress(cmd4K.str(), "collage:4K", totalSecs4K);
+        if (!ok4K)
+            std::cerr << "  ffmpeg failed building 4K collage (sync-pad).\n";
+        return ok4K;
+    }
+
+    // ── Standard concat-file path (Tier 1 only) ───────────────────────────────
     auto makeList = [&](const std::vector<std::string>& segs,
                         const std::string& name) -> std::string {
         if (segs.empty()) return "";
         return writeConcatList(segs,
-            (fs::path(tmpDir) / ("pm_tmp_col_" + name + ".txt")).string());
-    };
-
-    auto isBlank = [&](const std::string& slot) {
-        return opts.blankSlots.count(slot) > 0;
+            (fs::path(tmpDir) / ("pm_tmp_col_" + name + ".txt")).string(),
+            refDurations);
     };
 
     std::string listF = (extReplacesFront                  || isBlank("front")) ? "" : makeList(effectiveSegs("front"), "front");
@@ -983,11 +1255,24 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     // Input index after the 4 camera slots: overlay=4, HUD=4 or 5.
     int hudIdx = 4 + (hasOverlay ? 1 : 0);
 
+    // Generate a trim+setpts prefix for each camera slot if a start offset is set.
+    // Positive offset = this camera started recording before the primary, so trim
+    // that many seconds from the head of its stream to align all cameras.
+    // Input-to-slot mapping: 0=front, 1=rear, 2=left, 3=right (addInput() order above).
+    auto camTrim = [&](const std::string& slot) -> std::string {
+        auto it = opts.cameraStartOffsets.find(slot);
+        if (it == opts.cameraStartOffsets.end() || it->second < 0.001) return "";
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(3)
+            << "trim=start=" << it->second << ",setpts=PTS-STARTPTS,";
+        return oss.str();
+    };
+
     cmd << " -filter_complex \""
-        <<   "[0:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v0];"
-        <<   "[1:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v1];"
-        <<   "[2:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v2];"
-        <<   "[3:v]scale=1920:1080,format=" << opts.encode.pixFmt << "[v3];"
+        <<   "[0:v]" << camTrim("front") << "scale=1920:1080,format=" << opts.encode.pixFmt << "[v0];"
+        <<   "[1:v]" << camTrim("rear")  << "scale=1920:1080,format=" << opts.encode.pixFmt << "[v1];"
+        <<   "[2:v]" << camTrim("left")  << "scale=1920:1080,format=" << opts.encode.pixFmt << "[v2];"
+        <<   "[3:v]" << camTrim("right") << "scale=1920:1080,format=" << opts.encode.pixFmt << "[v3];"
         <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0,"
         <<   "fps=" << collageFps;
 
@@ -1147,11 +1432,168 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         }
     }
 
+    std::vector<double> refDurations;
+    if (!srcFront.empty()) {
+        std::cout << "  Probing segment durations (" << srcFront.size() << " segments)...\n";
+        refDurations = probeSegmentDurations(srcFront, ffprobeFromFfmpeg(opts.ffmpegPath),
+                                            trip.videoProfile.frameRate);
+    }
+
+    // ── Per-segment sync-pad path (1080p direct) ──────────────────────────────
+    bool canSyncPad1080 = trip.cameraSync.valid
+                       && !trip.cameraSync.segmentTrims.empty()
+                       && !srcFront.empty() && !srcRear.empty()
+                       && !srcLeft.empty()  && !srcRight.empty();
+
+    if (canSyncPad1080) {
+        const auto& syncTrims = trip.cameraSync.segmentTrims;
+        size_t nSync = syncTrims.size();
+
+        std::vector<std::map<std::string, double>> segDelay(nSync), segHold(nSync);
+        for (size_t i = 0; i < nSync; ++i) {
+            double maxTrim = 0.0;
+            for (const auto& [cam, t] : syncTrims[i])
+                maxTrim = std::max(maxTrim, double(t));
+            for (const auto& [cam, t] : syncTrims[i]) {
+                segDelay[i][cam] = maxTrim - double(t);
+                segHold[i][cam]  = double(t);
+            }
+        }
+
+        auto fmtD = [](double d) -> std::string {
+            std::ostringstream o;
+            o << std::fixed << std::setprecision(6) << d;
+            return o.str();
+        };
+
+        const std::vector<std::string>            slotOrder = {"front","rear","left","right"};
+        const std::vector<const std::vector<std::string>*> slotSegs =
+            { &srcFront, &srcRear, &srcLeft, &srcRight };
+        size_t nSegs = srcFront.size();
+
+        std::string audioSrcD = opts.audioSource;
+        int audioSlotCI = 2;
+        if      (audioSrcD == "right") audioSlotCI = 3;
+        else if (audioSrcD == "front") audioSlotCI = 0;
+        else if (audioSrcD == "rear")  audioSlotCI = 1;
+
+        int totalSecs1080 = (trip.durationFFProbed > 0) ? trip.durationFFProbed
+                                                         : trip.segDetectedDuration;
+
+        std::cout << "  Per-segment sync pad: " << nSegs << " segments, "
+                  << "syncCam=" << trip.cameraSync.syncCam
+                  << ", 0 frames discarded\n";
+
+        std::ostringstream cmd1080;
+        cmd1080 << opts.ffmpegPath << " -y";
+        if (!opts.encode.hwDevice.empty())
+            cmd1080 << " -init_hw_device " << opts.encode.hwDeviceType
+                    << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
+
+        for (size_t si = 0; si < nSegs; ++si) {
+            for (size_t ci = 0; ci < 4; ++ci) {
+                const auto& sv = *slotSegs[ci];
+                if (si < sv.size())
+                    cmd1080 << " -i \"" << sv[si] << "\"";
+                else
+                    cmd1080 << " -f lavfi -i \"color=c=black:s=960x540:r=25,format="
+                            << opts.encode.pixFmt << "\"";
+            }
+        }
+
+        const std::string sf1080 = "scale=960:540,format=" + opts.encode.pixFmt;
+        std::string collageFps1080 = trip.videoProfile.frameRate.empty()
+                                     ? "30" : trip.videoProfile.frameRate;
+
+        std::ostringstream fc1080;
+
+        for (size_t si = 0; si < nSegs; ++si) {
+            for (size_t ci = 0; ci < 4; ++ci) {
+                int idx = int(si) * 4 + int(ci);
+                const std::string& slot = slotOrder[ci];
+                double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
+                double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
+                std::string tag = std::to_string(si) + "_" + std::to_string(ci);
+                std::string qL  = "q" + tag;
+
+                if (D > 0.001) {
+                    fc1080 << "[" << idx << ":v]split=2[sfi" << tag << "][mn" << tag << "];"
+                           << "[sfi" << tag << "]trim=end_frame=1,setpts=PTS-STARTPTS,"
+                           << "loop=loop=-1:size=1:start=0,"
+                           << "trim=duration=" << fmtD(D) << ",setpts=PTS-STARTPTS,"
+                           << "eq=brightness=-0.25:saturation=0.1[sfp" << tag << "];"
+                           << "[sfp" << tag << "][mn" << tag << "]concat=n=2:v=1:a=0";
+                    if (H > 0.001)
+                        fc1080 << ",tpad=stop_mode=clone:stop_duration=" << fmtD(H);
+                    fc1080 << "," << sf1080 << "[" << qL << "];";
+                } else if (H > 0.001) {
+                    fc1080 << "[" << idx << ":v]"
+                           << "tpad=stop_mode=clone:stop_duration=" << fmtD(H)
+                           << "," << sf1080 << "[" << qL << "];";
+                } else {
+                    fc1080 << "[" << idx << ":v]" << sf1080 << "[" << qL << "];";
+                }
+            }
+        }
+
+        const std::vector<std::string> camLbl = {"fcam","rcam","lcam","gcam"};
+        for (size_t ci = 0; ci < 4; ++ci) {
+            for (size_t si = 0; si < nSegs; ++si)
+                fc1080 << "[q" << si << "_" << ci << "]";
+            fc1080 << "concat=n=" << nSegs << ":v=1:a=0[" << camLbl[ci] << "];";
+        }
+
+        for (size_t si = 0; si < nSegs; ++si) {
+            int idx = int(si) * 4 + audioSlotCI;
+            const std::string& slot = slotOrder[audioSlotCI];
+            double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
+            double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
+            int dMs = int(D * 1000.0 + 0.5);
+            fc1080 << "[" << idx << ":a]";
+            if      (D > 0.001 && H > 0.001)
+                fc1080 << "adelay=" << dMs << "|" << dMs << ",apad=pad_dur=" << fmtD(H);
+            else if (D > 0.001)
+                fc1080 << "adelay=" << dMs << "|" << dMs;
+            else if (H > 0.001)
+                fc1080 << "apad=pad_dur=" << fmtD(H);
+            else
+                fc1080 << "anull";
+            fc1080 << "[ai" << si << "];";
+        }
+        for (size_t si = 0; si < nSegs; ++si) fc1080 << "[ai" << si << "]";
+        fc1080 << "concat=n=" << nSegs << ":v=0:a=1[aout];";
+
+        fc1080 << "[fcam][rcam][gcam][lcam]xstack=inputs=4"
+               << ":layout=0_0|w0_0|0_h0|w0_h0[vout]";
+
+        cmd1080 << " -filter_complex \"" << fc1080.str() << "\""
+                << " -map \"[vout]\" -map \"[aout]\""
+                << " -shortest"
+                << " -c:v " << opts.encode.collageEncoder;
+        if (opts.encode.collageEncoder.find("nvenc") != std::string::npos)
+            ;
+        else if (opts.encode.collageEncoder.find("videotoolbox") != std::string::npos)
+            cmd1080 << " -b:v " << opts.encode.collageQuality << "M";
+        else
+            cmd1080 << " -q " << opts.encode.collageQuality;
+        if (!opts.encode.extraCollageArgs.empty())
+            cmd1080 << " " << opts.encode.extraCollageArgs;
+        cmd1080 << " -c:a aac -b:a 96k -movflags +faststart"
+                << " \"" << outFile << "\"";
+
+        bool ok1080 = runFfmpegWithProgress(cmd1080.str(), "collage:1080p", totalSecs1080);
+        if (!ok1080)
+            std::cerr << "  ffmpeg failed building 1080p collage (sync-pad).\n";
+        return ok1080;
+    }
+
+    // ── Standard concat-file path (Tier 1 only) ───────────────────────────────
     auto makeList = [&](const std::vector<std::string>& segs,
                         const std::string& name) -> std::string {
         if (segs.empty()) return "";
         return writeConcatList(segs,
-            (fs::path(tmpDir) / ("pm_tmp_col1080_" + name + ".txt")).string());
+            (fs::path(tmpDir) / ("pm_tmp_col1080_" + name + ".txt")).string(),
+            refDurations);
     };
 
     std::string listF = makeList(srcFront, "front");
@@ -1188,11 +1630,21 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
     addInput(listL);
     addInput(listG);
 
+    // Same camera trim logic as the 4K collage — input 0=front, 1=rear, 2=left, 3=right.
+    auto camTrim1080 = [&](const std::string& slot) -> std::string {
+        auto it = opts.cameraStartOffsets.find(slot);
+        if (it == opts.cameraStartOffsets.end() || it->second < 0.001) return "";
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(3)
+            << "trim=start=" << it->second << ",setpts=PTS-STARTPTS,";
+        return oss.str();
+    };
+
     // Each cell 960x540; 2x2 grid = 1920x1080
     cmd << " -filter_complex \""
-        <<   "[0:v]scale=960:540,format=" << opts.encode.pixFmt << "[v0];"
-        <<   "[1:v]scale=960:540,format=" << opts.encode.pixFmt << "[v1];"
-        <<   "[2:v]scale=960:540,format=" << opts.encode.pixFmt << "[v2];"
+        <<   "[0:v]" << camTrim1080("front") << "scale=960:540,format=" << opts.encode.pixFmt << "[v0];"
+        <<   "[1:v]" << camTrim1080("rear")  << "scale=960:540,format=" << opts.encode.pixFmt << "[v1];"
+        <<   "[2:v]" << camTrim1080("left")  << "scale=960:540,format=" << opts.encode.pixFmt << "[v2];"
         <<   "[3:v]scale=960:540,format=" << opts.encode.pixFmt << "[v3];"
         <<   "[v0][v1][v3][v2]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[vout]\""
         << " -map \"[vout]\""
@@ -1247,7 +1699,9 @@ bool VideoBuilder::buildAudioFile(const Trip& trip,
 
     std::string outDir   = opts.outputDir.empty() ? "." : opts.outputDir;
     std::string listPath = (fs::path(outDir) / "pm_tmp_audio_concat.txt").string();
-    std::string concatList = writeConcatList(segments, listPath);
+    std::vector<double> audioDurations = probeSegmentDurations(
+        segments, ffprobeFromFfmpeg(opts.ffmpegPath), trip.videoProfile.frameRate);
+    std::string concatList = writeConcatList(segments, listPath, audioDurations);
     if (concatList.empty()) return false;
 
     // Determine codec and container from format choice
@@ -2598,4 +3052,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00104
+// SN: 00109

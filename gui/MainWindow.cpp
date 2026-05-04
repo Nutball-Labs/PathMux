@@ -385,4 +385,4 @@ void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
     m_tripGridPanel->loadManifest(entry);
     m_manifestPanel->selectEntry(entry);
 }
-// SN: 00106
+// SN: 00109

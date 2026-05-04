@@ -60,6 +60,18 @@ struct ValidationFile {
     std::string md5;       // hex md5 computed at scan time
 };
 
+// Per-trip camera start-offset sync data, produced by pm_sync_analyze.py.
+// segmentTrims[i][cam] = seconds to trim from the start of that camera's
+// segment i file before building the collage (Tier 2 sync correction).
+struct CameraSync {
+    std::string analyzedAt;    // ISO-8601 UTC timestamp of analysis run
+    std::string syncCam;       // camera with no trim (latest-starting, reference)
+    double spanFrames    = 0.0;
+    double spanVariation = 0.0;
+    std::vector<std::map<std::string, double>> segmentTrims;
+    bool   valid         = false;
+};
+
 struct Trip {
     // Two-character base36 ID.  Assigned once on first detection of this trip;
     // never changed on rescan.  Matched across rescans by startEpoch.
@@ -120,6 +132,9 @@ struct Trip {
     std::vector<std::string> dashVideos;  // dashboard MP4s  (dash1, dash2, …)
     std::vector<std::string> hudVideos;   // HUD overlay WebMs (hud1, hud2, …)
 
+    // Camera start-offset sync data from pm_sync_analyze.py --write.
+    CameraSync cameraSync;
+
     // Full GPS track — one point per second extracted from all segments.
     // Empty until user requests GPS extraction.
     std::vector<GpsPoint> gpsTrack;
@@ -160,4 +175,4 @@ public:
 } // namespace Pathmux
 
 #endif
-// SN: 00104
+// SN: 00109

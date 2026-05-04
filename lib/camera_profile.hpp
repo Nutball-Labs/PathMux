@@ -3,6 +3,7 @@
 #ifndef CAMERA_PROFILE_HPP
 #define CAMERA_PROFILE_HPP
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -101,6 +102,14 @@ struct CameraProfile {
     std::string gpsExiftoolArgs;
     std::string defaultLayout   = "2x2";
 
+    // Per-camera recording start offset relative to the primary camera, in seconds.
+    // Positive = this camera started recording before the primary (is ahead in time);
+    // trim this many seconds from the head of this camera's stream to align it.
+    // Populated by measureCameraOffsets() via GPS lock clapperboard on cold-start trips.
+    // Stored in the profile so it applies to all trips from the same hardware unit.
+    // Key = slot name (e.g. "rear"), primary slot is omitted (its offset is zero by def).
+    std::map<std::string, double> cameraStartOffsets;
+
     // Returns the name of the primary slot, or "" if none designated.
     std::string primarySlot() const;
 
@@ -128,4 +137,4 @@ struct CameraProfile {
 } // namespace Pathmux
 
 #endif
-// SN: 00104
+// SN: 00109

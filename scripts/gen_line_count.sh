@@ -54,6 +54,7 @@ cli_hpp=$(scan  cli/*.hpp   2>/dev/null || true)
 lib_cpp=$(scan  lib/*.cpp   2>/dev/null || true)
 lib_hpp=$(scan  lib/*.hpp   2>/dev/null || true)
 tools_cpp=$(scan tools/*.cpp 2>/dev/null || true)
+scripts_py=$(scan scripts/*.py 2>/dev/null || true)
 cmake=$(scan    CMakeLists.txt 2>/dev/null || true)
 manpages=$(scan man1/*.1    2>/dev/null || true)
 
@@ -71,10 +72,11 @@ docs_md=$(scan "${md_files[@]}" 2>/dev/null || true)
 # ---------------------------------------------------------------------------
 t_src_cpp=$(nonblank "$gui_cpp"  "$cli_cpp"  "$lib_cpp"  "$tools_cpp" | sumlines)
 t_src_h=$(  nonblank "$gui_h"   "$cli_hpp"  "$lib_hpp"               | sumlines)
+t_py=$(     nonblank "$scripts_py"                                     | sumlines)
 t_cmake=$(  nonblank "$cmake"                                          | sumlines)
 t_md=$(     nonblank "$docs_md"                                        | sumlines)
 t_man=$(    nonblank "$manpages"                                       | sumlines)
-t_grand=$(( t_src_cpp + t_src_h + t_cmake + t_md + t_man ))
+t_grand=$(( t_src_cpp + t_src_h + t_py + t_cmake + t_md + t_man ))
 
 # ---------------------------------------------------------------------------
 # Write markdown
@@ -89,6 +91,7 @@ cat <<HEADER
 |---|---|
 | C++ source (\`.cpp\`) | $(fmt $t_src_cpp) |
 | C++ headers (\`.hpp\` / \`.h\`) | $(fmt $t_src_h) |
+| Python scripts (\`.py\`) | $(fmt $t_py) |
 | Markdown (\`.md\`) | $(fmt $t_md) |
 | \`CMakeLists.txt\` | $(fmt $t_cmake) |
 | Man pages (\`.1\`) | $(fmt $t_man) |
@@ -134,11 +137,20 @@ nonblank "$tools_cpp" | rows
 
 cat <<SEC5
 
-### Build System
+### Scripts (\`scripts/\`)
 
 | File | Lines |
 |---|---|
 SEC5
+nonblank "$scripts_py" | rows
+
+cat <<SEC5B
+
+### Build System
+
+| File | Lines |
+|---|---|
+SEC5B
 nonblank "$cmake" | rows
 
 cat <<SEC6

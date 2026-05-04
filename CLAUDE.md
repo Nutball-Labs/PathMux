@@ -70,6 +70,7 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 | `tools/pm_ls.cpp` | Non-interactive trip lister; supports `--format` / `--fields` |
 | `tools/pm_audit.cpp` | Footage integrity checker |
 | `tools/pm_tripdebug.cpp` | Trip detection debug/inspection tool |
+| `tools/pm_videos.cpp` | Batch map/dashboard/HUD video generator; `--mid=XX` / `--tid=MM:TT`; `--map`/`--dash`/`--hud`/`--all`; updates manifest on completion |
 
 ### GUI (`gui/`) — compiled into `pathmux-gui` binary (Qt6, Phase 2)
 
@@ -122,7 +123,7 @@ bottom of the file:
 ```cpp
 // SN: 00071       ← C++ files and headers
 # SN: 00071        ← Makefile and cmake files
-<!-- SN: 00071 --> ← Markdown (.md) files (HTML comment — invisible when rendered)
+<!-- SN: 00109 --> ← Markdown (.md) files (HTML comment — invisible when rendered)
 ```
 
 **Rules:**
@@ -359,4 +360,4 @@ When a communication is prefaced with either label:
 - **Phase 2 (Qt6 GUI):** Active development — `gui/` directory; see `memory/project_qt6_gui_design.md`
 - All work on `main` branch
 
-<!-- SN: 00107 -->
+<!-- SN: 00109 -->

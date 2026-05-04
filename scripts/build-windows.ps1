@@ -81,8 +81,10 @@ if (-not $NoGui) {
 Write-Host ""
 Write-Host "--- Copying artifacts to $dest ---"
 $null = New-Item -ItemType Directory -Force $dest
-Get-ChildItem -Path $build -Filter "*.exe" | Copy-Item -Destination $dest -Force
-Get-ChildItem -Path $build -Filter "*.dll" | Copy-Item -Destination $dest -Force
+# Copy all files (exe, dll, etc.) from build root
+Get-ChildItem -Path $build -File | Copy-Item -Destination $dest -Force
+# Copy Qt plugin subdirectories (platforms, styles, imageformats, multimedia, etc.)
+Get-ChildItem -Path $build -Directory | Copy-Item -Destination $dest -Recurse -Force
 Write-Host "Done. Artifacts in ${dest}"
 
-# SN: 00106
+# SN: 00109

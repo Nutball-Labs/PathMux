@@ -3,10 +3,32 @@
 #include <QApplication>
 #include <QFile>
 #include <QLoggingCategory>
+#include <cstdio>
 #include "MainWindow.h"
+
+static void verboseHandler(QtMsgType type, const QMessageLogContext&, const QString& msg)
+{
+    const char* t = "DBG";
+    switch (type) {
+        case QtInfoMsg:     t = "INF"; break;
+        case QtWarningMsg:  t = "WRN"; break;
+        case QtCriticalMsg: t = "CRT"; break;
+        case QtFatalMsg:    t = "FAT"; break;
+        default: break;
+    }
+    fprintf(stderr, "[%s] %s\n", t, msg.toLocal8Bit().constData());
+    if (type == QtFatalMsg) abort();
+}
 
 int main(int argc, char* argv[])
 {
+    // Scan for --debug / --verbose before QApplication.
+    bool debugMode = false;
+    for (int i = 1; i < argc; ++i) {
+        QByteArray a(argv[i]);
+        if (a == "--debug" || a == "--verbose") { debugMode = true; break; }
+    }
+
 #ifdef __linux__
     // Qt6 Multimedia's FFmpeg backend probes VA-API and VDPAU for HW decode.
     // On Intel iGPU configs where vaExportSurfaceHandle fails, the fallback
@@ -15,14 +37,19 @@ int main(int argc, char* argv[])
     qputenv("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", "");
 #endif
 
-    // Suppress known-noisy Qt log categories before QApplication so the
-    // messages don't appear even during early initialisation.
-    //   qt.multimedia.ffmpeg* — VAAPI/VDPAU/CUDA symbol-resolver probes
-    //   qt.qpa.xcb*           — Adwaita decoration "not found" noise
-    QLoggingCategory::setFilterRules(
-        "qt.multimedia.ffmpeg*=false\n"
-        "qt.qpa.xcb*=false\n"
-    );
+    if (debugMode) {
+        qInstallMessageHandler(verboseHandler);
+        QLoggingCategory::setFilterRules("*.debug=true\n");
+        fprintf(stderr, "[INF] pathmux-tl verbose mode\n");
+    } else {
+        // Suppress known-noisy Qt log categories before QApplication.
+        //   qt.multimedia.ffmpeg* — VAAPI/VDPAU/CUDA symbol-resolver probes
+        //   qt.qpa.xcb*           — Adwaita decoration "not found" noise
+        QLoggingCategory::setFilterRules(
+            "qt.multimedia.ffmpeg*=false\n"
+            "qt.qpa.xcb*=false\n"
+        );
+    }
 
     QApplication app(argc, argv);
     app.setApplicationName("pathmux-tl");
@@ -49,13 +76,13 @@ int main(int argc, char* argv[])
 
     MainWindow w;
 
-    if (argc > 1) {
-        QString path = QString::fromLocal8Bit(argv[1]);
-        if (QFile::exists(path))
-            w.openFile(path);
+    for (int i = 1; i < argc; ++i) {
+        QString arg = QString::fromLocal8Bit(argv[i]);
+        if (arg.startsWith("--")) continue;
+        if (QFile::exists(arg)) { w.openFile(arg); break; }
     }
 
     w.show();
     return app.exec();
 }
-// SN: 00106
+// SN: 00109

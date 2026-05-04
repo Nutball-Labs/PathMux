@@ -65,6 +65,25 @@ void TimelineWidget::addMark(qint64 startMs, qint64 endMs)
     emit marksChanged();
 }
 
+void TimelineWidget::addMarkFull(qint64 startMs, qint64 endMs, double targetSecs)
+{
+    if (endMs <= startMs + 500) return;
+    bool overlap = std::any_of(m_marks.begin(), m_marks.end(),
+        [startMs, endMs](const TLMark& m){
+            return startMs < m.endMs && endMs > m.startMs; });
+    if (overlap) return;
+    TLMark mk;
+    mk.id         = m_nextId++;
+    mk.startMs    = startMs;
+    mk.endMs      = endMs;
+    mk.targetSecs = targetSecs;
+    m_marks.append(mk);
+    std::sort(m_marks.begin(), m_marks.end(),
+        [](const TLMark& a, const TLMark& b){ return a.startMs < b.startMs; });
+    update();
+    emit marksChanged();
+}
+
 void TimelineWidget::setMarkTarget(int id, double targetSecs)
 {
     for (auto& m : m_marks)
@@ -494,4 +513,4 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
         emit markClearAllRequested();
     }
 }
-// SN: 00107
+// SN: 00109

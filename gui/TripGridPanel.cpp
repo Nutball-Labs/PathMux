@@ -11,7 +11,9 @@
 #include <QVBoxLayout>
 #include <QResizeEvent>
 #include <QWheelEvent>
+#include <QPainter>
 #include <QTimer>
+#include <algorithm>
 
 using namespace Pathmux;
 
@@ -65,12 +67,36 @@ TripGridPanel::TripGridPanel(QWidget* parent)
     m_scrollArea->installEventFilter(this);
     m_scrollArea->viewport()->installEventFilter(this);
 
+    // Make the scroll area and container transparent so the panel's watermark
+    // logo shows through behind the tiles.  Tiles paint their own card backgrounds
+    // so they remain fully opaque above the logo.
+    m_scrollArea->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    m_scrollArea->viewport()->setAutoFillBackground(false);
+    m_gridContainer->setAutoFillBackground(false);
+    m_stack->setAutoFillBackground(false);
+
+    m_bgLogo = QPixmap(":/images/Nutball-Labs_logo.png");
+
     // Determine initial page
     ConfigManager config;
     config.loadSettings();
     m_imperial = config.getUseImperial();
     auto index = config.loadManifestIndex();
     m_stack->setCurrentIndex(index.empty() ? PAGE_EMPTY : PAGE_NONE);
+}
+
+void TripGridPanel::paintEvent(QPaintEvent* ev)
+{
+    QWidget::paintEvent(ev);
+    if (m_bgLogo.isNull()) return;
+    QPainter p(this);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    p.setOpacity(0.25);
+    // Scale to fit within the panel — whichever dimension fills first.
+    QPixmap sc = m_bgLogo.scaled(width(), height(),
+                                  Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    p.drawPixmap((width()  - sc.width())  / 2,
+                 (height() - sc.height()) / 2, sc);
 }
 
 void TripGridPanel::refreshPageState()
@@ -237,7 +263,19 @@ void TripGridPanel::applyZoom()
 
 void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
 {
-    TripBuildDialog dlg(m_currentManifest, trip, this);
+    // Reload this trip from disk — pm_sync_analyze.py (or any other tool) may
+    // have written cameraSync or other data to the manifest after the GUI last
+    // scanned.  Fall back to the cached trip if the reload fails.
+    Pathmux::Trip freshTrip = trip;
+    if (!m_currentManifest.manifestFile.empty()) {
+        Pathmux::ConfigManager mgr;
+        auto trips = mgr.loadTripCache(m_currentManifest.manifestFile);
+        for (const auto& t : trips) {
+            if (t.id == trip.id) { freshTrip = t; break; }
+        }
+    }
+
+    TripBuildDialog dlg(m_currentManifest, freshTrip, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
@@ -245,11 +283,11 @@ void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
         VideoOptions opts = dlg.buildOptions();
         // Non-modal: allocate on heap so the main window stays interactive.
         // WA_DeleteOnClose cleans up when the user dismisses it.
-        auto* progress = new BuildProgressDialog(trip, opts, nullptr);
+        auto* progress = new BuildProgressDialog(freshTrip, opts, nullptr);
         progress->setAttribute(Qt::WA_DeleteOnClose);
         progress->show();
         progress->startBuild();
     }
     // "Add to Batch Queue" path: dlg.processNow() == false — handled in future release
 }
-// SN: 00097
+// SN: 00109

@@ -6,8 +6,10 @@
 #include <QProcess>
 #include <QString>
 #include "TimelineWidget.h"
+#include "FrameStrip.h"
 
 class QVideoWidget;
+class QStackedWidget;
 class QLabel;
 class QPushButton;
 class QSlider;
@@ -15,6 +17,7 @@ class QLineEdit;
 class QProgressBar;
 class QProcess;
 class QScrollBar;
+class QTimer;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -34,6 +37,8 @@ private slots:
     void onBrowseOutput();
     void onProcess();
     void onCancelProcess();
+    void saveMarks();
+    bool loadMarks(const QString& path);
 
     void onPlayerPositionChanged(qint64 ms);
     void onPlayerDurationChanged(qint64 ms);
@@ -49,6 +54,8 @@ private slots:
     void onProcessReadyRead();    // stderr: status messages
     void onProcessFinished(int exitCode, QProcess::ExitStatus);
 
+    void reloadFrameStrip();
+
 private:
     void    updateTransportButtons();
     void    updateMarksSummary();
@@ -57,19 +64,26 @@ private:
     QString buildFfmpegCmd() const;
     double  calcOutputDurationSecs() const;
     QString formatMs(qint64 ms) const;
+    QString formatMsFrame(qint64 ms) const;   // H:MM:SS.FF frame-accurate
     static QString fmtBytes(qint64 bytes);
 
     qint64  m_outputDurationUs = 0;
     double  m_uiScale          = 1.0;
     double  m_baseFontPt       = 0.0;   // captured once at startup
+    bool    m_hasAudio         = false;
+    bool    m_frameStripError  = false;
+    bool    m_marksLoaded      = false;
+    bool    m_suppressSave     = false;
 
     // File
     QString m_inputPath;
     QString m_outputPath;
+    QString m_marksPath;
 
     // Player
-    QMediaPlayer* m_player      = nullptr;
-    QVideoWidget* m_videoWidget = nullptr;
+    QMediaPlayer*  m_player      = nullptr;
+    QVideoWidget*  m_videoWidget = nullptr;
+    QStackedWidget* m_videoStack = nullptr;
 
     // UI widgets
     QLineEdit*    m_inputEdit   = nullptr;
@@ -93,8 +107,10 @@ private:
     QLabel*         m_statusLabel = nullptr;
     TimelineWidget* m_timeline    = nullptr;
     QScrollBar*     m_timeScroll  = nullptr;
+    FrameStrip*     m_frameStrip  = nullptr;
+    QTimer*         m_stripTimer  = nullptr;
 
     // FFmpeg process
     QProcess* m_ffmpegProc = nullptr;
 };
-// SN: 00107
+// SN: 00109

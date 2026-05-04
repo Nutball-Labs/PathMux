@@ -209,11 +209,19 @@ add_executable(pm_tripdebug tools/pm_tripdebug.cpp)
 target_link_libraries(pm_tripdebug PRIVATE pathmuxlib)
 
 # ---------------------------------------------------------------------------
+# pm_videos — batch map/dashboard/HUD video generator
+# ---------------------------------------------------------------------------
+add_executable(pm_videos tools/pm_videos.cpp)
+target_compile_features(pm_videos PRIVATE cxx_std_17)
+target_include_directories(pm_videos PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(pm_videos PRIVATE pathmuxlib)
+
+# ---------------------------------------------------------------------------
 # Install targets — platform-specific layouts
 # ---------------------------------------------------------------------------
 if(WIN32)
     # Windows: all binaries + DLL at the package root; README and LICENSE alongside
-    install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug
+    install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug pm_videos
         RUNTIME DESTINATION "."
     )
     install(TARGETS pathmuxlib RUNTIME DESTINATION ".")
@@ -230,7 +238,7 @@ if(WIN32)
         DESTINATION "scripts"
     )
 else()
-    install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug
+    install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug pm_videos
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
     install(TARGETS pathmuxlib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -478,6 +486,8 @@ if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
         pathmux-tl/MainWindow.cpp
         pathmux-tl/TimelineWidget.cpp
         pathmux-tl/MarkDialog.cpp
+        pathmux-tl/FrameStrip.cpp
+        pathmux-tl/pathmux_tl.qrc
     )
     set_target_properties(pathmux-tl PROPERTIES
         AUTOMOC ON
@@ -550,7 +560,7 @@ if(WIN32)
             @ONLY
         )
         # Build dependency list — include GUI only if Qt6 was found
-        set(_MSI_DEPS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug)
+        set(_MSI_DEPS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug pm_videos)
         if(Qt6_FOUND)
             list(APPEND _MSI_DEPS pathmux-gui)
         endif()
@@ -581,7 +591,7 @@ if(APPLE)
         set(_PKG_STAGING "${CMAKE_BINARY_DIR}/pkg-staging")
         set(_PKG_OUTPUT  "${CMAKE_SOURCE_DIR}/packages/pathmux-${PATHMUX_VERSION}-macOS.pkg")
 
-        set(_PKG_DEPS pathmux pathmuxlib pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe)
+        set(_PKG_DEPS pathmux pathmuxlib pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_videos)
         if(Qt6_FOUND)
             list(APPEND _PKG_DEPS pathmux-gui)
         endif()
@@ -684,4 +694,4 @@ endif()
 
 include(CPack)
 
-# SN: 00106
+# SN: 00109

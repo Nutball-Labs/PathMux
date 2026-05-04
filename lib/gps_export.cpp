@@ -600,5 +600,88 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
     return outPath;
 }
 
+// ---------------------------------------------------------------------------
+// measureCameraOffsets
+// ---------------------------------------------------------------------------
+bool measureCameraOffsets(const std::map<std::string, std::string>& camPaths,
+                          time_t startEpoch,
+                          const std::string& exiftoolPath,
+                          CameraProfile& profile)
+{
+    const std::string primary = profile.primarySlot().empty()
+                              ? "front" : profile.primarySlot();
+
+    // Build a minimal exiftool command that extracts only GPSDateTime and position.
+    // $SampleTime would give sub-second PTS but is not reliable for LIGOGPSINFO
+    // binary streams in MPEG-TS — fall back to counting records (1 Hz) for now.
+    // TODO: upgrade to ffprobe data-stream packet PTS for sub-frame precision.
+    const std::string exifArgs =
+        " -ee3 -p \"$GPSDateTime $GPSLatitude# $GPSLongitude#\"";
+
+    // Compute gpsLockSecs for one camera file: run exiftool, count records until
+    // first with non-zero lat/lon.  Returns -1 if GPS never locks in the file.
+    auto probeOneCam = [&](const std::string& path) -> int {
+        if (path.empty() || path == "-") return -1;
+        std::string cmd = exiftoolPath + exifArgs
+                        + " -q \"" + path + "\" " NULL_REDIRECT;
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) return -1;
+
+        char buf[256];
+        int  record   = 0;
+        int  lockSecs = -1;
+        while (fgets(buf, sizeof(buf), pipe)) {
+            std::string line(buf);
+            while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+                line.pop_back();
+            if (line.empty()) continue;
+
+            std::istringstream ss(line);
+            std::string gpsTs;
+            double lat = 0.0, lon = 0.0;
+            if (!(ss >> gpsTs >> lat >> lon)) { ++record; continue; }
+            if (lat == 0.0 && lon == 0.0)    { ++record; continue; }
+
+            // First valid fix: compute wall-clock offset from segment start.
+            if (gpsTs.size() >= 19) {
+                struct tm gt = {};
+                std::istringstream tss(gpsTs);
+                tss >> std::get_time(&gt, "%Y:%m:%d %H:%M:%S");
+                time_t gpsEpoch = timegm(&gt);
+                int diff = static_cast<int>(gpsEpoch - startEpoch);
+                if (diff >= 0 && diff <= 300) lockSecs = diff;
+            }
+            if (lockSecs < 0) lockSecs = record;  // fallback: record index ≈ seconds
+            break;
+        }
+        pclose(pipe);
+        return lockSecs;
+    };
+
+    // Probe primary camera first to establish reference lock time.
+    auto it = camPaths.find(primary);
+    if (it == camPaths.end()) return false;
+    int primaryLock = probeOneCam(it->second);
+    if (primaryLock < 0) return false;  // not a cold-start trip for primary
+
+    bool anyMeasured = false;
+    for (const auto& slot : profile.cameraSlots) {
+        if (slot.name == primary) continue;
+        auto jt = camPaths.find(slot.name);
+        if (jt == camPaths.end() || jt->second.empty() || jt->second == "-") continue;
+
+        int camLock = probeOneCam(jt->second);
+        if (camLock < 0) continue;
+
+        // Positive offset = this camera locked at an earlier record = started sooner.
+        int offsetSecs = primaryLock - camLock;
+        if (offsetSecs != 0) {
+            profile.cameraStartOffsets[slot.name] = static_cast<double>(offsetSecs);
+            anyMeasured = true;
+        }
+    }
+    return anyMeasured;
+}
+
 } // namespace Pathmux
-// SN: 00106
+// SN: 00109

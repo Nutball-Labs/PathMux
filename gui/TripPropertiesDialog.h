@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 #include <QDialog>
+#include <QProcess>
 #include <string>
 #include "trip_detection.hpp"
 #include "BuildAllDialog.h"
@@ -14,6 +15,7 @@ class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
@@ -51,6 +53,8 @@ private slots:
     void onExportFormatChanged(int idx);
     void onExportBrowse();
     void onExportGps();
+    void onRunSyncAnalysis();
+    void onSyncFinished(int exitCode, QProcess::ExitStatus status);
 
 private:
     Pathmux::Trip m_trip;
@@ -119,8 +123,16 @@ private:
     QListWidget*    m_hudFileList      = nullptr;
     QPushButton*    m_hudGenerateBtn   = nullptr;
 
+    // Sync Values tab
+    int             m_syncTabIdx   = -1;
+    QPushButton*    m_syncRunBtn   = nullptr;
+    QPlainTextEdit* m_syncOutput   = nullptr;
+    QProcess*       m_syncProcess  = nullptr;
+
     void populateVideoList(QListWidget* list, const std::vector<std::string>& paths);
     void appendVideoToManifest(const QString& path, const std::string& key,
                                std::vector<std::string>& tripVec);
+    QWidget* buildSyncWidget();
+    void     refreshSyncTab();
 };
-// SN: 00106
+// SN: 00109

@@ -140,7 +140,26 @@ ManifestPanel::ManifestPanel(QWidget* parent)
     m_baseFontPt = (pt > 0) ? pt : 9.0;
     m_list->installEventFilter(this);
 
+    // Transparent list so the watermark logo shows through behind items.
+    m_list->setStyleSheet("QListWidget { background: transparent; border: none; }");
+    m_list->viewport()->setAutoFillBackground(false);
+
+    m_bgLogo = QPixmap(":/images/Nutball-Labs_logo.png");
+
     refresh();
+}
+
+void ManifestPanel::paintEvent(QPaintEvent* ev)
+{
+    QWidget::paintEvent(ev);
+    if (m_bgLogo.isNull()) return;
+    QPainter p(this);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    p.setOpacity(0.25);
+    // Scale to fill the full panel width; letterbox vertically.
+    QPixmap sc = m_bgLogo.scaledToWidth(width(), Qt::SmoothTransformation);
+    int y = (height() - sc.height()) / 2;
+    p.drawPixmap(0, y, sc);
 }
 
 void ManifestPanel::refresh()
@@ -271,4 +290,4 @@ void ManifestPanel::applyListZoom()
     m_list->setFont(f);
     m_list->update();
 }
-// SN: 00097
+// SN: 00109

@@ -3,7 +3,12 @@
 #include "MainWindow.h"
 #include "MarkDialog.h"
 #include "compat.hpp"
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QFile>
 #include <QVideoWidget>
+#include <QMediaMetaData>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -22,14 +27,47 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QScrollBar>
+#include <QStackedWidget>
+#include <QTimer>
 #include <QApplication>
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
 #include <QKeySequence>
 #include <QShortcut>
+#include <QPainter>
 #include <algorithm>
 #include <cmath>
+
+// ---------------------------------------------------------------------------
+// LogoBackdrop — solid white panel with Nutball-Labs watermark at 33% opacity.
+// Shown in the video area before any MP4 is loaded, eliminating the z-order
+// bleed-through that occurs when QVideoWidget's native X11 window is transparent.
+// ---------------------------------------------------------------------------
+class LogoBackdrop : public QWidget {
+public:
+    explicit LogoBackdrop(QWidget* parent = nullptr) : QWidget(parent) {
+        m_logo = QPixmap(":/images/Nutball-Labs_logo.png");
+        QPalette pal = palette();
+        pal.setColor(QPalette::Window, Qt::white);
+        setPalette(pal);
+        setAutoFillBackground(true);
+    }
+protected:
+    void paintEvent(QPaintEvent* ev) override {
+        QWidget::paintEvent(ev);
+        if (m_logo.isNull()) return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        p.setOpacity(0.33);
+        QPixmap sc = m_logo.scaled(width(), height(),
+                                    Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        p.drawPixmap((width() - sc.width()) / 2,
+                     (height() - sc.height()) / 2, sc);
+    }
+private:
+    QPixmap m_logo;
+};
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
@@ -75,7 +113,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_videoWidget->setPalette(vpal);
     m_videoWidget->setAutoFillBackground(true);
     m_player->setVideoOutput(m_videoWidget);
-    vlay->addWidget(m_videoWidget, 1);
+
+    m_videoStack = new QStackedWidget(this);
+    m_videoStack->addWidget(new LogoBackdrop(m_videoStack));  // index 0 — no file loaded
+    m_videoStack->addWidget(m_videoWidget);                   // index 1 — video playing
+    m_videoStack->setCurrentIndex(0);
+    vlay->addWidget(m_videoStack, 1);
 
     // ── Mark control row (above timeline) ────────────────────────────────────
     auto* markRow = new QHBoxLayout;
@@ -84,8 +127,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_setEndBtn   = new QPushButton("Set End", this);
     m_setEndBtn->setToolTip("Complete timelapse mark at current position (O)");
     m_setEndBtn->setEnabled(false);
-    m_posLabel = new QLabel("--:-- / --:--", this);
-    m_posLabel->setMinimumWidth(120);
+    m_posLabel = new QLabel("--:--.-- / --:--.--", this);
+    m_posLabel->setMinimumWidth(180);
     m_hlpLbl = new QLabel(
         "Space=play/pause  \xc2\xb7  "
         "\xe2\x86\x90/\xe2\x86\x92=frame step  \xc2\xb7  "
@@ -109,6 +152,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_timeScroll->setPageStep(1000);
     m_timeScroll->setVisible(false);
     vlay->addWidget(m_timeScroll);
+
+    // ── Frame strip (below timeline) ─────────────────────────────────────────
+    m_frameStrip = new FrameStrip(this);
+    vlay->addWidget(m_frameStrip);
+
+    // Debounce: reload strip 100ms after the last position change while paused.
+    m_stripTimer = new QTimer(this);
+    m_stripTimer->setSingleShot(true);
+    m_stripTimer->setInterval(100);
+    connect(m_stripTimer, &QTimer::timeout, this, &MainWindow::reloadFrameStrip);
 
     // ── Transport row (below timeline) ───────────────────────────────────────
     auto* trow = new QHBoxLayout;
@@ -200,6 +253,44 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             this, &MainWindow::onPlayerDurationChanged);
     connect(m_player, &QMediaPlayer::playbackStateChanged,
             this, &MainWindow::onPlayerStateChanged);
+    connect(m_player, &QMediaPlayer::errorOccurred,
+            this, [this](QMediaPlayer::Error, const QString& errStr) {
+        m_statusLabel->setText("Media error: " + errStr);
+        m_statusLabel->setStyleSheet("color: #ff6060;");
+    });
+    connect(m_player, &QMediaPlayer::mediaStatusChanged,
+            this, [this](QMediaPlayer::MediaStatus status) {
+        switch (status) {
+        case QMediaPlayer::LoadingMedia:
+            m_statusLabel->setText("Loading\xe2\x80\xa6");
+            m_statusLabel->setStyleSheet({});
+            break;
+        case QMediaPlayer::LoadedMedia:
+            m_statusLabel->clear();
+            m_statusLabel->setStyleSheet({});
+            m_hasAudio = !m_player->audioTracks().isEmpty();
+            {
+                QVariant fr = m_player->metaData().value(QMediaMetaData::VideoFrameRate);
+                if (fr.isValid()) {
+                    double fps = fr.toDouble();
+                    if (fps > 0)
+                        m_frameDurationMs = qMax((qint64)1,
+                                                 (qint64)(1000.0 / fps + 0.5));
+                }
+            }
+            break;
+        case QMediaPlayer::InvalidMedia:
+            m_statusLabel->setText("Invalid media \xe2\x80\x94 unsupported format or missing codec");
+            m_statusLabel->setStyleSheet("color: #ff6060;");
+            break;
+        case QMediaPlayer::StalledMedia:
+            m_statusLabel->setText("Stalled\xe2\x80\xa6");
+            m_statusLabel->setStyleSheet({});
+            break;
+        default:
+            break;
+        }
+    });
 
     connect(m_timeline, &TimelineWidget::seekRequested,
             this, &MainWindow::onSeekRequested);
@@ -231,6 +322,23 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     connect(m_timeScroll, &QScrollBar::valueChanged,
             this, [this](int val){
         m_timeline->setViewStartMs((qint64)val);
+    });
+    connect(m_frameStrip, &FrameStrip::frameClicked,
+            this, [this](qint64 ms){
+        m_player->setPosition(ms);
+    });
+    connect(m_frameStrip, &FrameStrip::framesLoaded, this, [this]{
+        if (m_frameStripError) {
+            m_statusLabel->clear();
+            m_statusLabel->setStyleSheet({});
+            m_frameStripError = false;
+        }
+    });
+    connect(m_frameStrip, &FrameStrip::extractionFailed,
+            this, [this](const QString& err){
+        m_frameStripError = true;
+        m_statusLabel->setText("Frame strip: " + err);
+        m_statusLabel->setStyleSheet("color: #ff6060;");
     });
 
     // ── Transport keyboard shortcuts ──────────────────────────────────────────
@@ -277,6 +385,27 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     central->installEventFilter(this);
     applyUiScale(m_uiScale);
 
+    auto* fileMenu = menuBar()->addMenu("&File");
+    auto* loadMarksAct = fileMenu->addAction("&Load Marks\xe2\x80\xa6");
+    loadMarksAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_L));
+    auto* saveMarksAct = fileMenu->addAction("&Save Marks As\xe2\x80\xa6");
+    saveMarksAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_S));
+    connect(loadMarksAct, &QAction::triggered, this, [this]{
+        QString path = QFileDialog::getOpenFileName(
+            this, "Load Marks", m_marksPath.isEmpty() ? QString() : m_marksPath,
+            "PathMux TL marks (*.pmtl.json);;All files (*)");
+        if (!path.isEmpty()) { loadMarks(path); m_marksLoaded = true; }
+    });
+    connect(saveMarksAct, &QAction::triggered, this, [this]{
+        QString path = QFileDialog::getSaveFileName(
+            this, "Save Marks As", m_marksPath.isEmpty() ? QString() : m_marksPath,
+            "PathMux TL marks (*.pmtl.json);;All files (*)");
+        if (path.isEmpty()) return;
+        if (!path.endsWith(".pmtl.json")) path += ".pmtl.json";
+        m_marksPath = path;
+        saveMarks();
+    });
+
     auto* viewMenu = menuBar()->addMenu("&View");
     auto* zoomInAct  = viewMenu->addAction("Zoom &In");
     zoomInAct->setShortcut(QKeySequence::ZoomIn);
@@ -295,7 +424,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         if (ms >= 0)
             m_statusLabel->setText(
                 QString("Start set at %1 \xe2\x80\x94 click Set End or press O to complete")
-                .arg(formatMs(ms)));
+                .arg(formatMsFrame(ms)));
         else
             m_statusLabel->clear();
     });
@@ -316,8 +445,15 @@ void MainWindow::openFile(const QString& path)
     m_inputPath = path;
     m_inputEdit->setText(path);
     QFileInfo fi(path);
-    m_outputPath = fi.dir().filePath(fi.baseName() + "_tl.mp4");
+    m_outputPath   = fi.dir().filePath(fi.baseName() + "_tl.mp4");
+    m_marksPath    = fi.dir().filePath(fi.baseName() + ".pmtl.json");
+    m_marksLoaded  = false;
     m_outputEdit->setText(m_outputPath);
+    m_frameStrip->clearFrames();
+    m_statusLabel->clear();
+    m_statusLabel->setStyleSheet({});
+    m_hasAudio = false;
+    m_videoStack->setCurrentIndex(1);   // reveal video widget, hide logo backdrop
     m_player->setSource(QUrl::fromLocalFile(path));
     m_player->pause();
     setWindowTitle("pathmux-tl \xe2\x80\x94 " + fi.fileName());
@@ -348,12 +484,19 @@ void MainWindow::onPlayerPositionChanged(qint64 ms)
 {
     m_timeline->setPosition(ms);
     m_timeline->scrollToPosition();
-    m_posLabel->setText(formatMs(ms) + " / " + formatMs(m_player->duration()));
+    m_posLabel->setText(formatMsFrame(ms) + " / " + formatMsFrame(m_player->duration()));
+    if (m_player->playbackState() != QMediaPlayer::PlayingState)
+        m_stripTimer->start();
 }
 
 void MainWindow::onPlayerDurationChanged(qint64 ms)
 {
-    m_timeline->setDuration(ms);
+    m_timeline->setDuration(ms);   // clears marks
+    if (ms > 0 && !m_marksLoaded && !m_marksPath.isEmpty()
+            && QFileInfo::exists(m_marksPath)) {
+        loadMarks(m_marksPath);
+        m_marksLoaded = true;
+    }
     m_processBtn->setEnabled(ms > 0 && !m_outputEdit->text().isEmpty());
     updateMarksSummary();
     updateInfoBar();
@@ -362,6 +505,8 @@ void MainWindow::onPlayerDurationChanged(qint64 ms)
 void MainWindow::onPlayerStateChanged(QMediaPlayer::PlaybackState state)
 {
     m_playBtn->setText(state == QMediaPlayer::PlayingState ? "\xe2\x8f\xb8" : "\xe2\x96\xb6");
+    if (state == QMediaPlayer::PausedState)
+        m_stripTimer->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +552,7 @@ void MainWindow::onFrameViewRequested(qint64 ms)
 
     auto* dlg  = new QDialog(this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setWindowTitle(QString("Frame at %1").arg(formatMs(ms)));
+    dlg->setWindowTitle(QString("Frame at %1").arg(formatMsFrame(ms)));
     auto* vl   = new QVBoxLayout(dlg);
     auto* lbl  = new QLabel(dlg);
     int maxW = std::min(1200, (int)(screen()->availableGeometry().width() * 0.85));
@@ -445,6 +590,7 @@ void MainWindow::onMarksChanged()
     updateInfoBar();
     m_processBtn->setEnabled(m_player->duration() > 0
                               && !m_outputEdit->text().isEmpty());
+    if (!m_suppressSave) saveMarks();
 }
 
 // ---------------------------------------------------------------------------
@@ -483,6 +629,19 @@ void MainWindow::closeEvent(QCloseEvent* e)
 // ---------------------------------------------------------------------------
 // Processing
 // ---------------------------------------------------------------------------
+// Build an atempo filter chain for any speed factor.
+// atempo range per filter is [0.5, 100]; chain multiple stages for extremes.
+static QString atempoChain(double factor)
+{
+    if (factor <= 0) factor = 1.0;
+    QStringList f;
+    double rem = factor;
+    while (rem > 100.0) { f << "atempo=100.0"; rem /= 100.0; }
+    while (rem < 0.5)   { f << "atempo=0.5";   rem *= 2.0;   }
+    f << QString("atempo=%1").arg(rem, 0, 'f', 6);
+    return f.join(",");
+}
+
 QString MainWindow::buildFfmpegCmd() const
 {
     const auto& marks = m_timeline->marks();
@@ -510,35 +669,80 @@ QString MainWindow::buildFfmpegCmd() const
 
     if (secs.isEmpty()) return {};
 
+    // Compute target output fps once. Applied to ALL sections (both timelapse and
+    // passthrough) so concat receives streams with identical declared frame rates.
+    // Without -hwaccel, frames are always in CPU memory and CPU filters work correctly.
+    double outFps = m_frameDurationMs > 0 ? 1000.0 / m_frameDurationMs : 30.0;
+
     QString fc;
     int n = secs.size();
     for (int i = 0; i < n; ++i) {
         const auto& s = secs[i];
+        double dur = s.endS - s.startS;
+
+        // Video chain
         if (s.isTL) {
-            double dur    = s.endS - s.startS;
-            double factor = (dur > 0) ? s.targetS / dur : 1.0;
+            double vFactor = (dur > 0) ? s.targetS / dur : 1.0;
+            // fps= after setpts drops frame count to output-fps before concat/encode.
             fc += QString("[0:v]trim=start=%1:end=%2,"
-                          "setpts=(PTS-STARTPTS)*%3[v%4];")
+                          "setpts=(PTS-STARTPTS)*%3,"
+                          "fps=%4[v%5];")
                   .arg(s.startS, 0, 'f', 3)
                   .arg(s.endS,   0, 'f', 3)
-                  .arg(factor,   0, 'f', 6)
+                  .arg(vFactor,  0, 'f', 6)
+                  .arg(outFps,   0, 'f', 3)
                   .arg(i);
         } else {
+            // Apply fps= to passthrough sections too so all concat inputs agree.
             fc += QString("[0:v]trim=start=%1:end=%2,"
-                          "setpts=PTS-STARTPTS[v%3];")
+                          "setpts=PTS-STARTPTS,"
+                          "fps=%3[v%4];")
                   .arg(s.startS, 0, 'f', 3)
                   .arg(s.endS,   0, 'f', 3)
+                  .arg(outFps,   0, 'f', 3)
                   .arg(i);
         }
+
+        // Audio chain — only when input has audio
+        if (m_hasAudio) {
+            if (s.isTL) {
+                double aFactor = (dur > 0 && s.targetS > 0) ? dur / s.targetS : 1.0;
+                fc += QString("[0:a]atrim=start=%1:end=%2,"
+                              "asetpts=PTS-STARTPTS,%3[a%4];")
+                      .arg(s.startS, 0, 'f', 3)
+                      .arg(s.endS,   0, 'f', 3)
+                      .arg(atempoChain(aFactor))
+                      .arg(i);
+            } else {
+                fc += QString("[0:a]atrim=start=%1:end=%2,"
+                              "asetpts=PTS-STARTPTS[a%3];")
+                      .arg(s.startS, 0, 'f', 3)
+                      .arg(s.endS,   0, 'f', 3)
+                      .arg(i);
+            }
+        }
     }
+
     QString inputs;
-    for (int i = 0; i < n; ++i) inputs += QString("[v%1]").arg(i);
-    fc += inputs + QString("concat=n=%1:v=1:a=0[vout]").arg(n);
+    for (int i = 0; i < n; ++i) {
+        inputs += QString("[v%1]").arg(i);
+        if (m_hasAudio) inputs += QString("[a%1]").arg(i);
+    }
 
     QString output = m_outputEdit->text().trimmed();
-    return QString("\"%1\" -y -progress pipe:1 -i \"%2\" -filter_complex \"%3\" "
-                   "-map [vout] -an \"%4\"")
-           .arg(findFfmpeg(), m_inputPath, fc, output);
+    if (m_hasAudio) {
+        fc += inputs + QString("concat=n=%1:v=1:a=1[vout][aout]").arg(n);
+        return QString("\"%1\" -y -progress pipe:1 -i \"%2\" "
+                       "-filter_complex \"%3\" "
+                       "-map [vout] -map [aout] -c:a aac -movflags +faststart \"%4\"")
+               .arg(findFfmpeg(), m_inputPath, fc, output);
+    } else {
+        fc += inputs + QString("concat=n=%1:v=1:a=0[vout]").arg(n);
+        return QString("\"%1\" -y -progress pipe:1 -i \"%2\" "
+                       "-filter_complex \"%3\" "
+                       "-map [vout] -an -movflags +faststart \"%4\"")
+               .arg(findFfmpeg(), m_inputPath, fc, output);
+    }
 }
 
 void MainWindow::onProcess()
@@ -677,7 +881,7 @@ void MainWindow::updateMarksSummary()
     QStringList parts;
     for (const auto& m : marks) {
         QString span = QString("%1\xe2\x80\x93%2")
-                       .arg(formatMs(m.startMs)).arg(formatMs(m.endMs));
+                       .arg(formatMsFrame(m.startMs)).arg(formatMsFrame(m.endMs));
         if (m.targetSecs < 0)
             parts << QString("[%1 unconfigured]").arg(span);
         else if (m.targetSecs == 0.0)
@@ -729,6 +933,7 @@ void MainWindow::applyUiScale(double scale)
         m_statusLabel->setFont(small);
     }
     m_timeline->setUiScale(m_uiScale);
+    m_frameStrip->setUiScale(m_uiScale);
 }
 
 double MainWindow::calcOutputDurationSecs() const
@@ -802,4 +1007,75 @@ QString MainWindow::formatMs(qint64 ms) const
         return QString("%1:%2:%3").arg(h).arg(m,2,10,QChar('0')).arg(s,2,10,QChar('0'));
     return QString("%1:%2").arg(m).arg(s,2,10,QChar('0'));
 }
-// SN: 00107
+
+QString MainWindow::formatMsFrame(qint64 ms) const
+{
+    if (ms < 0) ms = 0;
+    int h = (int)(ms / 3600000);
+    int m = (int)((ms % 3600000) / 60000);
+    int s = (int)((ms % 60000) / 1000);
+    int f = m_frameDurationMs > 0 ? (int)((ms % 1000) / m_frameDurationMs) : 0;
+    if (h > 0)
+        return QString("%1:%2:%3.%4")
+               .arg(h).arg(m,2,10,QChar('0')).arg(s,2,10,QChar('0')).arg(f,2,10,QChar('0'));
+    return QString("%1:%2.%3").arg(m).arg(s,2,10,QChar('0')).arg(f,2,10,QChar('0'));
+}
+
+// ---------------------------------------------------------------------------
+// Marks persistence
+// ---------------------------------------------------------------------------
+void MainWindow::saveMarks()
+{
+    if (m_marksPath.isEmpty() || m_inputPath.isEmpty()) return;
+    QJsonArray jarr;
+    for (const auto& mk : m_timeline->marks()) {
+        QJsonObject obj;
+        obj["startMs"]    = mk.startMs;
+        obj["start"]      = formatMsFrame(mk.startMs);
+        obj["endMs"]      = mk.endMs;
+        obj["end"]        = formatMsFrame(mk.endMs);
+        obj["targetSecs"] = mk.targetSecs;
+        jarr.append(obj);
+    }
+    QJsonObject root;
+    root["version"] = 1;
+    root["source"]  = m_inputPath;
+    root["marks"]   = jarr;
+    QFile f(m_marksPath);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+bool MainWindow::loadMarks(const QString& path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    if (!doc.isObject()) return false;
+    QJsonArray jarr = doc.object()["marks"].toArray();
+    if (jarr.isEmpty()) return true;
+
+    m_suppressSave = true;
+    m_timeline->clearAllMarks();
+    m_timeline->clearPending();
+    for (const QJsonValue& v : jarr) {
+        QJsonObject obj = v.toObject();
+        qint64 startMs  = (qint64)obj["startMs"].toDouble();
+        qint64 endMs    = (qint64)obj["endMs"].toDouble();
+        double tgt      = obj["targetSecs"].toDouble(-1.0);
+        if (endMs > startMs)
+            m_timeline->addMarkFull(startMs, endMs, tgt);
+    }
+    m_suppressSave = false;
+    updateMarksSummary();
+    updateInfoBar();
+    return true;
+}
+
+void MainWindow::reloadFrameStrip()
+{
+    if (m_inputPath.isEmpty() || m_player->duration() <= 0) return;
+    m_frameStrip->loadFrames(m_inputPath, m_player->position(),
+                              m_frameDurationMs, findFfmpeg());
+}
+// SN: 00109

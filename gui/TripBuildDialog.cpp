@@ -1187,6 +1187,17 @@ VideoOptions TripBuildDialog::buildOptions() const
     opts.manifestId      = m_manifest.id;
     opts.parallelConcats = true;
 
+    // Pull camera start offsets from the manifest's camera profile.
+    // measureCameraOffsets() writes them into the manifest after GPS extraction,
+    // so they're available here without a rescan.
+    {
+        ConfigManager cfg;
+        cfg.loadSettings();
+        CameraProfile p = cfg.getManifestProfile(m_manifest.path);
+        for (const auto& [k, v] : p.cameraStartOffsets)
+            opts.cameraStartOffsets[k] = v;
+    }
+
     return opts;
 }
 
@@ -1194,4 +1205,4 @@ bool TripBuildDialog::processNow() const
 {
     return m_btnNow && m_btnNow->isChecked();
 }
-// SN: 00104
+// SN: 00109

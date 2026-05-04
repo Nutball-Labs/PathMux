@@ -130,6 +130,12 @@ struct VideoOptions {
     std::string hudOverlayPath;
     bool        hudOverlayLoop = false;  // -stream_loop -1 (loop if shorter than trip)
 
+    // Per-camera start offsets (seconds) — from CameraProfile::cameraStartOffsets.
+    // Populated by the caller before invoking buildTrip().  Non-primary cameras
+    // with a positive offset have that many seconds trimmed from the head of their
+    // stream in the collage filter graph to align them with the primary.
+    std::map<std::string, double> cameraStartOffsets;
+
     // Run per-camera concat stages concurrently (stream-copy, low CPU).
     bool parallelConcats = false;
 
@@ -237,8 +243,21 @@ private:
 
     // --- Helpers ---
     // Write a ffmpeg concat list file to a temp path, return the path.
+    // If durations is non-empty, writes a "duration X.XXX" line after each file
+    // entry so all concat demuxers use a common declared duration instead of
+    // independently estimating from MPEG-TS bitrate (which accumulates drift).
+    // Missing entries (index >= durations.size() or value <= 0) fall back to estimation.
     std::string writeConcatList(const std::vector<std::string>& files,
-                                const std::string& tmpPath);
+                                const std::string& tmpPath,
+                                const std::vector<double>& durations = {},
+                                const std::vector<double>& inpoints  = {});
+
+    // Probe per-segment durations using frame count × frame period.
+    // frameRate is the trip videoProfile string (e.g. "30/1", "30000/1001").
+    // Falls back to format=duration probe if frame count or fps parse fails.
+    std::vector<double> probeSegmentDurations(const std::vector<std::string>& files,
+                                              const std::string& ffprobePath,
+                                              const std::string& frameRate);
 
     // Get frame count of a video file via ffprobe.
     int getFrameCount(const std::string& file, const std::string& ffprobePath);
@@ -285,4 +304,4 @@ private:
 };
 
 #endif
-// SN: 00104
+// SN: 00109

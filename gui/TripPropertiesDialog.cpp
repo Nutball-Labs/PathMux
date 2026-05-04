@@ -26,9 +26,13 @@
 #include <QDesktopServices>
 #include <QCloseEvent>
 #include <QMutex>
+#include <QPlainTextEdit>
+#include <QProcess>
+#include <QScrollArea>
 #include <QThread>
 #include <QUrl>
 #include <QString>
+#include <QCoreApplication>
 #include <fstream>
 #include <vector>
 #include <string>
@@ -324,6 +328,24 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
         else                               lockText = QString("%1 s").arg(trip.gpsLockSeconds);
         form->addRow("GPS Lock:", valueLabel(lockText, w));
 
+        // Camera start offsets — shown when measureCameraOffsets() has run.
+        {
+            ConfigManager cfgOff;
+            cfgOff.loadSettings();
+            CameraProfile prof = cfgOff.getManifestProfile(m_sourcePath);
+            if (!prof.cameraStartOffsets.empty()) {
+                QStringList parts;
+                for (const auto& [k, v] : prof.cameraStartOffsets) {
+                    QString sign = (v >= 0) ? "+" : "";
+                    parts << QString("%1: %2%3s")
+                                 .arg(QString::fromStdString(k))
+                                 .arg(sign)
+                                 .arg(v, 0, 'f', 3);
+                }
+                form->addRow("Cam Offsets:", valueLabel(parts.join("   "), w));
+            }
+        }
+
         auto fmtCoord = [](double lat, double lon) -> QString {
             if (lat == 0.0 && lon == 0.0) return "\u2014";
             return QString("%1\u00b0, %2\u00b0").arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6);
@@ -372,6 +394,12 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
             m_tabStack->addWidget(makeCameraTab(trip, camSlot, nullptr));
         }
     }
+
+    // Sync Values tab — top bar, rightmost
+    m_syncTabIdx = m_tabStack->count();
+    m_topTabBar->addTab("Sync Values");
+    m_tabStack->addWidget(buildSyncWidget());
+
     m_topCount = m_tabStack->count();
 
     // -----------------------------------------------------------------------
@@ -977,13 +1005,53 @@ void TripPropertiesDialog::onExtractGpsFinished(bool ok, const QString& error)
         m_trip.gpsTrackStatus = "complete";
         m_gpsStatusLabel->setText("Status: complete");
         m_gpsStatusLabel->setStyleSheet("color: green; font-weight: bold;");
-        m_extractMsgLabel->setText("Extraction complete.");
         m_exportGpsBtn->setEnabled(true);
         m_mapGenerateBtn->setEnabled(true);
         if (m_mapWarnLabel)  m_mapWarnLabel->hide();
         if (m_dashWarnLabel) m_dashWarnLabel->hide();
         if (m_hudWarnLabel)  m_hudWarnLabel->hide();
         if (m_botTabBar)     m_botTabBar->setTabIcon(kBotTabGps, makeStatusIcon(true));
+
+        // GPS clapperboard: measure inter-camera recording start offsets from the
+        // first segment.  Only succeeds on cold-start trips where GPS locks during
+        // recording.  Persists offsets into the manifest's embedded camera_profile
+        // so the collage build picks them up immediately without a rescan.
+        QString offsetMsg = "Extraction complete.";
+        if (!m_trip.segments.empty()) {
+            std::map<std::string, std::string> firstCamPaths;
+            for (const auto& [slot, path] : m_trip.segments[0].cameras)
+                if (!path.empty() && path != "-") firstCamPaths[slot] = path;
+
+            ConfigManager cfg;
+            cfg.loadSettings();
+            CameraProfile profile = cfg.getManifestProfile(m_sourcePath);
+
+            bool measured = Pathmux::measureCameraOffsets(
+                firstCamPaths, m_trip.startEpoch, cfg.getExiftoolPath(), profile);
+
+            if (measured) {
+                // Write offsets into the manifest's embedded camera_profile so
+                // getManifestProfile() returns them for the next collage build.
+                std::string mf = cfg.lookupManifestFilePath(m_sourcePath);
+                if (!mf.empty()) {
+                    try {
+                        json root;
+                        { std::ifstream ifs(mf); ifs >> root; }
+                        if (root.contains("camera_profile")
+                                && root["camera_profile"].is_object()) {
+                            json offs = json::object();
+                            for (const auto& [k, v] : profile.cameraStartOffsets)
+                                offs[k] = v;
+                            root["camera_profile"]["camera_start_offsets"] = offs;
+                            std::ofstream ofs(mf);
+                            ofs << root.dump(2) << "\n";
+                        }
+                    } catch (...) {}
+                }
+                offsetMsg = "Extraction complete — camera offsets measured.";
+            }
+        }
+        m_extractMsgLabel->setText(offsetMsg);
         emit gpsExtracted();
     } else {
         m_extractMsgLabel->setText(error.isEmpty() ? "Extraction failed." : error);
@@ -1434,6 +1502,218 @@ void TripPropertiesDialog::onAccepted()
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Sync Values tab helpers
+// ---------------------------------------------------------------------------
+
+static QString findSyncScript() {
+    const QString name = "pm_sync_analyze.py";
+    const QString appDir = QCoreApplication::applicationDirPath();
+    for (const QString& c : {
+        appDir + "/scripts/" + name,
+        appDir + "/../scripts/" + name,
+        appDir + "/../share/pathmux/scripts/" + name,
+        appDir + "/" + name,
+    }) {
+        if (QFileInfo::exists(c)) return QFileInfo(c).canonicalFilePath();
+    }
+    return {};
+}
+
+QWidget* TripPropertiesDialog::buildSyncWidget() {
+    auto* w    = new QWidget;
+    auto* vlay = new QVBoxLayout(w);
+    vlay->setContentsMargins(12, 12, 12, 12);
+    vlay->setSpacing(10);
+
+    if (m_trip.cameraSync.valid) {
+        // Summary
+        auto* grp  = new QGroupBox("Sync Analysis");
+        auto* form = new QFormLayout(grp);
+        form->addRow("Analyzed:",
+            new QLabel(QString::fromStdString(m_trip.cameraSync.analyzedAt)));
+        form->addRow("Span / variation:",
+            new QLabel(QString("%1f  /  %2f")
+                .arg(double(m_trip.cameraSync.spanFrames),    0, 'f', 1)
+                .arg(double(m_trip.cameraSync.spanVariation), 0, 'f', 1)));
+        form->addRow("Segments analyzed:",
+            new QLabel(QString::number(m_trip.cameraSync.segmentTrims.size())));
+        vlay->addWidget(grp);
+
+        // Per-segment table
+        const auto& trims = m_trip.cameraSync.segmentTrims;
+        if (!trims.empty()) {
+            auto* tblGrp  = new QGroupBox("Per-segment leading trims (seconds)");
+            auto* tblVlay = new QVBoxLayout(tblGrp);
+
+            QStringList camCols;
+            for (const auto& [cam, _] : trims[0])
+                camCols << QString::fromStdString(cam);
+            std::sort(camCols.begin(), camCols.end());
+
+            auto* tbl = new QTableWidget(int(trims.size()), 1 + camCols.size());
+            tbl->setHorizontalHeaderItem(0, new QTableWidgetItem("Seg"));
+            for (int c = 0; c < int(camCols.size()); ++c)
+                tbl->setHorizontalHeaderItem(c + 1, new QTableWidgetItem(camCols[c]));
+            tbl->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+            tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
+            tbl->setAlternatingRowColors(true);
+            tbl->verticalHeader()->setVisible(false);
+
+            for (int i = 0; i < int(trims.size()); ++i) {
+                auto* segItem = new QTableWidgetItem(QString::number(i));
+                segItem->setTextAlignment(Qt::AlignCenter);
+                tbl->setItem(i, 0, segItem);
+                for (int c = 0; c < int(camCols.size()); ++c) {
+                    auto it  = trims[i].find(camCols[c].toStdString());
+                    double v = (it != trims[i].end()) ? double(it->second) : 0.0;
+                    auto* item = new QTableWidgetItem(QString("%1").arg(v, 0, 'f', 3));
+                    item->setTextAlignment(Qt::AlignCenter);
+                    tbl->setItem(i, c + 1, item);
+                }
+            }
+            tblVlay->addWidget(tbl);
+            vlay->addWidget(tblGrp, 1);
+        }
+
+        m_syncRunBtn = new QPushButton("Re-analyze");
+    } else {
+        auto* lbl = new QLabel(
+            "No sync analysis has been run for this trip.\n\n"
+            "Click Run Analysis to measure per-camera start offsets using\n"
+            "audio cross-correlation (~1–2 seconds per segment).");
+        lbl->setWordWrap(true);
+        vlay->addWidget(lbl);
+        vlay->addStretch();
+        m_syncRunBtn = new QPushButton("Run Analysis");
+    }
+
+    m_syncOutput = new QPlainTextEdit;
+    m_syncOutput->setReadOnly(true);
+    m_syncOutput->setMaximumHeight(130);
+    m_syncOutput->setVisible(false);
+    QFont mono("Monospace");
+    mono.setPointSize(8);
+    m_syncOutput->setFont(mono);
+
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addWidget(m_syncRunBtn);
+    btnRow->addStretch();
+
+    vlay->addWidget(m_syncOutput);
+    vlay->addLayout(btnRow);
+
+    connect(m_syncRunBtn, &QPushButton::clicked,
+            this, &TripPropertiesDialog::onRunSyncAnalysis);
+    return w;
+}
+
+void TripPropertiesDialog::refreshSyncTab() {
+    if (m_syncTabIdx < 0) return;
+    // Reset pointers — they belong to the old widget which is about to be deleted
+    m_syncRunBtn  = nullptr;
+    m_syncOutput  = nullptr;
+    auto* old = m_tabStack->widget(m_syncTabIdx);
+    auto* fresh = buildSyncWidget();
+    m_tabStack->removeWidget(old);
+    old->deleteLater();
+    m_tabStack->insertWidget(m_syncTabIdx, fresh);
+    m_tabStack->setCurrentIndex(m_syncTabIdx);
+}
+
+void TripPropertiesDialog::onRunSyncAnalysis() {
+    if (m_syncProcess && m_syncProcess->state() != QProcess::NotRunning)
+        return;
+
+    QString scriptPath = findSyncScript();
+    if (scriptPath.isEmpty()) {
+        m_syncOutput->setVisible(true);
+        m_syncOutput->appendPlainText("Error: pm_sync_analyze.py not found.");
+        return;
+    }
+
+    // Look up manifest ID from source path
+    ConfigManager cfg;
+    cfg.loadSettings();
+    auto index = cfg.loadManifestIndex();
+    std::string mid;
+    for (const auto& e : index) {
+        if (e.path == m_sourcePath) { mid = e.id; break; }
+    }
+    if (mid.empty()) {
+        m_syncOutput->setVisible(true);
+        m_syncOutput->appendPlainText("Error: manifest not found for this source path.");
+        return;
+    }
+
+    QString tripAddr = QString::fromStdString(mid + ":" + m_trip.id);
+    m_syncRunBtn->setEnabled(false);
+    m_syncRunBtn->setText("Analyzing…");
+    m_syncOutput->setVisible(true);
+    m_syncOutput->clear();
+    m_syncOutput->appendPlainText("pm_sync_analyze.py --all-segments --write " + tripAddr + "\n");
+
+    m_syncProcess = new QProcess(this);
+    m_syncProcess->setProgram("python3");
+    m_syncProcess->setArguments({scriptPath, "--all-segments", "--write", tripAddr});
+    m_syncProcess->setProcessChannelMode(QProcess::MergedChannels);
+
+    connect(m_syncProcess, &QProcess::readyRead, this, [this]() {
+        m_syncOutput->appendPlainText(
+            QString::fromLocal8Bit(m_syncProcess->readAll()).trimmed());
+    });
+    connect(m_syncProcess,
+            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &TripPropertiesDialog::onSyncFinished);
+    m_syncProcess->start();
+}
+
+void TripPropertiesDialog::onSyncFinished(int exitCode, QProcess::ExitStatus) {
+    if (m_syncRunBtn) {
+        m_syncRunBtn->setEnabled(true);
+        m_syncRunBtn->setText(m_trip.cameraSync.valid ? "Re-analyze" : "Run Analysis");
+    }
+    if (exitCode != 0) {
+        if (m_syncOutput)
+            m_syncOutput->appendPlainText("\nAnalysis failed.");
+        return;
+    }
+
+    // Reload cameraSync from manifest JSON
+    ConfigManager cfg;
+    cfg.loadSettings();
+    std::string mpath = cfg.lookupManifestFilePath(m_sourcePath);
+    if (!mpath.empty()) {
+        try {
+            std::ifstream f(mpath);
+            auto mj = json::parse(f);
+            for (const auto& jt : mj.value("trips", json::array())) {
+                if (jt.value("id", "") != m_trip.id) continue;
+                if (!jt.contains("cameraSync")) break;
+                const auto& jSync = jt["cameraSync"];
+                m_trip.cameraSync.valid         = true;
+                m_trip.cameraSync.analyzedAt    = jSync.value("analyzedAt", "");
+                m_trip.cameraSync.syncCam       = jSync.value("syncCam", "");
+                m_trip.cameraSync.spanFrames    = jSync.value("spanFrames", 0.0f);
+                m_trip.cameraSync.spanVariation = jSync.value("spanVariation", 0.0f);
+                m_trip.cameraSync.segmentTrims.clear();
+                if (jSync.contains("segments") && jSync["segments"].is_array()) {
+                    for (const auto& jSeg : jSync["segments"]) {
+                        std::map<std::string, double> segMap;
+                        for (auto it = jSeg.begin(); it != jSeg.end(); ++it)
+                            segMap[it.key()] = it.value().get<double>();
+                        m_trip.cameraSync.segmentTrims.push_back(segMap);
+                    }
+                }
+                break;
+            }
+        } catch (...) {}
+    }
+
+    refreshSyncTab();
+}
+
+// ---------------------------------------------------------------------------
 // populateVideoList — fill a list widget from a manifest-backed path vector.
 // Missing files are shown in gray with a "(missing)" tag.
 // Items store the absolute path as Qt::UserRole for double-click open.
@@ -1522,4 +1802,4 @@ void TripPropertiesDialog::appendVideoToManifest(const QString& path,
 }
 
 #include "TripPropertiesDialog.moc"
-// SN: 00106
+// SN: 00109

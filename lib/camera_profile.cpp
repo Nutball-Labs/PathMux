@@ -74,6 +74,10 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
     p.gpsExiftoolArgs = j.value("gps_exiftool_args", "");
     p.defaultLayout   = j.value("default_layout",   "2x2");
 
+    if (j.contains("camera_start_offsets") && j["camera_start_offsets"].is_object())
+        for (const auto& [k, v] : j["camera_start_offsets"].items())
+            if (v.is_number()) p.cameraStartOffsets[k] = v.get<double>();
+
     // Accept both "cameraSlots" (current) and "slots" (legacy, pre-Qt-macro-rename).
     const json& slotArr = j.contains("cameraSlots") ? j["cameraSlots"]
                         : j.value("slots", json::array());
@@ -129,6 +133,12 @@ void CameraProfile::saveToFile(const std::string& path) const {
         slotArr.push_back(js);
     }
     j["cameraSlots"] = slotArr;
+
+    if (!cameraStartOffsets.empty()) {
+        json offsets;
+        for (const auto& [k, v] : cameraStartOffsets) offsets[k] = v;
+        j["camera_start_offsets"] = offsets;
+    }
 
     std::ofstream f(path);
     if (!f) throw std::runtime_error("Cannot write camera profile: " + path);
@@ -297,4 +307,4 @@ std::vector<CameraProfile> CameraProfile::getBuiltinProfiles() {
 }
 
 } // namespace Pathmux
-// SN: 00104
+// SN: 00109

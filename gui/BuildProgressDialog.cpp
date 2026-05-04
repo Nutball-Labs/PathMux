@@ -99,7 +99,6 @@ public slots:
 
             int64_t totalUs   = (int64_t)totalSecs * 1000000LL;
             int64_t outTimeUs = 0;
-            double  speed     = 1.0;
             // Rolling average over last 8 speed samples to smooth early-encode
             // warmup spikes (VP9/HEVC init can report 0.05x for the first few
             // seconds, projecting absurd ETAs for short clips).
@@ -192,7 +191,6 @@ public slots:
                         bool ok;
                         double s = val.toDouble(&ok);
                         if (ok && s > 0.001) {
-                            speed = s;
                             if (speedHist.size() >= 8) speedHist.erase(speedHist.begin());
                             speedHist.push_back(s);
                         }

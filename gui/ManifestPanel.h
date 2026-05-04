@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 #include <QWidget>
+#include <QPixmap>
 #include <vector>
 #include "config_manager.hpp"
 
@@ -28,6 +29,7 @@ signals:
     void zoomChanged(double factor);
 
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
 
@@ -38,6 +40,7 @@ private slots:
     void onContextMenu(const QPoint& pos);
 
 private:
+    QPixmap                m_bgLogo;
     QListWidget*           m_list;
     QComboBox*             m_sortCombo;
     QPushButton*           m_addBtn;
@@ -55,4 +58,4 @@ private:
     void applySort();
     void applyListZoom();
 };
-// SN: 00097
+// SN: 00109

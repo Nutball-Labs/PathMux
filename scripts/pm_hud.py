@@ -564,7 +564,7 @@ def main():
     parser.add_argument("--left-speed-height", type=int, default=0, help="Tape height in px (0=auto)")
     parser.add_argument("--left-speed-x",      type=int, default=0)
     parser.add_argument("--left-speed-y",      type=int, default=-1,
-                        help="Top y of tape (-1=auto center)")
+                        help="Top y of tape (-1=auto: readout box top at H/2)")
 
     # Right speed tape
     parser.add_argument("--no-right-speed",     action="store_true")
@@ -572,7 +572,8 @@ def main():
     parser.add_argument("--right-speed-height", type=int, default=0)
     parser.add_argument("--right-speed-x",      type=int, default=-1,
                         help="Left x of tape (-1=auto right edge)")
-    parser.add_argument("--right-speed-y",      type=int, default=-1)
+    parser.add_argument("--right-speed-y",      type=int, default=-1,
+                        help="Top y of tape (-1=auto: readout box top at H/2)")
 
     # Heading tape
     parser.add_argument("--no-heading",     action="store_true")
@@ -709,6 +710,24 @@ def main():
         "medium": find_font(max(48, min(medium_raw, medium_cap))),  # speed & heading readouts
     }
 
+    # Recompute tape y so the readout box top aligns with the horizontal seam
+    # between the upper and lower quadrant pairs (H // 2).  The box height
+    # depends on the rendered font metrics, so we measure it with a 1×1 probe
+    # rather than guessing from the font size.  Only applies when --left/right-
+    # speed-y were not explicitly set (i.e. still at their auto-positioned value).
+    if args.left_speed_y < 0 or args.right_speed_y < 0:
+        _probe_img  = Image.new("RGBA", (1, 1))
+        _probe_draw = ImageDraw.Draw(_probe_img)
+        _, _rh = _twh(_probe_draw, "000", fonts["medium"])
+        _box_h  = _rh + max(10, ls_h // 80)
+        _box_cy = H // 2 + _box_h // 2   # center_y that puts box top at H//2
+        if args.left_speed_y < 0:
+            ls_y = _box_cy - ls_h // 2
+            cfg["left_speed"]["y"] = ls_y
+        if args.right_speed_y < 0:
+            rs_y = _box_cy - rs_h // 2
+            cfg["right_speed"]["y"] = rs_y
+
     cfg["line_scale"]    = args.line_scale
     cfg["visible_range"] = float(args.visible_range)
 
@@ -810,4 +829,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# SN: 00106
+# SN: 00109

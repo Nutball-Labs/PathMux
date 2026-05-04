@@ -35,6 +35,7 @@ public:
 
     const QVector<TLMark>& marks() const { return m_marks; }
     void addMark(qint64 startMs, qint64 endMs);
+    void addMarkFull(qint64 startMs, qint64 endMs, double targetSecs);
     void setPendingStart(qint64 ms);
     void setMarkTarget(int id, double targetSecs);
     void deleteMark(int id);
@@ -96,4 +97,4 @@ private:
     int      m_dragMark     = -1;
     qint64   m_dragBodyOffMs= 0;
 };
-// SN: 00106
+// SN: 00109

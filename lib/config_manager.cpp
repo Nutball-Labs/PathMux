@@ -1340,11 +1340,17 @@ void ConfigManager::saveTripCache(const std::string& path,
     // Register this machine in path_map.
     existingPathMap[pathMapKey(hostname)] = path;
 
-    // Build identity hash → id map from existing trips
-    std::map<std::string, std::string> hashToId;
-    for (const auto& t : existingTrips)
-        if (!t.id.empty())
+    // Build identity hash → id map from existing trips, and preserve any
+    // cameraSync data written by pm_sync_analyze.py so a rescan doesn't wipe it.
+    std::map<std::string, std::string>  hashToId;
+    std::map<std::string, CameraSync>   existingSyncById;
+    for (const auto& t : existingTrips) {
+        if (!t.id.empty()) {
             hashToId[tripIdentityHash(t)] = t.id;
+            if (t.cameraSync.valid)
+                existingSyncById[t.id] = t.cameraSync;
+        }
+    }
 
     // profile_id / camera_profile:
     //   If a profile was provided (scan-time call), embed the full snapshot.
@@ -1437,6 +1443,29 @@ void ConfigManager::saveTripCache(const std::string& path,
             json arr = json::array();
             for (const auto& p : trip.hudVideos) arr.push_back(p);
             jTrip["hudVideos"] = arr;
+        }
+        {
+            // Use in-memory cameraSync if valid; otherwise preserve whatever
+            // pm_sync_analyze.py wrote for this trip in the previous manifest.
+            auto syncIt = existingSyncById.find(trip.id);
+            const CameraSync& cs = trip.cameraSync.valid         ? trip.cameraSync
+                                 : (syncIt != existingSyncById.end()) ? syncIt->second
+                                 : trip.cameraSync;
+            if (cs.valid) {
+                json jSync;
+                jSync["analyzedAt"]    = cs.analyzedAt;
+                jSync["syncCam"]       = cs.syncCam;
+                jSync["spanFrames"]    = cs.spanFrames;
+                jSync["spanVariation"] = cs.spanVariation;
+                json jSegs = json::array();
+                for (const auto& segMap : cs.segmentTrims) {
+                    json jSeg;
+                    for (const auto& [cam, trim] : segMap) jSeg[cam] = trim;
+                    jSegs.push_back(jSeg);
+                }
+                jSync["segments"] = jSegs;
+                jTrip["cameraSync"] = jSync;
+            }
         }
 
         {
@@ -1605,6 +1634,22 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
             for (const auto& v : jTrip["dashVideos"]) trip.dashVideos.push_back(v.get<std::string>());
         if (jTrip.contains("hudVideos") && jTrip["hudVideos"].is_array())
             for (const auto& v : jTrip["hudVideos"]) trip.hudVideos.push_back(v.get<std::string>());
+        if (jTrip.contains("cameraSync") && jTrip["cameraSync"].is_object()) {
+            const auto& jSync        = jTrip["cameraSync"];
+            trip.cameraSync.valid         = true;
+            trip.cameraSync.analyzedAt    = jSync.value("analyzedAt",    "");
+            trip.cameraSync.syncCam       = jSync.value("syncCam",       "");
+            trip.cameraSync.spanFrames    = jSync.value("spanFrames",    0.0);
+            trip.cameraSync.spanVariation = jSync.value("spanVariation", 0.0);
+            if (jSync.contains("segments") && jSync["segments"].is_array()) {
+                for (const auto& jSeg : jSync["segments"]) {
+                    std::map<std::string, double> segMap;
+                    for (auto it = jSeg.begin(); it != jSeg.end(); ++it)
+                        segMap[it.key()] = it.value().get<double>();
+                    trip.cameraSync.segmentTrims.push_back(segMap);
+                }
+            }
+        }
 
         // Trip thumbnails — new format uses firstThumbs/lastThumbs maps.
         // Migrate old per-camera named fields transparently on read.
@@ -1846,4 +1891,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00104
+// SN: 00109

@@ -4,7 +4,9 @@
 #define GPS_EXPORT_HPP
 
 #include <functional>
+#include <map>
 #include <string>
+#include "camera_profile.hpp"
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -39,7 +41,28 @@ std::string writeKml(const json& root, int tripIdx, const std::string& outPath);
 // Returns outPath on success, "" on failure.
 std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPath);
 
+// Measure per-camera recording start offsets using the GPS lock clapperboard —
+// the first frame where each camera's GPS data transitions from invalid (0,0) to
+// a real fix.  Because there is one GPS receiver, the lock happens at one wall-clock
+// moment; different frame positions across cameras at that moment reveal the
+// inter-camera start offset.
+//
+// camPaths:   slot name → absolute path to the first segment file for that camera.
+// startEpoch: trip start epoch (from segment filename timestamp).
+// profile:    updated in-place with measured offsets in cameraStartOffsets.
+//             Primary slot is the reference; other slots get positive values when
+//             they started recording before the primary (and must be trimmed).
+//
+// Only cold-start trips (GPS locks during recording) provide a usable clapperboard.
+// Returns true if at least one non-zero offset was measured and stored.
+// TODO: upgrade to sub-second precision via ffprobe data-stream packet PTS once
+//       the D90's LIGOGPSINFO packet timing is characterised.
+bool measureCameraOffsets(const std::map<std::string, std::string>& camPaths,
+                          time_t startEpoch,
+                          const std::string& exiftoolPath,
+                          CameraProfile& profile);
+
 } // namespace Pathmux
 
 #endif
-// SN: 00104
+// SN: 00109
