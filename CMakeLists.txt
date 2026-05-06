@@ -235,6 +235,7 @@ if(WIN32)
             "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
             "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
             "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
+            "${CMAKE_SOURCE_DIR}/scripts/pm_sync_analyze.py"
         DESTINATION "scripts"
     )
 else()
@@ -398,6 +399,7 @@ if(Qt6_FOUND)
                 "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
                 "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
                 "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
+                "${CMAKE_SOURCE_DIR}/scripts/pm_sync_analyze.py"
             DESTINATION "pathmux-gui.app/Contents/scripts"
         )
     else()
@@ -409,6 +411,7 @@ if(Qt6_FOUND)
                 "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
                 "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
                 "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
+                "${CMAKE_SOURCE_DIR}/scripts/pm_sync_analyze.py"
             DESTINATION "${CMAKE_INSTALL_DATADIR}/pathmux/scripts"
         )
         # XDG icon hierarchy for Linux desktop environments
@@ -694,4 +697,4 @@ endif()
 
 include(CPack)
 
-# SN: 00109
+# SN: 00111

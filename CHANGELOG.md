@@ -1,5 +1,118 @@
 # CHANGELOG
 
+## [v1.9.9a / SN: 00111] - 2026-05-06
+
+### Added
+- **Camera sync Tier 2 — audio cross-correlation** (`scripts/pm_sync_analyze.py`): new
+  script uses scipy audio cross-correlation to measure the precise start-time offset
+  between camera streams per segment. `--all-segments --write` analyzes every segment
+  in a trip and writes results into the manifest `cameraSync` block. The collage builder
+  pads the shorter stream with a subdued first-frame ghost (brightness −0.25, saturation 0.1)
+  rather than trimming — zero frames are discarded and all streams remain lockstep throughout
+  the segment. Falls back to Tier 1 concat durations when no sync data is present.
+- **`CameraSync` struct in manifest** (`lib/trip_detection.hpp`, `lib/config_manager.cpp`):
+  per-segment sync data (delay, hold, reference camera) serialized into the manifest JSON.
+  Left camera is the fixed cross-correlation reference; its entry always shows 0.000 s.
+- **Sync Values tab in TripPropertiesDialog** (`gui/TripPropertiesDialog`): per-segment
+  trim table showing each camera's delay and hold values; "Run Analysis" button invokes
+  `pm_sync_analyze.py` for the selected trip and streams output to a scrollable log panel.
+- **Dashboard layout system** (`scripts/pm_dashboard.py`): `--layout standard|quadrant-hud|<path.json>`
+  argument selects between built-in presets and a custom JSON layout file. `load_layout()`,
+  `resolve_anchor()`, and element draw functions (`draw_compass_element`, `draw_speed_element`,
+  `draw_weather_element`, `draw_element_backing()`) extracted to support arbitrary widget
+  placement with time-window support on weather elements. Standard preset behavior unchanged.
+- **Dashboard layout picker in TripPropertiesDialog** (`gui/TripPropertiesDialog`): combo
+  (Standard / Quadrant HUD / Custom JSON…) with a file-browse row for custom JSON; `--layout`
+  wired into `onGenerateDashboard()` and `onBuildAll()`.
+- **Dashboard overlay position** (`gui/TripBuildDialog`, `cli/video_build.hpp/.cpp`):
+  "Position" combo (Center / TL / TR / BL / BR) in the overlay cell;
+  `VideoOptions::overlayPosition` field; ffmpeg `overlay=x:y` computed per selection in
+  both 4K and standard code paths.
+- **Transparent dashboard/map WebM overlay** (`gui/TripBuildDialog`, `cli/video_build.cpp`):
+  `.webm` files in the overlay combo set `mapOverlayAlpha=true`; ffmpeg command adds
+  `-c:v libvpx-vp9` on input and `format=yuva420p` in the filter graph so transparent
+  overlays composite correctly over both 4K and standard collage paths.
+- **pathmux-tl FrameStrip widget** (`pathmux-tl/FrameStrip.cpp/.h`): 13-cell filmstrip
+  below the timeline displaying video frames at evenly spaced playback positions; updates
+  on media load and on timeline scrub.
+- **pathmux-tl HH:MM:SS.FF timecode**: frame-accurate timecode display in the info bar,
+  derived from current position and detected frame rate.
+- **`pm_videos` batch video generator** (`tools/pm_videos.cpp`): new standalone CLI tool;
+  `--mid=XX` / `--tid=MM:TT` trip addressing; `--map`/`--dash`/`--hud`/`--all` flags;
+  updates the manifest on completion. Shares overlay pipeline with the GUI.
+- **Global QCheckBox stylesheet** (`gui/main.cpp`, `gui/resources/checkmark.svg`): light
+  gray indicator background with a bright green SVG checkmark when checked. Fixes
+  invisible dark-on-dark checkboxes throughout the app (most visible in TripBuildDialog
+  overlay and HUD enable checkboxes).
+
+### Changed
+- **Camera sync Tier 1 extended to all build paths** (`cli/video_build.cpp`):
+  `probeSegmentDurations()` sync (explicit concat durations) previously only applied
+  to the collage ffmpeg command. Now also applied in `buildCameraFile()` and
+  `buildAudioFile()`, which were missing it and producing streams with accumulated
+  drift over long trips.
+- **pm_hud.py speed tape readout alignment** (`scripts/pm_hud.py`): readout box top
+  edge aligned with H/2 (horizontal seam between upper and lower camera quadrants)
+  instead of vertically centered on the tape scale.
+- **pathmux-tl audio preservation**: output MP4 retains the source audio track.
+- **pathmux-tl hwaccel/fps optimization**: hardware acceleration auto-selected at encode
+  time; `fps=` filter inserted before timelapse encode to reduce per-frame work.
+- **pathmux-tl error surfacing**: media load failures reported to the user via status
+  bar and dialog rather than silently ignored.
+- **pathmux-tl `--debug` flag**: enables verbose ffmpeg stderr output in the terminal.
+
+### Infrastructure
+- `scripts/pm_sync_analyze.py` — new; scipy audio cross-correlation; multi-segment batch mode
+- `tools/pm_videos.cpp` — new; standalone batch map/dashboard/HUD generator
+- `pathmux-tl/FrameStrip.cpp/.h` — new filmstrip widget
+- `gui/resources/checkmark.svg` — QCheckBox checkmark graphic
+
+---
+
+## [v1.9.2 / SN: 00107] - 2026-04-29
+
+### Changed (pathmux-tl)
+- **Set Start / Set End buttons** added above the timeline, replacing right-click as the
+  primary mark-placement workflow.
+- **Transport row below timeline**: ◁ −5s / ▶ Play-Pause / ▷ +5s; ←/→ = frame step (33 ms);
+  Shift+←/→ = ±5 s. All shortcuts wired via `QShortcut` — eliminates the button-focus
+  key-intercept issue on X11.
+- **Span type color coding**: zero-duration marks = Cut (red band); slow-motion = blue;
+  real-time = green; compressed = orange. Range 0–20× source speed.
+- **MarkDialog redesign**: dynamic color-feedback label; "Duration:" field shows target
+  output seconds; range 0–20×.
+- **Timeline text scaling**: band labels and ruler text scale with UI zoom level.
+- **Modal dialogs**: `QMessageBox` uses `Qt::WindowModal` (stays above pathmux-tl on X11).
+- **Overwrite guard**: confirmation dialog before processing when output file exists.
+- **Host config integration** (`pathmux-tl/compat.hpp`): `readPathmuxFfmpegPath()` reads
+  `~/.config/pathmux/pathmux_<host>.json`; `findFfprobe()` derives ffprobe path from the
+  configured ffmpeg path.
+
+---
+
+## [v1.9.1c / SN: 00106] - 2026-04-29
+
+### Added
+- **Script installation** (`CMakeLists.txt`): `pm_maprender.py`, `pm_dashboard.py`, and
+  `pm_hud.py` now installed for all three platforms — Windows: `scripts\`; macOS:
+  `Contents/scripts/`; Linux: `share/pathmux/scripts/`.
+- **pathmux-tl source/output info bar** (`pathmux-tl/MainWindow`): shows source duration
+  and estimated output file size; scales with `applyUiScale()` at construction.
+
+### Changed
+- **`MapProgressDialog` script lookup** (`gui/MapProgressDialog.cpp`): falls back to
+  Settings ffmpeg path when not found in `extraArgs`; Linux `share/pathmux/scripts/`
+  added to `findScript()` search candidates.
+- **Settings path normalization** (`gui/SettingsDialog.cpp`): host paths passed through
+  `QDir::toNativeSeparators()` on save — prevents mixed separators on Windows.
+- **pathmux-tl status labels**: hardcoded `font-size-pt` removed; font sizing now inherits
+  from `applyUiScale()`.
+
+### Fixed
+- **Man page** (`man1/pathmux.1`): updated for current CLI options and overlay workflow.
+
+---
+
 ## [v1.9.1 / SN: 00106] - 2026-04-27
 
 ### Added
@@ -1516,4 +1629,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00106 -->
+<!-- SN: 00111 -->

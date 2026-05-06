@@ -262,6 +262,17 @@ If segments are naively concatenated without compensation, sync drift accumulate
 
 **Priority:** High — without this, long trips become unwatchable due to A/V desync
 
+**Status: Tier 1 + Tier 2 both complete as of v1.9.9a.**
+
+Tier 1 (explicit segment durations) ships in all three build paths. Tier 2 (audio
+cross-correlation via `pm_sync_analyze.py`) measures per-trip start-time offsets and stores
+them in the manifest `cameraSync` block. The collage builder reads per-segment delay/hold
+values and pads the shorter stream with a subdued first-frame ghost — zero frames discarded,
+four streams remain lockstep. Falls back to Tier 1 when no sync data is present.
+
+Pending (v2.0.0): GPS extraction should auto-trigger sync analysis; `cameraSync.segments`
+array should be keyed by front camera timestamp rather than positional index.
+
 ### Video Export
 - Multi-camera collage generation using ffmpeg
 - User-selectable layouts:
@@ -1188,4 +1199,4 @@ When a user reports an unsupported camera:
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
 
-<!-- SN: 00091 -->
+<!-- SN: 00111 -->

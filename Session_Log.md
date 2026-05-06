@@ -1000,4 +1000,128 @@ warning in pm_gpsinfo.cpp. No errors, no new warnings.
 
 ---
 
-<!-- SN: 00089 -->
+---
+
+## 2026-05-02
+
+### Session 1
+**Focus:** Camera sync drift analysis; Tier 1 fix for remaining build paths; pathmux-tl FrameStrip
+
+**Discoveries:**
+- Built `Drift_Examples.mp4` from a 42-minute commute; confirmed 2–3 s drift by 25 min
+  (Swift truck section) and garage door section. Drift is visually obvious at that scale.
+- Camera sync drift on D90 is a flat constant per trip (not accumulating). It is purely
+  a start-time misalignment between cameras, not a rate difference. Confirmed via OSD
+  timestamp analysis.
+
+**Camera Sync Tier 1 fix (`cli/video_build.cpp`):**
+- `probeSegmentDurations()` sync was already applied in `buildCollage4K` but was missing
+  from `buildCameraFile()` and `buildAudioFile()`. Both paths now use explicit ffprobe
+  durations for per-segment `-t` flags so concat output matches the collage timeline.
+
+**pathmux-tl FrameStrip (`pathmux-tl/FrameStrip.cpp/.h`):**
+- 13-cell filmstrip widget below the timeline; displays video frames at evenly spaced
+  playback positions. Updates on media load and on timeline scrub.
+- HH:MM:SS.FF frame-accurate timecode display in the info bar.
+- Audio preservation in output MP4 (previously silent).
+- Hardware acceleration auto-selected; `fps=` filter inserted before timelapse encode.
+- Error surfacing for media load failures; `--debug` flag for verbose ffmpeg output.
+
+**pm_hud.py fix:**
+- Speed tape readout box top edge now aligned with H/2 (horizontal seam between upper
+  and lower camera quadrants) instead of centered on the tape scale.
+
+**Files Changed:** `cli/video_build.cpp`, `pathmux-tl/FrameStrip.cpp` (new),
+`pathmux-tl/FrameStrip.h` (new), `pathmux-tl/MainWindow.cpp`, `pathmux-tl/MainWindow.h`,
+`pathmux-tl/main.cpp`, `scripts/pm_hud.py`
+
+---
+
+## 2026-05-03
+
+### Session 1
+**Focus:** Camera sync Tier 2 — audio cross-correlation; new design
+
+**Key findings:**
+- VP:8N (Front-to-Right spread): 1.652 s
+- VP:47 (Front-to-Right spread): 34.9 frames ≈ 1.4 s
+- Offsets vary between trips — per-trip measurement is required. No single static offset
+  is reliable.
+
+**Design (confirmed and implemented):**
+- `pm_sync_analyze.py --all-segments --write` performs scipy audio cross-correlation on
+  each segment and writes results into the manifest `cameraSync` block.
+- Left camera is the fixed cross-correlation reference (always shows 0.000 s in the table;
+  the `syncCam` label field was removed from display — inferred from the 0.000 entry).
+- Collage builder reads per-segment delay+hold values. Padding design:
+  - `delay = maxTrim − segTrim` (pre-padded ghost frames)
+  - `hold = segTrim` (held last frame at end)
+  - `delay + hold = maxTrim` (constant per segment = lockstep across all cameras)
+  - Ghost = subdued first frame (`eq brightness=-0.25:saturation=0.1`)
+  - Audio: `adelay` + `apad` per segment
+- Falls back to Tier 1 concat durations when no sync data is present.
+
+**Code changes:**
+- `CameraSync` struct added to `lib/trip_detection.hpp`; serialize/deserialize in
+  `lib/config_manager.cpp`.
+- `scripts/pm_sync_analyze.py` written from scratch.
+- `gui/TripPropertiesDialog`: Sync Values tab added — per-segment trim table showing
+  delay/hold for each camera; "Run Analysis" button invokes `pm_sync_analyze.py` with
+  output streamed to a scrollable log panel.
+
+**Files Changed:** `lib/trip_detection.hpp`, `lib/config_manager.cpp`,
+`gui/TripPropertiesDialog.cpp`, `gui/TripPropertiesDialog.h`,
+`scripts/pm_sync_analyze.py` (new)
+
+---
+
+## 2026-05-04
+
+### Session 1
+**Focus:** Dashboard layout system; overlay alpha + position; checkbox styling; v1.9.2 close-out
+
+**Checkbox styling (`gui/main.cpp`):**
+- Global QCheckBox stylesheet added to `main.cpp` — light gray indicator background,
+  bright green checkmark SVG (`gui/resources/checkmark.svg`) when checked.
+- Fixes invisible dark-on-dark checkboxes throughout the app (most visible in TripBuildDialog
+  overlay and HUD enable rows).
+
+**Dashboard overlay alpha (`gui/TripBuildDialog`, `cli/video_build.cpp`):**
+- `.webm` files in the overlay combo now set `mapOverlayAlpha=true`. The ffmpeg command adds
+  `-c:v libvpx-vp9` on input and `format=yuva420p` in the filter graph for both 4K and
+  standard paths — transparent dashboard overlays composite correctly.
+
+**Dashboard overlay position (`gui/TripBuildDialog`, `cli/video_build.hpp/.cpp`):**
+- "Position" combo (Center / TL / TR / BL / BR) added to the overlay cell.
+- `VideoOptions::overlayPosition` field added; ffmpeg `overlay=x:y` computed per selection
+  in both code paths.
+
+**Dashboard layout system (`scripts/pm_dashboard.py`):**
+- Refactored: `--layout standard|quadrant-hud|<path.json>` argument.
+- `load_layout()`, `resolve_anchor()`, element draw functions (`draw_compass_element`,
+  `draw_speed_element`, `draw_weather_element`), `draw_element_backing()`.
+- `_render_standard_panels()` for the unchanged standard preset.
+- `_render_widget_layout()` for custom JSON layouts with time-window support on weather.
+- Standard preset output is pixel-identical to before.
+
+**TripPropertiesDialog Dashboard tab:**
+- Layout picker combo (Standard / Quadrant HUD / Custom JSON…) with file-browse row for
+  custom JSON. `--layout` wired into `onGenerateDashboard()` and `onBuildAll()`.
+
+**pm_videos.cpp (`tools/pm_videos.cpp`):**
+- New standalone CLI tool for batch map/dashboard/HUD generation.
+- `--mid=XX` / `--tid=MM:TT` trip addressing; `--map`/`--dash`/`--hud`/`--all` flags.
+- Updates the manifest on completion.
+
+**Files Changed:** `gui/main.cpp`, `gui/resources/checkmark.svg` (new),
+`gui/TripBuildDialog.cpp`, `gui/TripBuildDialog.h`,
+`gui/TripPropertiesDialog.cpp`, `gui/TripPropertiesDialog.h`,
+`cli/video_build.cpp`, `cli/video_build.hpp`,
+`scripts/pm_dashboard.py`, `scripts/pm_maprender.py`,
+`tools/pm_videos.cpp` (new), `lib/config_manager.cpp`, `lib/trip_detection.hpp`
+
+**Version / SN:** Released as v1.9.9a (SN 00111). Committed and pushed.
+
+---
+
+<!-- SN: 00111 -->
