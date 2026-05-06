@@ -61,14 +61,17 @@ struct ValidationFile {
 };
 
 // Per-trip camera start-offset sync data, produced by pm_sync_analyze.py.
-// segmentTrims[i][cam] = seconds to trim from the start of that camera's
-// segment i file before building the collage (Tier 2 sync correction).
+// segmentTrims key = front camera filename timestamp ("YYYYMMDD_HHMMSS").
+// Keying by front timestamp prevents silent misalignment when segments are
+// dropped, reordered, or partially re-analyzed.
+// segmentTrims[key][cam] = seconds to trim from the start of that camera's
+// segment before building the collage (Tier 2 sync correction).
 struct CameraSync {
     std::string analyzedAt;    // ISO-8601 UTC timestamp of analysis run
     std::string syncCam;       // camera with no trim (latest-starting, reference)
     double spanFrames    = 0.0;
     double spanVariation = 0.0;
-    std::vector<std::map<std::string, double>> segmentTrims;
+    std::map<std::string, std::map<std::string, double>> segmentTrims;
     bool   valid         = false;
 };
 
@@ -175,4 +178,4 @@ public:
 } // namespace Pathmux
 
 #endif
-// SN: 00109
+// SN: 00111

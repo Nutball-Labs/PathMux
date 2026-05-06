@@ -72,6 +72,7 @@ private:
     QCheckBox*   m_chk1080         = nullptr;
     QCheckBox*       m_chkMapOverlay       = nullptr;
     QComboBox*       m_overlayCombo        = nullptr;
+    QComboBox*       m_overlayPos          = nullptr;  // "Center"|"TL"|"TR"|"BL"|"BR"
     QLineEdit*       m_mapOverlayPath      = nullptr;
     QPushButton*     m_mapOverlayBrowseBtn = nullptr;
     QWidget*         m_overlayFileRow      = nullptr;
@@ -100,4 +101,4 @@ private:
     QPushButton* m_btnQueue   = nullptr;
     QCheckBox*   m_chkVerbose = nullptr;
 };
-// SN: 00104
+// SN: 00111

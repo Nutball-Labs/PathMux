@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/images">
+    <file alias="Nutball-Labs_logo.png">../gui/resources/Nutball-Labs_logo.png</file>
+  </qresource>
+</RCC>
+
+<!-- SN: 00111 -->

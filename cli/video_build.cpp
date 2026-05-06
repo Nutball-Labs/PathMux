@@ -960,23 +960,11 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
 
     if (canSyncPad) {
         const auto& syncTrims = trip.cameraSync.segmentTrims;
-        size_t nSync = syncTrims.size();
 
-        // For segment i, camera c:
-        //   delay[i][c] = pad duration  = maxTrim[i] - segTrim[i][c]
-        //   hold[i][c]  = hold duration = segTrim[i][c]
-        // Invariant: delay[i][c] + hold[i][c] = maxTrim[i] = constant for all c.
-        // All cameras therefore contribute the same total duration per segment.
-        std::vector<std::map<std::string, double>> segDelay(nSync), segHold(nSync);
-        for (size_t i = 0; i < nSync; ++i) {
-            double maxTrim = 0.0;
-            for (const auto& [cam, t] : syncTrims[i])
-                maxTrim = std::max(maxTrim, double(t));
-            for (const auto& [cam, t] : syncTrims[i]) {
-                segDelay[i][cam] = maxTrim - double(t);
-                segHold[i][cam]  = double(t);
-            }
-        }
+        // Parse source fps for frame-exact sync padding.
+        double syncFps4K = 25.0;
+        if (!trip.videoProfile.frameRate.empty())
+            try { syncFps4K = std::stod(trip.videoProfile.frameRate); } catch (...) {}
 
         auto fmtD = [](double d) -> std::string {
             std::ostringstream o;
@@ -990,6 +978,31 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
             &effectiveSegs("left"),  &effectiveSegs("right")
         };
         size_t nSegs = effectiveSegs("front").size();
+
+        // For segment si, extract front-camera filename timestamp → look up sync data.
+        // Segments with no key in syncTrims get zero delay/hold (Tier-1 behavior).
+        // delayF = ghost frames prepended = maxTrimF - round(segTrim * fps)
+        // holdF  = clone frames appended  = round(segTrim * fps)
+        // Invariant: delayF + holdF = maxTrimF (constant for all cameras in a segment).
+        auto frontTsKey4K = [](const std::string& path) -> std::string {
+            std::string bn = fs::path(path).filename().string();
+            return (bn.size() >= 15) ? bn.substr(0, 15) : bn;
+        };
+        std::vector<std::map<std::string, int>> segDelayF(nSegs), segHoldF(nSegs);
+        for (size_t si = 0; si < nSegs; ++si) {
+            const auto& frontSegs = effectiveSegs("front");
+            if (si >= frontSegs.size()) continue;
+            auto it = syncTrims.find(frontTsKey4K(frontSegs[si]));
+            if (it == syncTrims.end()) continue;
+            int maxTrimF = 0;
+            for (const auto& [cam, t] : it->second)
+                maxTrimF = std::max(maxTrimF, (int)std::round(double(t) * syncFps4K));
+            for (const auto& [cam, t] : it->second) {
+                int trimF = (int)std::round(double(t) * syncFps4K);
+                segDelayF[si][cam] = maxTrimF - trimF;
+                segHoldF[si][cam]  = trimF;
+            }
+        }
 
         std::string audioSrc4K = opts.audioSource;
         int audioSlotCI = 2;
@@ -1036,6 +1049,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
             } else { hasOverlay4K = false; }
         } else if (!opts.mapOverlayPath.empty()) {
             if (opts.mapOverlayLoop) cmd4K << " -stream_loop -1";
+            if (opts.mapOverlayAlpha) cmd4K << " -c:v libvpx-vp9";
             cmd4K << " -i \"" << opts.mapOverlayPath << "\"";
         }
         bool hasHud4K = !opts.hudOverlayPath.empty();
@@ -1057,24 +1071,24 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
             for (size_t ci = 0; ci < 4; ++ci) {
                 int idx = int(si) * 4 + int(ci);
                 const std::string& slot = slotOrder[ci];
-                double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
-                double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
+                int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
+                int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
                 std::string tag = std::to_string(si) + "_" + std::to_string(ci);
                 std::string qL  = "q" + tag;
 
-                if (D > 0.001) {
+                if (DF > 0) {
                     fc4K << "[" << idx << ":v]split=2[sfi" << tag << "][mn" << tag << "];"
                          << "[sfi" << tag << "]trim=end_frame=1,setpts=PTS-STARTPTS,"
                          << "loop=loop=-1:size=1:start=0,"
-                         << "trim=duration=" << fmtD(D) << ",setpts=PTS-STARTPTS,"
+                         << "trim=end_frame=" << DF << ",setpts=PTS-STARTPTS,"
                          << "eq=brightness=-0.25:saturation=0.1[sfp" << tag << "];"
                          << "[sfp" << tag << "][mn" << tag << "]concat=n=2:v=1:a=0";
-                    if (H > 0.001)
-                        fc4K << ",tpad=stop_mode=clone:stop_duration=" << fmtD(H);
+                    if (HF > 0)
+                        fc4K << ",tpad=stop_mode=clone:stop=" << HF;
                     fc4K << "," << sf4K << "[" << qL << "];";
-                } else if (H > 0.001) {
+                } else if (HF > 0) {
                     fc4K << "[" << idx << ":v]"
-                         << "tpad=stop_mode=clone:stop_duration=" << fmtD(H)
+                         << "tpad=stop_mode=clone:stop=" << HF
                          << "," << sf4K << "[" << qL << "];";
                 } else {
                     fc4K << "[" << idx << ":v]" << sf4K << "[" << qL << "];";
@@ -1094,17 +1108,17 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         for (size_t si = 0; si < nSegs; ++si) {
             int idx = int(si) * 4 + audioSlotCI;
             const std::string& slot = slotOrder[audioSlotCI];
-            double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
-            double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
-            int dMs = int(D * 1000.0 + 0.5);
+            int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
+            int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
+            int dMs = int(double(DF) * 1000.0 / syncFps4K + 0.5);
             fc4K << "[" << idx << ":a]";
-            if      (D > 0.001 && H > 0.001)
+            if      (DF > 0 && HF > 0)
                 fc4K << "adelay=" << dMs << "|" << dMs
-                     << ",apad=pad_dur=" << fmtD(H);
-            else if (D > 0.001)
+                     << ",apad=pad_dur=" << fmtD(double(HF) / syncFps4K);
+            else if (DF > 0)
                 fc4K << "adelay=" << dMs << "|" << dMs;
-            else if (H > 0.001)
-                fc4K << "apad=pad_dur=" << fmtD(H);
+            else if (HF > 0)
+                fc4K << "apad=pad_dur=" << fmtD(double(HF) / syncFps4K);
             else
                 fc4K << "anull";
             fc4K << "[ai" << si << "];";
@@ -1119,10 +1133,19 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
              << (needsInter4K ? "[base]" : "[vout]");
 
         if (hasOverlay4K) {
+            const std::string ovFmt4K = opts.mapOverlayAlpha ? "yuva420p" : opts.encode.pixFmt;
+            const std::string ovXY4K  = [&]() -> std::string {
+                const std::string& p = opts.overlayPosition;
+                if (p == "tl") return "0:0";
+                if (p == "tr") return "W-w:0";
+                if (p == "bl") return "0:H-h";
+                if (p == "br") return "W-w:H-h";
+                return "(W-w)/2:(H-h)/2";
+            }();
             fc4K << ";[" << baseIdx4K << ":v]scale=" << opts.mapOverlayWidth
                  << ":" << opts.mapOverlayHeight
-                 << ",format=" << opts.encode.pixFmt << "[ovl]"
-                 << ";[base][ovl]overlay=(W-w)/2:(H-h)/2:eof_action=pass"
+                 << ",format=" << ovFmt4K << "[ovl]"
+                 << ";[base][ovl]overlay=" << ovXY4K << ":eof_action=pass"
                  << (hasHud4K ? "[afterovl]" : "[vout]");
         }
         if (hasHud4K) {
@@ -1231,6 +1254,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         }
     } else if (!opts.mapOverlayPath.empty()) {
         if (opts.mapOverlayLoop) cmd << " -stream_loop -1";
+        if (opts.mapOverlayAlpha) cmd << " -c:v libvpx-vp9";
         cmd << " -i \"" << opts.mapOverlayPath << "\"";
     }
 
@@ -1281,11 +1305,20 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     cmd << (needsIntermediate ? "[base]" : "[vout]");
 
     if (hasOverlay) {
-        // Center overlay: scale to inset size, strip alpha (map/dashboard are opaque).
+        // Overlay: scale to inset size, preserve alpha for VP9/WebM transparent sources.
         // Output label: [afterovl] if HUD follows, else [vout].
+        const std::string ovFmt = opts.mapOverlayAlpha ? "yuva420p" : opts.encode.pixFmt;
+        const std::string ovXY  = [&]() -> std::string {
+            const std::string& p = opts.overlayPosition;
+            if (p == "tl") return "0:0";
+            if (p == "tr") return "W-w:0";
+            if (p == "bl") return "0:H-h";
+            if (p == "br") return "W-w:H-h";
+            return "(W-w)/2:(H-h)/2";
+        }();
         cmd << ";[4:v]scale=" << opts.mapOverlayWidth << ":" << opts.mapOverlayHeight
-            <<   ",format=" << opts.encode.pixFmt << "[ovl]"
-            <<   ";[base][ovl]overlay=(W-w)/2:(H-h)/2:eof_action=pass"
+            <<   ",format=" << ovFmt << "[ovl]"
+            <<   ";[base][ovl]overlay=" << ovXY << ":eof_action=pass"
             <<   (hasHud ? "[afterovl]" : "[vout]");
     }
 
@@ -1447,18 +1480,10 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
 
     if (canSyncPad1080) {
         const auto& syncTrims = trip.cameraSync.segmentTrims;
-        size_t nSync = syncTrims.size();
 
-        std::vector<std::map<std::string, double>> segDelay(nSync), segHold(nSync);
-        for (size_t i = 0; i < nSync; ++i) {
-            double maxTrim = 0.0;
-            for (const auto& [cam, t] : syncTrims[i])
-                maxTrim = std::max(maxTrim, double(t));
-            for (const auto& [cam, t] : syncTrims[i]) {
-                segDelay[i][cam] = maxTrim - double(t);
-                segHold[i][cam]  = double(t);
-            }
-        }
+        double syncFps1080 = 25.0;
+        if (!trip.videoProfile.frameRate.empty())
+            try { syncFps1080 = std::stod(trip.videoProfile.frameRate); } catch (...) {}
 
         auto fmtD = [](double d) -> std::string {
             std::ostringstream o;
@@ -1470,6 +1495,25 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         const std::vector<const std::vector<std::string>*> slotSegs =
             { &srcFront, &srcRear, &srcLeft, &srcRight };
         size_t nSegs = srcFront.size();
+
+        auto frontTsKey1080 = [](const std::string& path) -> std::string {
+            std::string bn = fs::path(path).filename().string();
+            return (bn.size() >= 15) ? bn.substr(0, 15) : bn;
+        };
+        std::vector<std::map<std::string, int>> segDelayF(nSegs), segHoldF(nSegs);
+        for (size_t si = 0; si < nSegs; ++si) {
+            if (si >= srcFront.size()) continue;
+            auto it = syncTrims.find(frontTsKey1080(srcFront[si]));
+            if (it == syncTrims.end()) continue;
+            int maxTrimF = 0;
+            for (const auto& [cam, t] : it->second)
+                maxTrimF = std::max(maxTrimF, (int)std::round(double(t) * syncFps1080));
+            for (const auto& [cam, t] : it->second) {
+                int trimF = (int)std::round(double(t) * syncFps1080);
+                segDelayF[si][cam] = maxTrimF - trimF;
+                segHoldF[si][cam]  = trimF;
+            }
+        }
 
         std::string audioSrcD = opts.audioSource;
         int audioSlotCI = 2;
@@ -1511,24 +1555,24 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
             for (size_t ci = 0; ci < 4; ++ci) {
                 int idx = int(si) * 4 + int(ci);
                 const std::string& slot = slotOrder[ci];
-                double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
-                double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
+                int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
+                int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
                 std::string tag = std::to_string(si) + "_" + std::to_string(ci);
                 std::string qL  = "q" + tag;
 
-                if (D > 0.001) {
+                if (DF > 0) {
                     fc1080 << "[" << idx << ":v]split=2[sfi" << tag << "][mn" << tag << "];"
                            << "[sfi" << tag << "]trim=end_frame=1,setpts=PTS-STARTPTS,"
                            << "loop=loop=-1:size=1:start=0,"
-                           << "trim=duration=" << fmtD(D) << ",setpts=PTS-STARTPTS,"
+                           << "trim=end_frame=" << DF << ",setpts=PTS-STARTPTS,"
                            << "eq=brightness=-0.25:saturation=0.1[sfp" << tag << "];"
                            << "[sfp" << tag << "][mn" << tag << "]concat=n=2:v=1:a=0";
-                    if (H > 0.001)
-                        fc1080 << ",tpad=stop_mode=clone:stop_duration=" << fmtD(H);
+                    if (HF > 0)
+                        fc1080 << ",tpad=stop_mode=clone:stop=" << HF;
                     fc1080 << "," << sf1080 << "[" << qL << "];";
-                } else if (H > 0.001) {
+                } else if (HF > 0) {
                     fc1080 << "[" << idx << ":v]"
-                           << "tpad=stop_mode=clone:stop_duration=" << fmtD(H)
+                           << "tpad=stop_mode=clone:stop=" << HF
                            << "," << sf1080 << "[" << qL << "];";
                 } else {
                     fc1080 << "[" << idx << ":v]" << sf1080 << "[" << qL << "];";
@@ -1546,16 +1590,16 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         for (size_t si = 0; si < nSegs; ++si) {
             int idx = int(si) * 4 + audioSlotCI;
             const std::string& slot = slotOrder[audioSlotCI];
-            double D = (si < nSync && segDelay[si].count(slot)) ? segDelay[si].at(slot) : 0.0;
-            double H = (si < nSync && segHold[si].count(slot))  ? segHold[si].at(slot)  : 0.0;
-            int dMs = int(D * 1000.0 + 0.5);
+            int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
+            int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
+            int dMs = int(double(DF) * 1000.0 / syncFps1080 + 0.5);
             fc1080 << "[" << idx << ":a]";
-            if      (D > 0.001 && H > 0.001)
-                fc1080 << "adelay=" << dMs << "|" << dMs << ",apad=pad_dur=" << fmtD(H);
-            else if (D > 0.001)
+            if      (DF > 0 && HF > 0)
+                fc1080 << "adelay=" << dMs << "|" << dMs << ",apad=pad_dur=" << fmtD(double(HF) / syncFps1080);
+            else if (DF > 0)
                 fc1080 << "adelay=" << dMs << "|" << dMs;
-            else if (H > 0.001)
-                fc1080 << "apad=pad_dur=" << fmtD(H);
+            else if (HF > 0)
+                fc1080 << "apad=pad_dur=" << fmtD(double(HF) / syncFps1080);
             else
                 fc1080 << "anull";
             fc1080 << "[ai" << si << "];";
@@ -3052,4 +3096,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00109
+// SN: 00111

@@ -625,6 +625,45 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
         });
         vlay->addWidget(m_dashTransparentCheck);
 
+        // Layout picker
+        {
+            auto* layoutRow = new QHBoxLayout;
+            auto* layoutLbl = new QLabel("Layout:", w); layoutLbl->setFixedWidth(54);
+            m_dashLayoutCombo = new QComboBox(w);
+            m_dashLayoutCombo->addItem("Standard (3-panel)", QString("standard"));
+            m_dashLayoutCombo->addItem("Quadrant HUD",       QString("quadrant-hud"));
+            m_dashLayoutCombo->addItem("Custom JSON\u2026", QString("custom"));
+            layoutRow->addWidget(layoutLbl);
+            layoutRow->addWidget(m_dashLayoutCombo, 1);
+            vlay->addLayout(layoutRow);
+
+            // File-browse row — shown only when Custom JSON is selected
+            auto* customRowW = new QWidget(w);
+            auto* customRowL = new QHBoxLayout(customRowW);
+            customRowL->setContentsMargins(54, 0, 0, 0);
+            m_dashLayoutPath = new QLineEdit(customRowW);
+            m_dashLayoutPath->setPlaceholderText("layout.json\u2026");
+            auto* customBrowseBtn = new QPushButton("\u2026", customRowW);
+            customBrowseBtn->setFixedWidth(28);
+            connect(customBrowseBtn, &QPushButton::clicked, [this]() {
+                QString path = QFileDialog::getOpenFileName(
+                    this, "Layout JSON", m_dashLayoutPath->text(),
+                    "JSON (*.json);;All Files (*)");
+                if (!path.isEmpty()) m_dashLayoutPath->setText(path);
+            });
+            customRowL->addWidget(m_dashLayoutPath, 1);
+            customRowL->addWidget(customBrowseBtn);
+            m_dashLayoutRow = customRowW;
+            m_dashLayoutRow->setVisible(false);
+            vlay->addWidget(m_dashLayoutRow);
+
+            connect(m_dashLayoutCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+                if (m_dashLayoutRow)
+                    m_dashLayoutRow->setVisible(
+                        m_dashLayoutCombo->currentData().toString() == "custom");
+            });
+        }
+
         auto* infoLbl = new QLabel(
             "Resolution: 960\u00d7540  (collage quadrant slot)", w);
         infoLbl->setStyleSheet("font-size: 8pt; color: gray;");
@@ -1196,6 +1235,15 @@ void TripPropertiesDialog::onBuildAll()
         s.extraArgs << "--units" << units;
         bool transparent = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
         if (transparent) s.extraArgs << "--transparent";
+        if (m_dashLayoutCombo) {
+            QString lv = m_dashLayoutCombo->currentData().toString();
+            if (lv == "custom") {
+                QString lp = m_dashLayoutPath ? m_dashLayoutPath->text().trimmed() : "";
+                if (!lp.isEmpty()) s.extraArgs << "--layout" << lp;
+            } else if (lv != "standard") {
+                s.extraArgs << "--layout" << lv;
+            }
+        }
         stages.append(s);
     }
 
@@ -1362,6 +1410,15 @@ void TripPropertiesDialog::onGenerateDashboard()
     bool transparent = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
     QStringList extraArgs{"--units", units};
     if (transparent) extraArgs << "--transparent";
+    if (m_dashLayoutCombo) {
+        QString lv = m_dashLayoutCombo->currentData().toString();
+        if (lv == "custom") {
+            QString lp = m_dashLayoutPath ? m_dashLayoutPath->text().trimmed() : "";
+            if (!lp.isEmpty()) extraArgs << "--layout" << lp;
+        } else if (lv != "standard") {
+            extraArgs << "--layout" << lv;
+        }
+    }
     {
         QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
         if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
@@ -1547,12 +1604,12 @@ QWidget* TripPropertiesDialog::buildSyncWidget() {
             auto* tblVlay = new QVBoxLayout(tblGrp);
 
             QStringList camCols;
-            for (const auto& [cam, _] : trims[0])
+            for (const auto& [cam, _] : trims.begin()->second)
                 camCols << QString::fromStdString(cam);
             std::sort(camCols.begin(), camCols.end());
 
             auto* tbl = new QTableWidget(int(trims.size()), 1 + camCols.size());
-            tbl->setHorizontalHeaderItem(0, new QTableWidgetItem("Seg"));
+            tbl->setHorizontalHeaderItem(0, new QTableWidgetItem("Segment"));
             for (int c = 0; c < int(camCols.size()); ++c)
                 tbl->setHorizontalHeaderItem(c + 1, new QTableWidgetItem(camCols[c]));
             tbl->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -1560,17 +1617,19 @@ QWidget* TripPropertiesDialog::buildSyncWidget() {
             tbl->setAlternatingRowColors(true);
             tbl->verticalHeader()->setVisible(false);
 
-            for (int i = 0; i < int(trims.size()); ++i) {
-                auto* segItem = new QTableWidgetItem(QString::number(i));
+            int row = 0;
+            for (const auto& [key, camMap] : trims) {
+                auto* segItem = new QTableWidgetItem(QString::fromStdString(key));
                 segItem->setTextAlignment(Qt::AlignCenter);
-                tbl->setItem(i, 0, segItem);
+                tbl->setItem(row, 0, segItem);
                 for (int c = 0; c < int(camCols.size()); ++c) {
-                    auto it  = trims[i].find(camCols[c].toStdString());
-                    double v = (it != trims[i].end()) ? double(it->second) : 0.0;
+                    auto it  = camMap.find(camCols[c].toStdString());
+                    double v = (it != camMap.end()) ? double(it->second) : 0.0;
                     auto* item = new QTableWidgetItem(QString("%1").arg(v, 0, 'f', 3));
                     item->setTextAlignment(Qt::AlignCenter);
-                    tbl->setItem(i, c + 1, item);
+                    tbl->setItem(row, c + 1, item);
                 }
+                ++row;
             }
             tblVlay->addWidget(tbl);
             vlay->addWidget(tblGrp, 1);
@@ -1697,12 +1756,12 @@ void TripPropertiesDialog::onSyncFinished(int exitCode, QProcess::ExitStatus) {
                 m_trip.cameraSync.spanFrames    = jSync.value("spanFrames", 0.0f);
                 m_trip.cameraSync.spanVariation = jSync.value("spanVariation", 0.0f);
                 m_trip.cameraSync.segmentTrims.clear();
-                if (jSync.contains("segments") && jSync["segments"].is_array()) {
-                    for (const auto& jSeg : jSync["segments"]) {
-                        std::map<std::string, double> segMap;
-                        for (auto it = jSeg.begin(); it != jSeg.end(); ++it)
-                            segMap[it.key()] = it.value().get<double>();
-                        m_trip.cameraSync.segmentTrims.push_back(segMap);
+                if (jSync.contains("segments") && jSync["segments"].is_object()) {
+                    for (auto it = jSync["segments"].begin(); it != jSync["segments"].end(); ++it) {
+                        std::map<std::string, double> camMap;
+                        for (auto jt = it.value().begin(); jt != it.value().end(); ++jt)
+                            camMap[jt.key()] = jt.value().get<double>();
+                        m_trip.cameraSync.segmentTrims[it.key()] = camMap;
                     }
                 }
                 break;
@@ -1802,4 +1861,4 @@ void TripPropertiesDialog::appendVideoToManifest(const QString& path,
 }
 
 #include "TripPropertiesDialog.moc"
-// SN: 00109
+// SN: 00111

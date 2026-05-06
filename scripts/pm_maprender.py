@@ -48,10 +48,42 @@ except ImportError:
     sys.exit(1)
 
 try:
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
 except ImportError:
     print("Error: 'Pillow' module not found. Install with: pip install Pillow", file=sys.stderr)
     sys.exit(1)
+
+_font_warned = False
+
+
+def find_font(size):
+    global _font_warned
+    candidates = [
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+        "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/Library/Fonts/Arial.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+    if not _font_warned:
+        print("  Warning: no TrueType font found — text may render small."
+              "  Install dejavu-fonts-ttf or liberation-fonts.",
+              file=sys.stderr)
+        _font_warned = True
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +545,7 @@ def main():
         # OSM attribution (bottom-right corner, small)
         draw.text((args.width - 5, args.height - 5),
                   "(c) OpenStreetMap contributors",
-                  fill=(80, 80, 80), anchor="rb")
+                  fill=(80, 80, 80), anchor="rb", font=find_font(12))
 
         try:
             proc.stdin.write(frame_img.tobytes())
@@ -545,4 +577,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# SN: 00106
+# SN: 00111

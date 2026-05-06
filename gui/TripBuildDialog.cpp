@@ -366,8 +366,25 @@ QWidget* TripBuildDialog::makeOverlayCell()
     m_overlayFileRow = fileRowW;
     vbox->addWidget(fileRowW);
 
-    auto* hint = new QLabel("960\u00d7540 \u00b7 centred", cell);
+    // Position combo — where the overlay sits in the output frame
+    {
+        auto* posRow = new QHBoxLayout;
+        auto* posLbl = new QLabel("Position:", cell);
+        posLbl->setStyleSheet("font-size: 8pt;");
+        m_overlayPos = new QComboBox(cell);
+        m_overlayPos->addItem("Center",       QString("center"));
+        m_overlayPos->addItem("Top-Left",     QString("tl"));
+        m_overlayPos->addItem("Top-Right",    QString("tr"));
+        m_overlayPos->addItem("Bottom-Left",  QString("bl"));
+        m_overlayPos->addItem("Bottom-Right", QString("br"));
+        posRow->addWidget(posLbl);
+        posRow->addWidget(m_overlayPos, 1);
+        vbox->addLayout(posRow);
+    }
+
+    auto* hint = new QLabel("960\u00d7540", cell);
     hint->setAlignment(Qt::AlignCenter);
+    hint->setStyleSheet("font-size: 8pt; color: gray;");
     vbox->addWidget(hint);
 
     // Morph placeholder — visible when overlay combo is set to None
@@ -386,6 +403,7 @@ QWidget* TripBuildDialog::makeOverlayCell()
 
     auto updateOverlay = [=](bool on) {
         m_overlayCombo->setEnabled(on);
+        m_overlayPos->setEnabled(on);
         m_overlayFileRow->setEnabled(on);
         m_overlayMorph->setEnabled(on);
     };
@@ -1158,6 +1176,13 @@ VideoOptions TripBuildDialog::buildOptions() const
             opts.mapOverlayPath = logoMorphPath();
             opts.mapOverlayLoop = true;
         }
+        // VP9/WebM overlays (transparent dashboard) need libvpx-vp9 + yuva420p.
+        if (!opts.mapOverlayPath.empty()) {
+            QString p = QString::fromStdString(opts.mapOverlayPath);
+            opts.mapOverlayAlpha = p.endsWith(".webm", Qt::CaseInsensitive);
+        }
+        if (m_overlayPos)
+            opts.overlayPosition = m_overlayPos->currentData().toString().toStdString();
     }
 
     // ── Output ───────────────────────────────────────────────────────────────
@@ -1205,4 +1230,4 @@ bool TripBuildDialog::processNow() const
 {
     return m_btnNow && m_btnNow->isChecked();
 }
-// SN: 00109
+// SN: 00111

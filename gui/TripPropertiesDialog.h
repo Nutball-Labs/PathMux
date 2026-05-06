@@ -95,6 +95,9 @@ private:
     QLabel*       m_dashWarnLabel        = nullptr;
     QLineEdit*    m_dashOutputEdit       = nullptr;
     QCheckBox*    m_dashTransparentCheck = nullptr;
+    QComboBox*    m_dashLayoutCombo      = nullptr;
+    QWidget*      m_dashLayoutRow        = nullptr;   // custom JSON file row
+    QLineEdit*    m_dashLayoutPath       = nullptr;
     QListWidget*  m_dashFileList         = nullptr;
     QPushButton*  m_dashGenerateBtn      = nullptr;
 
@@ -135,4 +138,4 @@ private:
     QWidget* buildSyncWidget();
     void     refreshSyncTab();
 };
-// SN: 00109
+// SN: 00111

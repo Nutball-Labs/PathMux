@@ -1457,11 +1457,11 @@ void ConfigManager::saveTripCache(const std::string& path,
                 jSync["syncCam"]       = cs.syncCam;
                 jSync["spanFrames"]    = cs.spanFrames;
                 jSync["spanVariation"] = cs.spanVariation;
-                json jSegs = json::array();
-                for (const auto& segMap : cs.segmentTrims) {
+                json jSegs;
+                for (const auto& [key, camMap] : cs.segmentTrims) {
                     json jSeg;
-                    for (const auto& [cam, trim] : segMap) jSeg[cam] = trim;
-                    jSegs.push_back(jSeg);
+                    for (const auto& [cam, trim] : camMap) jSeg[cam] = trim;
+                    jSegs[key] = jSeg;
                 }
                 jSync["segments"] = jSegs;
                 jTrip["cameraSync"] = jSync;
@@ -1634,23 +1634,6 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
             for (const auto& v : jTrip["dashVideos"]) trip.dashVideos.push_back(v.get<std::string>());
         if (jTrip.contains("hudVideos") && jTrip["hudVideos"].is_array())
             for (const auto& v : jTrip["hudVideos"]) trip.hudVideos.push_back(v.get<std::string>());
-        if (jTrip.contains("cameraSync") && jTrip["cameraSync"].is_object()) {
-            const auto& jSync        = jTrip["cameraSync"];
-            trip.cameraSync.valid         = true;
-            trip.cameraSync.analyzedAt    = jSync.value("analyzedAt",    "");
-            trip.cameraSync.syncCam       = jSync.value("syncCam",       "");
-            trip.cameraSync.spanFrames    = jSync.value("spanFrames",    0.0);
-            trip.cameraSync.spanVariation = jSync.value("spanVariation", 0.0);
-            if (jSync.contains("segments") && jSync["segments"].is_array()) {
-                for (const auto& jSeg : jSync["segments"]) {
-                    std::map<std::string, double> segMap;
-                    for (auto it = jSeg.begin(); it != jSeg.end(); ++it)
-                        segMap[it.key()] = it.value().get<double>();
-                    trip.cameraSync.segmentTrims.push_back(segMap);
-                }
-            }
-        }
-
         // Trip thumbnails — new format uses firstThumbs/lastThumbs maps.
         // Migrate old per-camera named fields transparently on read.
         if (jTrip.contains("firstThumbs") && jTrip["firstThumbs"].is_object()) {
@@ -1734,6 +1717,42 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
                 trip.segments.push_back(seg);
             }
         }
+
+        // cameraSync — parsed after segments so migration from old positional array
+        // format can reference trip.segments[i].cameras["front"] for timestamp keys.
+        if (jTrip.contains("cameraSync") && jTrip["cameraSync"].is_object()) {
+            const auto& jSync = jTrip["cameraSync"];
+            trip.cameraSync.valid         = true;
+            trip.cameraSync.analyzedAt    = jSync.value("analyzedAt",    "");
+            trip.cameraSync.syncCam       = jSync.value("syncCam",       "");
+            trip.cameraSync.spanFrames    = jSync.value("spanFrames",    0.0);
+            trip.cameraSync.spanVariation = jSync.value("spanVariation", 0.0);
+            if (jSync.contains("segments")) {
+                const auto& jSegs = jSync["segments"];
+                if (jSegs.is_object()) {
+                    for (auto it = jSegs.begin(); it != jSegs.end(); ++it) {
+                        std::map<std::string, double> camMap;
+                        for (auto jt = it.value().begin(); jt != it.value().end(); ++jt)
+                            camMap[jt.key()] = jt.value().get<double>();
+                        trip.cameraSync.segmentTrims[it.key()] = camMap;
+                    }
+                } else if (jSegs.is_array()) {
+                    // Old positional format — migrate to front-timestamp-keyed map.
+                    for (size_t i = 0; i < jSegs.size() && i < trip.segments.size(); ++i) {
+                        auto fit = trip.segments[i].cameras.find("front");
+                        if (fit == trip.segments[i].cameras.end()
+                                || fit->second.empty() || fit->second == "-") continue;
+                        std::string bn  = fs::path(fit->second).filename().string();
+                        std::string key = (bn.size() >= 15) ? bn.substr(0, 15) : bn;
+                        std::map<std::string, double> camMap;
+                        for (auto jt = jSegs[i].begin(); jt != jSegs[i].end(); ++jt)
+                            camMap[jt.key()] = jt.value().get<double>();
+                        trip.cameraSync.segmentTrims[key] = camMap;
+                    }
+                }
+            }
+        }
+
         trips.push_back(trip);
     }
 
@@ -1891,4 +1910,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace Pathmux
 
-// SN: 00109
+// SN: 00111

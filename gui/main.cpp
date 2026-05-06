@@ -104,6 +104,27 @@ int main(int argc, char* argv[])
         "QDialog, QMainWindow {"
         "  border: 2px solid #5a5a5a;"
         "}"
+        // QCheckBox indicator: light gray background (visible on any dark widget background);
+        // bright green checkmark when checked.  Fixes dark-on-dark invisible checkboxes in
+        // TripBuildDialog overlay/HUD rows and any other dark-background dialogs.
+        "QCheckBox::indicator {"
+        "  width: 14px; height: 14px;"
+        "  background-color: #c4c4c4;"
+        "  border: 1px solid #888888;"
+        "  border-radius: 2px;"
+        "}"
+        "QCheckBox::indicator:unchecked:hover {"
+        "  background-color: #d8d8d8;"
+        "  border-color: #aaaaaa;"
+        "}"
+        "QCheckBox::indicator:checked {"
+        "  background-color: #0e2010;"
+        "  border-color: #00cc44;"
+        "  image: url(:/images/checkmark.svg);"
+        "}"
+        "QCheckBox::indicator:checked:hover {"
+        "  border-color: #00ff55;"
+        "}"
     );
 
     // Build a multi-resolution icon so the OS can pick the best size.
@@ -126,4 +147,4 @@ int main(int argc, char* argv[])
     w.show();
     return app.exec();
 }
-// SN: 00109
+// SN: 00111
