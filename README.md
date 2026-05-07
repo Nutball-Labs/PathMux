@@ -21,6 +21,7 @@ Pre-built packages for the latest release are on the
 | Linux — RHEL / Alma / Fedora | `.rpm` |
 | Linux — Debian / Ubuntu | `.deb` |
 | Linux — generic x86_64 | `.tar.gz` |
+| macOS (Intel + Apple Silicon) | `.pkg` installer or `.tar.gz` |
 | Windows 10/11 | `.msi` installer or `.zip` portable |
 
 All packages require `ffmpeg`/`ffprobe` installed separately
@@ -98,7 +99,8 @@ To build from source instead, see [Building from Source](#building-from-source).
 | Camera | Layout | GPS | Status |
 |---|---|---|---|
 | Pruveeo D90 360° | `Front/` `Rear/` `Left/` `Right/` subdirs, `.ts` | LIGOGPSINFO via ExifTool | ✅ Confirmed |
-| Cobra CCDC4500 | Flat single directory, `.MOV`, H.264 | None | ✅ Confirmed (no GPS) |
+| Cobra CCDC4500 / GPS | `DCIM/100_DSC/`, CAM1+CAM2, `.MOV`/`.3GP` | gps0 atom via ExifTool (GPS models) | ✅ Confirmed |
+| Prilotte | `DCIMA/` + `DCIMC/` subdirs, `.AVI` MJPEG | None (mtime timestamps) | ✅ Confirmed (no GPS) |
 
 **Don't see your camera?** See [Adding Camera Support](#adding-camera-support) below.
 
@@ -160,10 +162,12 @@ Binaries are placed in `build-linux/`:
 | Binary | Purpose |
 |---|---|
 | `pathmux-gui` | Desktop GUI — scan, browse, build video, export GPS |
+| `pathmux-tl` | Timelapse editor — mark spans, encode variable-speed clips |
 | `pathmux` | Main CLI — scan, browse, export, build video |
 | `pm_probe` | Camera profiler — fingerprint and wizard |
 | `pm_gpsinfo` | GPS inspection and batch lock-time scan |
 | `pm_gpsexport` | Export GPS tracks from existing manifests |
+| `pm_videos` | Batch map/dashboard/HUD video generator |
 | `pm_ls` | Quick manifest listing |
 | `pm_audit` | Manifest integrity checker |
 
@@ -229,6 +233,35 @@ is saved alongside your footage.
 
 From the interactive browser (`-I`): select a trip → **[V] Build video**.
 Configure cameras, resolution, output directory, then **GO**.
+
+---
+
+## Python Scripts
+
+Several PathMux features are implemented as Python scripts rather than compiled C++ code.
+These scripts handle tasks where rapid iteration matters more than raw speed, or where
+the ecosystem of Python libraries (PIL, scipy, requests) would take months to replicate
+in C++. Each script is a standalone tool callable from the command line and is also
+invoked by the GUI via `QProcess`.
+
+| Script | Purpose |
+|---|---|
+| `pm_maprender.py` | GPS-synced moving-map video: fetches OSM tiles, composites the route onto a scrolling map frame-by-frame, writes an MP4 |
+| `pm_dashboard.py` | Animated instrument dashboard: speed, heading, trip odometer, and weather conditions (Open-Meteo archive API, no key required); supports `--layout standard\|quadrant-hud\|<path.json>` |
+| `pm_hud.py` | Full-screen transparent HUD overlay: left/right speed tapes (KPH/MPH) and a circular compass rose; outputs VP9/yuva420p WebM so it composites cleanly over footage without a backing layer |
+| `pm_sync_analyze.py` | Camera sync analysis: scipy audio cross-correlation between camera streams per segment; writes per-segment delay/hold values into the manifest `cameraSync` block for use by the collage builder |
+| `gen_logo_morph.py` | Build-time tool: generates `logo_morph.mp4` (PathMux ↔ Nutball-Labs cross-fade) embedded in the Qt6 app via QRC |
+
+**Why Python and not C++?**
+
+The map and dashboard scripts do pixel-level image composition across hundreds of frames
+using PIL/Pillow, fetch live weather data via HTTP, and render SVG-style vector elements —
+tasks where Python's library ecosystem is mature and the development loop is fast. The sync
+analyzer uses scipy's FFT-based cross-correlation, which would require pulling in a full
+DSP library (or writing one) in C++. Building any of these in C++ would add substantial
+complexity and build-system dependencies for no user-visible benefit. The scripts run in a
+subprocess and their output (an MP4 or JSON block) feeds back into the C++ pipeline the
+same way any external tool does.
 
 ---
 
@@ -387,10 +420,16 @@ Copyright (C) 2026 Nutball Labs / Stephen Berg
 
 **Phase 1 (CLI):** Feature-complete for core functionality; ongoing polish.
 
-**Phase 2 (Qt6 GUI):** Actively shipping. The GUI covers all major workflows:
-scan, browse, GPS extraction and export, moving map generation, instrument
-dashboard, and video build with full collage layout control.
+**Phase 2 (Qt6 GUI):** Feature-rich and actively shipping. The GUI covers all
+major workflows: scan, browse, GPS extraction and export, moving map generation,
+instrument dashboard (with live weather via Open-Meteo), HUD overlay, and video
+build with full collage layout control including per-slot camera remapping and
+transparent WebM overlays. Camera sync is complete through both Tier 1 (explicit
+segment durations) and Tier 2 (audio cross-correlation via `pm_sync_analyze.py`).
 
-See [ROADMAP.md](ROADMAP.md) for the full plan.
+The `pathmux-tl` timelapse editor ships as a companion tool for variable-speed
+clip creation from single video files.
 
-<!-- SN: 00106 -->
+See [ROADMAP.md](ROADMAP.md) for the full plan and v2.0.0 roadmap.
+
+<!-- SN: 00112 -->

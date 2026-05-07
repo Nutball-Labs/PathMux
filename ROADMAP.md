@@ -149,15 +149,15 @@ values on D90) — stored but ignored. Speed in km/h.
 - [x] **Packaging audit** — both known issues resolved (no hard ExifTool dep, license = GPL-3.0-or-later);
   LICENSE install target confirmed in CMakeLists.txt; packages posted as v1.0.1a
 
-**Camera profile abstraction — next critical step:**
-- [ ] Extract camera format detection from `trip_detection.cpp` into a
+**Camera profile abstraction — COMPLETE (v1.0.0):**
+- [x] Extract camera format detection from `trip_detection.cpp` into a
   `CameraProfile`/`StorageFormat` layer; `TripDetection` consumes it; rest of
   pipeline sees normalized output. Enables per-camera bug fixes without touching
   trip detection. See "Multi-Brand Dashcam Support" section for full spec.
-- [ ] Strip Pruveeo D90-specific hardcoding from `trip_detection.cpp`; replace
+- [x] Strip Pruveeo D90-specific hardcoding from `trip_detection.cpp`; replace
   with sane hardware-agnostic defaults; load active profile from
   `~/.config/pathmux/profiles/` at scan time
-- [ ] Wire CameraProfile into `--prefs` (select default profile from profiles dir)
+- [x] Wire CameraProfile into `--prefs` (select default profile from profiles dir)
 
 **Man page:**
 - [x] Updated `pathmux.1` to v0.9.9 — `-s` scan prompt, GeoJSON in `-G` flow,
@@ -169,8 +169,8 @@ values on D90) — stored but ignored. Speed in km/h.
 - [x] `pm_ls` — quick manifest listing; `pm_audit` — integrity check across all manifests
 - [x] `pm_probe` — camera fingerprinting tool; single-file mode + `--card` SD card report
 - [x] Rename `trip_debug` → `pm_tripdebug` (binary, CMakeLists target, source, man page)
-- [x] `pm_probe --wizard` — interactive camera profile builder (v0.9.10g); needs live
-  test against non-D90 hardware before declaring complete
+- [x] `pm_probe --wizard` — interactive camera profile builder; confirmed on D90, Cobra CCDC4500, Cobra GPS, and Prilotte
+- [x] `pm_videos` — batch map/dashboard/HUD video generator; `--mid`/`--tid` trip addressing; `--map`/`--dash`/`--hud`/`--all` flags; updates manifest on completion (v1.9.9a)
 
 **CLI polish:**
 - [x] **`--format=[json,csv,xml]` + `--fields`** (v0.9.11) — structured trip output;
@@ -192,6 +192,28 @@ values on D90) — stored but ignored. Speed in km/h.
 ---
 
 ## Phase 2: Qt6 GUI Development
+
+**Current status (v1.9.9a):** The Qt6 GUI is feature-rich and actively shipping.
+All core workflows are implemented: manifest scanning, trip tile grid, GPS extraction
+and export, moving map generation, instrument dashboard (with Open-Meteo weather),
+HUD overlay (VP9 transparent WebM), and full collage build with per-slot camera
+remapping, transparent overlay support, and preview frame. Camera sync is complete
+through both Tier 1 (explicit segment durations) and Tier 2 (audio cross-correlation).
+The `pathmux-tl` timelapse editor ships as a companion Qt6 tool.
+
+**Implemented components:** MainWindow, ManifestPanel, TripGridPanel, TripTile,
+TripPropertiesDialog (two-row tab bar: General/cameras + GPS/Map/Dashboard/HUD),
+TripBuildDialog (quadrant grid with logo-morph placeholder, overlay position picker,
+HUD full-screen row), BuildProgressDialog, MapProgressDialog (cancel-safe),
+ScanProgressDialog, ManifestManagerDialog, SettingsDialog, SetupWizard, AboutDialog,
+EmptyManifestWidget, LogoMorphWidget.
+
+**v2.0.0 gating items** (see end of this section):
+- GPS extraction auto-triggers camera sync analysis
+- Unified Job Queue Panel (replaces per-op progress dialogs)
+- `cameraSync.segments` keyed by front camera timestamp (not positional index)
+
+---
 
 ### Tile-Based Trip Browser
 - Main window displays trips as tiles in a scrollable grid
@@ -558,32 +580,63 @@ lives in `libpathmux` and all three formats share the same data pipeline.
 
 ## Community & Contributions
 
-PathMux is currently a solo project by a Linux sysadmin learning C++ through AI-assisted development. Contributions, bug reports, and feature requests are welcome once the project reaches public release.
-
-**Current blockers before public release:**
-1. ffprobe integration for accurate trip duration
-2. CLI stability and bug fixes
-3. ExifTool 13.51 release (GPS extraction ready, awaiting upstream release)
+PathMux is a solo project by a Linux sysadmin building with AI-assisted C++ development.
+The project is publicly released — bug reports, camera profile submissions, and feature
+requests are welcome via GitHub Issues.
 
 **Target audience:**
-- Dashcam owners (Pruveeo D90 initially, expandable to other 4-camera systems)
-- Linux power users comfortable with command-line tools
-- Users wanting local control over dashcam footage (no cloud required)
+- Dashcam owners who want more than a phone app
+- Power users who prefer local tools over cloud upload services
+- Drivers wanting organized trip records, GPS tracks, and incident clips
+
+**Contributing camera profiles:**
+Run `pm_probe --card <path>` and attach the output to a GitHub issue with your camera
+make and model. That gives everything needed to build a profile without requiring the
+hardware. See the "Multi-Brand Dashcam Support" section for the full contribution model.
 
 ---
 
 ## License & Legal
 
-- PathMux source code: To be determined (likely GPL or MIT)
-- ExifTool: Perl Artistic License / GPL
+- PathMux source code: **GPL-3.0-or-later** — see `LICENSE` file
+- ExifTool: Perl Artistic License / GPL (called as external process, no linking)
 - Qt6: LGPL (open source usage)
 - ffmpeg: LGPL or GPL depending on build configuration
 
 ---
 
-*Last updated: 2026-03-01*
-*Project status: Phase 1 (CLI development)*
-*Current version: 0.9.9 (SN 00079)*
+---
+
+## v2.0.0 — Pending Gate Items
+
+These three items together represent the architectural milestone that justifies the
+major version bump. All other v2.0.0 work is blocked on or complementary to these.
+
+### GPS Extraction Auto-Triggers Camera Sync
+When GPS extraction completes for a trip, immediately run `pm_sync_analyze.py
+--all-segments --write` for the same trip as a single combined operation. Single
+progress flow in GUI, single command in CLI. Sync failure is a warning, not an error.
+See `memory/shower_gps_sync_combined.md`.
+
+### Unified Job Queue Panel
+Replace the per-operation progress dialogs (`BuildProgressDialog`, `MapProgressDialog`)
+with a persistent dockable queue panel. All jobs flow through it: GPS extraction, sync
+analysis, map/dash/HUD renders, collage stages, manifest scans. Sequential by default;
+within-trip concats remain concurrent. `QDockWidget` + abstract `Job` base class.
+See `memory/shower_job_queue_panel.md`.
+
+### cameraSync Segment Schema Fix
+The current `cameraSync.segments` array is positional — matched by index to
+`trip.segments`. Silent misalignment occurs if any segment is dropped, reordered, or
+partially re-analyzed. Fix: key by **front camera timestamp** (e.g. `"20260501_083412"`),
+which is the canonical segment anchor throughout the system. Collage builder falls back
+to Tier 1 concat for missing keys. Migrate existing manifests on read.
+
+---
+
+*Last updated: 2026-05-07*
+*Project status: Phase 2 (Qt6 GUI — actively shipping; v2.0.0 in progress)*
+*Current version: 1.9.10a (SN 00112)*
 
 **Audio sync reference:**
 - Audio track always sourced from **Left camera** (driver position)
@@ -1152,16 +1205,15 @@ When a user reports an unsupported camera:
 - Solicit USB sticks with sample footage from community members
 - Test brands in priority order:
   1. Pruveeo D90 (primary, already supported)
-  2. **Cobra CCDC4500** (Costco special — SD card in hand shortly for analysis)
-     - Front (1080p) + rear/interior (720p); `.MOV` H.264 container
-     - GPS source: TBD — needs `exiftool`/`ffprobe` analysis once SD card in hand
-     - Filenames: `CLIP_YYYYMMDD_HHMMSS_F.MOV` (front), `CLIP_YYYYMMDD_HHMMSS_R.MOV` (rear)
-     - Segments: 1, 3, or 5 minute (user-configurable)
-     - TODO: Deep-dive on file layout, GPS extraction method, quirks
-  3. TeslaCam (large user base, very different format)
-  4. BlackVue (popular multi-camera system)
-  5. Viofo (budget-friendly, common)
-  6. Thinkware, Garmin, others as data becomes available
+  2. **Cobra CCDC4500 / Cobra GPS** — ✅ confirmed working
+     - CCDC4500: single CAM1, `.MOV` H.264, `DCIM/100_DSC/` subdir, no GPS
+     - Cobra GPS variant: CAM1+CAM2, `.MOV`/`.3GP`, gps0 atom via ExifTool
+     - Both share the same profile family with `gpsMethod` set accordingly
+  3. **Prilotte** — ✅ confirmed working (AVI/MJPEG, mtime timestamps, no GPS)
+  4. TeslaCam (large user base, very different format)
+  5. BlackVue (popular multi-camera system)
+  6. Viofo (budget-friendly, common)
+  7. Thinkware, Garmin, others as data becomes available
 
 **Profile validation:**
 - Each new profile requires:
@@ -1199,4 +1251,4 @@ When a user reports an unsupported camera:
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
 
-<!-- SN: 00111 -->
+<!-- SN: 00112 -->
