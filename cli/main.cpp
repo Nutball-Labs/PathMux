@@ -20,13 +20,14 @@
 #include "version.hpp"
 
 namespace fs = std::filesystem;
-using namespace Pathmux;
+using namespace CamClops;
 
 void printUsage() {
     std::cout << APP_NAME << " v" << APP_VERSION << "\n"
-              << "Usage: pathmux [options]\n\n"
+              << "Usage: camclops [options]\n\n"
               << "Scan & display:\n"
               << "  -s, --scan <path>       Scan a directory for trips\n"
+              << "  -t                      Compact one-line summary per manifest\n"
               << "  -T, --dump              Show all manifests and trips\n"
               << "      --fulldump          Show all manifests, trips, and segment files\n"
               << "      --jsondump          Dump everything as JSON (scriptable)\n"
@@ -87,10 +88,10 @@ int main(int argc, char* argv[]) {
 
     // --- Config state warning — non-blocking, fires on every invocation ---
     if (config.configState() == ConfigState::FIRST_RUN) {
-        std::cerr << "\n[!] PathMux: No configuration found. Running with defaults.\n"
+        std::cerr << "\n[!] CamClops: No configuration found. Running with defaults.\n"
                   << "   Use --prefs to configure before writing any files.\n\n";
     } else if (config.configState() == ConfigState::INCOMPLETE) {
-        std::cerr << "\n[!] PathMux: Configuration incomplete (export directory not set).\n"
+        std::cerr << "\n[!] CamClops: Configuration incomplete (export directory not set).\n"
                   << "   Use --prefs to complete setup before writing any files.\n\n";
     }
 
@@ -305,7 +306,7 @@ int main(int argc, char* argv[]) {
             if (doProbeFlow) {
                 // Probe the directory and suggest the best match.
                 auto allProfiles = config.loadAllProfiles();
-                auto match = Pathmux::detectProfile(scanPath, allProfiles);
+                auto match = CamClops::detectProfile(scanPath, allProfiles);
 
                 // Mixed-content warning: multiple camera profiles found.
                 if (match.isMixedContent) {
@@ -364,7 +365,7 @@ int main(int argc, char* argv[]) {
                     }
                 } else {
                     std::cout << "\n  No known camera profile matched this directory.\n"
-                              << "  Run: pm_probe --wizard " << scanPath << "\n"
+                              << "  Run: clops_probe --wizard " << scanPath << "\n"
                               << "  to create a profile, then re-scan.\n\n"
                               << "  Scan with current profile ("
                               << config.getActiveProfileId() << ") anyway? [y/N]: ";
@@ -439,4 +440,4 @@ int main(int argc, char* argv[]) {
     printUsage();
     return 0;
 }
-// SN: 00104
+// SN: 00112

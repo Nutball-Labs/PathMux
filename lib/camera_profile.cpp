@@ -7,7 +7,7 @@
 
 using json = nlohmann::json;
 
-namespace Pathmux {
+namespace CamClops {
 
 // ---------------------------------------------------------------------------
 
@@ -306,5 +306,5 @@ std::vector<CameraProfile> CameraProfile::getBuiltinProfiles() {
     };
 }
 
-} // namespace Pathmux
+} // namespace CamClops
 // SN: 00109

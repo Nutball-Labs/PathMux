@@ -1,5 +1,277 @@
 # CHANGELOG
 
+## [2.0.0 / SN: 00117] - 2026-05-14
+
+### Added
+- **Job Queue — per-step progress bars** (`gui/JobQueue`, `gui/JobQueuePanel`): each
+  distinct stage of a multi-step job (GPS extraction, camera sync, each concat,
+  each collage pass) gets its own progress bar. Stages group under a collapsible
+  header row with a ▶/▼ expand button. The header shows accumulated job elapsed
+  time; step rows show step-level elapsed on completion. `Job` base class gains
+  `stepStarted`, `stepProgress`, `stepDone` signals; `GpsExtractJob` and
+  `CollageJob` emit them.
+- **Job Queue — Nutball-Labs logo watermark** (`gui/JobQueuePanel`): logo painted
+  at 5% opacity centered in the job list scroll area.
+- **Remote monitor — expandable step rows** (`scripts/pm_monitor.py`): browser
+  page shows per-step bars, dots, and status text under each job card. Expand/
+  collapse state persists across 2-second auto-refresh polls. Logo embedded as
+  a base64 CSS watermark. Monitor default port changed to 8647.
+- **VERSION_HWM macro** (`lib/version.hpp`): `#define VERSION_HWM "00117"` exposes
+  the SN high-water mark at build time. Embedded in the binary canary string
+  (`PathMux 2.0.0, HWM 00117`) and in the metadata of every generated video file.
+- **MP4/WebM output branding** (`cli/video_build.cpp`, Python render scripts,
+  `pathmux-tl/MainWindow.cpp`): every generated video (concat, collage, map,
+  dashboard, HUD, timelapse) is tagged after encode via a silent `ffmpeg -c copy
+  -metadata` pass. Tags: `vendor`, `product`, `version/HWM`, `created_on`
+  (hostname), `content_type`. Visible with `ffprobe -show_format`.
+- **Output filenames include manifest ID** (`gui/ExtrasDialog`,
+  `gui/TripPropertiesDialog`): generated files now use `MID-TID` format
+  (`pm_trip_XP-6Z_hud.webm`). Prevents collisions between files from different
+  manifests. Applies to GPS track, map, dashboard, and HUD outputs.
+- **Build/package version mismatch auto-reconfigure** (`scripts/`): all six build
+  and package scripts (Linux, macOS, Windows) compare `PATHMUX_VERSION` in the
+  CMake cache against `version.hpp` and reconfigure automatically if they differ.
+
+### Fixed
+- **HUD progress — 0% stall then sudden jump** (`scripts/pm_hud.py`): progress
+  output switched from `\r` + `end=""` (terminal-overwrite) to plain `\n`-
+  terminated lines so the worker's buffer parser sees each update immediately. A
+  `0%` signal is now emitted before the render loop so the bar activates as soon
+  as setup finishes. A 100 ms time throttle prevents bursts when frames render
+  faster than the poll interval.
+- **Concat stage — no progress during ffprobe phase** (`cli/video_build.cpp`):
+  `probeSegmentDurations` now accepts a per-segment callback; `buildCameraFile`
+  drives the step bar 0–24% during probing and 25–100% during ffmpeg concat.
+- **Stage labels unreadable** (`gui/JobQueue`): "concat:Front" → "Front - join
+  segments", "collage:4K" → "Collage 4K", "collage:1080p" → "Collage 1080p".
+  Fixed a case-mismatch that prevented the mapping from ever matching.
+- **Job queue dead space** (`gui/JobQueuePanel`): description label was
+  `QSizePolicy::Expanding`, leaving the status text in a cramped fixed-width box
+  at the far right with a large empty gap. Progress bar is now the expanding
+  element; name and status labels are compact.
+- **macOS trip tile — text invisible** (`gui/TripTile`): date/time, duration, and
+  detail labels lacked explicit `color:` stylesheets. Under macOS dark mode or
+  Qt's native macOS theme, the palette `WindowText` role resolved to white against
+  the white tile background. Explicit dark colours added to all three labels.
+- **Remote monitor expand arrows non-functional** (`scripts/pm_monitor.py`):
+  `JSON.stringify(j.desc)` in an `onclick="..."` HTML attribute produced unescaped
+  double-quotes that ended the attribute string early. Fixed with `esc(...)`.
+
+### Changed
+- **Job queue layout — bar is the dominant element** (`gui/JobQueuePanel`): the
+  progress bar is now `QSizePolicy::Expanding` on both header rows and step
+  sub-rows. All other elements take only as much space as their content needs.
+
+## [Unreleased / SN: 00113] - 2026-05-09
+
+### Added
+- **ExtrasDialog** (`gui/ExtrasDialog`): lightweight per-trip job-queue dialog
+  opened from the "Extras…" button on each tile card. Tree-style layout (GPS
+  Extract → Map / Dashboard / HUD branches, Sync Cameras below). All items
+  start unchecked. Checking any GPS-dependent item auto-checks GPS Extract when
+  GPS is not yet extracted. Queue button submits selected jobs in prerequisite
+  order and closes.
+- **SyncAnalysisJob** (`gui/JobQueue`): new job type that runs
+  `pm_sync_analyze.py MID:TID --all-segments --write`. Plugged into ExtrasDialog
+  and the job queue alongside GPS/map/dash/HUD jobs.
+- **JobQueueMonitor** (`gui/JobQueueMonitor`): writes `/tmp/pathmux_jobs.json`
+  (debounced 250 ms) whenever the job queue changes. Read by `pm_monitor.py`.
+- **pm_monitor.py** (`scripts/`): stdlib-only Python HTTP server (port 8080) that
+  serves a mobile-friendly live job queue status page over the local network.
+  Viewable from any browser (Safari, Firefox, iPhone, iPad, desktop). Job dots
+  match the app colour scheme; running jobs show animated progress bars.
+- **Job Queue status bar** (`gui/JobQueuePanel`): replaces the header title with a
+  bottom status bar containing a red/green pill toggle for the remote monitor, a
+  live "Completed: N — Queued: N" counter, and the monitor URL when running.
+- **TripPropertiesDialog — Outputs tab** (`gui/TripPropertiesDialog`): the four
+  bottom-bar tabs (GPS / Map / Dashboard / HUD) are merged into a single scrolled
+  "Outputs" tab on the top bar. Settings, file lists, and generate buttons are
+  preserved; the two-bar tab system is eliminated. Sync Values tab unchanged.
+- **CollageJob basename in description** (`gui/JobQueue`): if the user sets a
+  custom output basename in TripBuildDialog, it appears in the job queue row
+  ("Collage — VP:8F  SwiftTruck") instead of the raw date.
+- **/end_session skill** (`.claude/commands/`): slash command that updates all
+  project documentation (Session_Log, CHANGELOG, ROADMAP, man pages, memory) for
+  the current session.
+
+### Fixed
+- **Main thread freeze on job cancellation / dismissal** (`gui/JobQueue`):
+  `MapRenderWorker::cancel()` was calling `m_proc->kill()` from the main thread
+  while the worker thread held Qt's internal QProcess mutex — a cross-thread
+  QProcess access that deadlocked both threads. `cancel()` now only sets an atomic
+  flag; the worker's 100 ms poll loop detects it and kills the process from the
+  correct thread (same pattern `CollageWorker` used all along).
+- **Use-after-free crash on X button (finished jobs)** (`gui/JobQueue`): after a
+  job finished, `QThread::finished` scheduled `m_worker->deleteLater()` but left
+  the `m_worker` pointer non-null. When the job object was later deleted (via its
+  own `deleteLater`), the destructor called `m_worker->cancel()` on a freed object.
+  Fixed: the `QThread::finished` lambda now sets `m_worker = nullptr` before
+  scheduling deletion.
+- **stageLog flooding on parallel camera concats** (`gui/JobQueue`): with four
+  camera threads running concurrently their progress events interleaved in the main
+  thread, causing `CollageJob` to emit a `stageLog` on every label switch —
+  hundreds of entries per trip instead of ~5. `stageLog` now fires only when a
+  stage reaches 100% (actual completion), not on label changes.
+- **HUD overlaid on front-camera quadrant instead of full collage**
+  (`gui/ExtrasDialog`): the HUD was launched at `videoProfile.width/height` (the
+  per-camera stream size, e.g. 1920×1080). When overlaid at (0,0) on the 3840×2160
+  collage output, it covered only the top-left (front camera) quadrant. Fixed to
+  use 3840×2160, matching TripPropertiesDialog's default.
+- **MAP/DASH/HUD tile indicators ignored deleted files** (`gui/TripTile`): indicators
+  showed green if paths were non-empty in the manifest even after the files were
+  deleted from disk. Now use `fs::exists()` to verify presence on each paint.
+- **Tile indicators not refreshed after job completion** (`gui/TripGridPanel`):
+  `JobQueue::jobFinished` is now connected to `TripGridPanel::onJobFinished`, which
+  reloads the trip from the manifest and calls `refreshFrom()` on the affected tile.
+  Previously tiles only updated if TripPropertiesDialog was open at the time.
+- **Blank detached job queue window** (`gui/MainWindow`): `setWidget(nullptr)` +
+  `setParent()` left the panel explicitly hidden. Added `m_jobPanel->show()` after
+  reparenting.
+- **Dock re-appeared on job submission while detached** (`gui/MainWindow`):
+  the `jobAdded` auto-show was not guarded; now only shows the dock when not
+  detached (`if (!m_jobFloatWin)`).
+- **Job destructor blocking on finished threads** (`gui/JobQueue`): all four
+  destructors now check `m_thread->isRunning()` before `quit()`/`wait()`, avoiding
+  unnecessary blocks when threads have already exited.
+- **SyncAnalysisJob wrong arguments** (`gui/JobQueue`): `pm_sync_analyze.py` takes
+  `MID:TID` as a positional argument and finds its own manifest — it does not accept
+  `--manifest` or `--trip` flags. Initial implementation passed both; fixed.
+- **X button on queued job did nothing** (`gui/JobQueuePanel`): `cancel()` is a
+  no-op for queued jobs; the button now calls `dismissRow()` for any non-running
+  state, immediately removing the job from the queue and the panel.
+- **Monitor toggle snapped back to off** (`gui/JobQueuePanel`): stderr is now
+  captured and shown inline in red when the script exits immediately (e.g. port
+  already in use). A `pkill -f pm_monitor.py` before each start cleans up stale
+  instances from crashed sessions.
+
+### Changed
+- **Extras button replaces expandable tile panel** (`gui/TripTile`): the
+  collapsible inline panel was abandoned (layout complexity, truncation at small
+  zoom). Replaced by a fixed "Extras…" button that opens `ExtrasDialog`.
+- **`layoutTiles()` reverted to uniform row heights** (`gui/TripGridPanel`): no
+  longer needs per-row variable heights now that tiles are fixed-size again.
+  Uses `m_gridContainer->resize()` (not `setMinimumSize()`) since the scroll area
+  uses `setWidgetResizable(false)`.
+- **Border consistency** (`gui/main.cpp`, `gui/MainWindow.cpp`): floating job
+  queue window (`QWidget#jobFloatWin`) gets the same `2px solid #5a5a5a` border as
+  QDialog/QMainWindow. `QFrame#paneFrame` border darkened from `#909090` to
+  `#5a5a5a` to match.
+- **Job Queue zoom** (`gui/JobQueuePanel`): Ctrl+scroll zooms row heights and fonts.
+  When docked, zoom syncs with the main window; when detached, zooms independently.
+- **Closing the detached job queue** (`gui/MainWindow`): X on the floating window
+  now closes it cleanly without re-showing the dock.
+- **Clear Finished button removed** (`gui/JobQueuePanel`): repeated
+  implementations caused crashes or freezes. Individual X buttons handle cleanup.
+
+## [Unreleased / SN: 00112] - 2026-05-08
+
+### Added
+- **Job Queue Panel — title bar counts** (`gui/JobQueuePanel`): header now
+  shows "Completed: N   —   Queued: N", updated live as jobs finish or are
+  dismissed.
+- **Job Queue Panel — dismiss finished rows** (`gui/JobQueuePanel`,
+  `gui/JobQueue`): × button on a finished job removes the row and deletes the
+  job from the queue; × on a running/queued job still cancels. New
+  `JobQueue::removeJob()` method.
+- **Job Queue Panel — collage stage log** (`gui/JobQueue`, `gui/JobQueuePanel`):
+  `Job` base gains `stageLog(line)` signal. `CollageJob` emits it each time an
+  ffmpeg stage completes (✓ label) or fails (✗ label). `JobRowWidget` grows
+  a per-stage history area below the main progress row so completed stages are
+  retained rather than overwritten.
+- **Job Queue Panel — pane borders** (`gui/main.cpp`, `gui/MainWindow.cpp`):
+  manifest and trip-grid panels wrapped in `QFrame#paneFrame` with a
+  `1px solid #909090` border matching `QGroupBox` style. QSplitter handle
+  widened to 4 px with visible gray colour.
+- **Job Queue detach as real window** (`gui/MainWindow`): "Detach" button
+  creates a `Qt::Window` `QWidget` containing the panel (guaranteed OS
+  title-bar decorations). `eventFilter` on that window catches close and
+  returns the panel to the dock. Replaces the broken `setWindowFlags` /
+  `setFloating` approach.
+
+### Fixed
+- **Job Queue halt after 2 jobs** (`gui/JobQueue`): `finished → tryStartNext`
+  connection was made lazily inside `tryStartNext()` itself — any edge case
+  that skipped that path left subsequent jobs permanently stuck in Queued.
+  Connection now wired unconditionally in `enqueue()`.
+- **HUD / map / dashboard not visible in TripBuildDialog after queue build**
+  (`gui/JobQueue`): `MapRenderJob` now writes the output path directly to the
+  manifest JSON on success, before emitting `finished`. Previously the manifest
+  was only updated if the originating `TripPropertiesDialog` was still open
+  when the job completed. Dialog closing during a long render left the file
+  on disk but absent from the manifest.
+- **Segfault on GPS extract for non-sync-capable cameras** (`gui/
+  TripPropertiesDialog`): `onRunSyncAnalysis()` dereferenced `m_syncRunBtn`
+  and `m_syncOutput` unconditionally; both are `nullptr` when the camera
+  profile has no sync tab (Cobra, Prilotte, etc.). Added early-return guard.
+- **Job Queue dot stays gray during Running** (`gui/JobQueuePanel`): dot
+  colour was only refreshed in the `finished` handler; now refreshed in
+  `statusChanged` and `progressChanged` so it turns orange as soon as the
+  job transitions to Running.
+- **Diagonal resize cursor over File / View menus** (`gui/MainWindow`):
+  `QSizeGrip` had migrated to the top-left of the window content area after
+  the pane-frame layout change, covering the menu bar. Removed — GNOME WM
+  resize handles make it redundant.
+- **Confusing dock resize** (`gui/main.cpp`): `QMainWindow::separator`
+  stylesheet with `height: 5px` created an oversized hit zone that caused
+  the wrong edge to move when resizing the job queue dock. Rule removed.
+- **Duplicate window controls on floating job queue** (`gui/MainWindow`):
+  Qt's internal dock title bar showed alongside the OS window chrome.
+  Suppressed with `setTitleBarWidget(empty)` when floating; restored with
+  `setTitleBarWidget(nullptr)` when re-docked.
+- **Sync analysis output cleared on completion** (`gui/TripPropertiesDialog`):
+  `refreshSyncTab()` tore down the entire sync widget (including the
+  `QPlainTextEdit` containing the script output) to rebuild the trim table.
+  Output text is now saved before the rebuild and restored into the new
+  widget, scrolled to bottom.
+- **`BuildAllDialog` still used for "Build All"** (`gui/TripPropertiesDialog`):
+  `onBuildAll()` now submits four queue jobs (GPS extract → map → dashboard →
+  HUD) directly to `JobQueue` instead of launching `BuildAllDialog`. Jobs run
+  sequentially; GPS extract completes first so the render scripts have a track.
+
+### Changed
+- **`GpsExtractJob` description shows MID:TID** (`gui/JobQueue`): constructor
+  gains `mid` parameter; description formats as "GPS extract — KP:1Q" (was
+  just the trip ID).
+- **`pm_sync_analyze.py` — flexible sync reference camera** (`scripts/
+  pm_sync_analyze.py`): removed hard requirement for a left camera. Reference
+  is now auto-selected: left > front > rear > right > first available. Enables
+  sync analysis on Cobra (front + rear only) and any other profile without a
+  left channel.
+- **`pm_sync_analyze.py` — verbose output retained in all-segments mode**:
+  each segment now prints extraction and correlation details before its table
+  row. A "Summary" table re-prints all segment rows after the per-segment
+  detail, so the clean overview is always visible at the bottom of the output
+  without scrolling.
+
+## [v1.9.10a / SN: 00112] - 2026-05-07
+
+### Changed
+- **MID:TID in all per-trip dialog title bars** (`gui/TripPropertiesDialog`,
+  `gui/TripBuildDialog`, `gui/MapProgressDialog`): window titles now show the
+  trip address (e.g. "Trip Properties — CY:7E", "Build Trip — CY:7E",
+  "Generating Map — CY:7E"). MID flows through `TripGridPanel` → `TripTile` →
+  `TripPropertiesDialog`; `TripBuildDialog` derives it from `manifest.id`.
+- **TripPropertiesDialog tab focus highlight** (`gui/TripPropertiesDialog`):
+  the inactive tab bar's selected tab no longer shows the active highlight.
+  `kInactiveBarStyle` updated to suppress both background and bottom-border
+  indicator (`background: transparent; border-bottom-color: transparent`)
+  in addition to the existing gray text color.
+- **TripBuildDialog action row** (`gui/TripBuildDialog`): removed the
+  "Process Now" / "Add to Batch Queue" radio-button group (batch queue was
+  never implemented). Replaced with a single full-width "Build Video ▶"
+  button (blue, styled) in the action row. `QDialogButtonBox` now shows
+  Cancel only. `processNow()` always returns `true`.
+
+### Documentation
+- README, ROADMAP, all man pages (`man1/`), and tool source `--help` strings
+  updated to reflect v1.9.10a state: new macOS packages, Cobra GPS / Prilotte
+  camera entries, `pathmux-tl` and `pm_videos` in binaries table, Python
+  scripts section with rationale, `pm_videos.1` created, `--format`/`--fields`
+  added to `pm_ls.1`, camera profile items marked complete in ROADMAP, v2.0.0
+  gate items section added.
+
+---
+
 ## [v1.9.9a / SN: 00111] - 2026-05-06
 
 ### Added
@@ -1629,4 +1901,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00111 -->
+<!-- SN: 00112 -->

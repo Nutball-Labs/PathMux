@@ -1,20 +1,20 @@
-# PathMux — Claude Code Project Context
+# CamClops — Claude Code Project Context
 
 This file is read automatically by Claude Code at session startup.
 It contains standing instructions, architecture decisions, and conventions
-for working on the PathMux project. Read this before touching any code.
+for working on the CamClops project. Read this before touching any code.
 
 ---
 
 ## Project Overview
 
-**PathMux** is a C++17 CLI tool for Alma Linux 9.x that scans dashcam footage,
+**CamClops** is a C++17 CLI tool for Alma Linux 9.x that scans dashcam footage,
 groups video segments into trips, caches results as JSON manifests, and
 extracts/exports GPS tracks. Phase 2 Qt6 GUI is in active development.
-Private GitHub repo at https://github.com/Nutball-Labs/PathMux — all work on `main` branch.
+Private GitHub repo at https://github.com/Nutball-Labs/CamClops — all work on `main` branch.
 
 **Current version:** 1.9.9a (SN 00111)
-**Config dir:** `~/.config/pathmux/`
+**Config dir:** `~/.config/camclops/`
 **Build system:** CMake (primary) + legacy Makefile
 
 ---
@@ -29,23 +29,23 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 
 ## Source Files
 
-### Library (`lib/`) — compiled into `libpathmuxlib.a`
+### Library (`lib/`) — compiled into `libcamclopslib.a`
 
 | File | Role |
 |---|---|
-| `lib/trip_detection.cpp/.hpp` | Filesystem scan, trip grouping, ffprobe calls — `namespace Pathmux` |
-| `lib/config_manager.cpp/.hpp` | JSON manifest read/write, manifest index, settings — `namespace Pathmux` |
-| `lib/camera_profile.cpp/.hpp` | `CameraSlot`, `CameraProfile` structs, JSON load/save, `d90Default()` — `namespace Pathmux` |
-| `lib/gps_export.cpp/.hpp` | GPS extraction (exiftool LIGO), GeoJSON/GPX/KML write — `namespace Pathmux` |
-| `lib/trip_format.hpp` | Header-only CSV/XML structured output helpers; shared by pathmux and pm_ls — `namespace Pathmux` |
+| `lib/trip_detection.cpp/.hpp` | Filesystem scan, trip grouping, ffprobe calls — `namespace CamClops` |
+| `lib/config_manager.cpp/.hpp` | JSON manifest read/write, manifest index, settings — `namespace CamClops` |
+| `lib/camera_profile.cpp/.hpp` | `CameraSlot`, `CameraProfile` structs, JSON load/save, `d90Default()` — `namespace CamClops` |
+| `lib/gps_export.cpp/.hpp` | GPS extraction (exiftool LIGO), GeoJSON/GPX/KML write — `namespace CamClops` |
+| `lib/trip_format.hpp` | Header-only CSV/XML structured output helpers; shared by camclops and clops_ls — `namespace CamClops` |
 | `lib/compat.hpp` | Cross-platform portability shims: popen/pclose, WEXITSTATUS, localtime_r, timegm, pathBasename |
-| `lib/platform.cpp/.hpp` | OS abstraction: home/config paths, terminal width — `namespace Pathmux::Platform` |
-| `lib/format_helpers.hpp` | Pure math/format functions (haversine, formatDistance, etc.) — `namespace Pathmux` |
-| `lib/logger.hpp` | Logging singleton — `namespace Pathmux` |
+| `lib/platform.cpp/.hpp` | OS abstraction: home/config paths, terminal width — `namespace CamClops::Platform` |
+| `lib/format_helpers.hpp` | Pure math/format functions (haversine, formatDistance, etc.) — `namespace CamClops` |
+| `lib/logger.hpp` | Logging singleton — `namespace CamClops` |
 | `lib/version.hpp` | Version string from components via macros |
-| `lib/pathmux.hpp` | Umbrella public API header |
+| `lib/camclops.hpp` | Umbrella public API header |
 
-### CLI front-end (`cli/`) — compiled into `pathmux` binary
+### CLI front-end (`cli/`) — compiled into `camclops` binary
 
 | File | Role |
 |---|---|
@@ -63,16 +63,16 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 
 | File | Role |
 |---|---|
-| `tools/pm_probe.cpp` | Camera compatibility profiler: single file, `--card` SD root, `--wizard` setup wizard |
-| `tools/pm_gpsinfo.cpp` | GPS info utility; `--scan-all-trips` batch lock scanner; `MID:TID` addressing |
-| `tools/pm_findgpslock.cpp` | Scan raw .ts files and report GPS lock acquisition time |
-| `tools/pm_gpsexport.cpp` | Non-interactive GPS track exporter |
-| `tools/pm_ls.cpp` | Non-interactive trip lister; supports `--format` / `--fields` |
-| `tools/pm_audit.cpp` | Footage integrity checker |
-| `tools/pm_tripdebug.cpp` | Trip detection debug/inspection tool |
-| `tools/pm_videos.cpp` | Batch map/dashboard/HUD video generator; `--mid=XX` / `--tid=MM:TT`; `--map`/`--dash`/`--hud`/`--all`; updates manifest on completion |
+| `tools/clops_probe.cpp` | Camera compatibility profiler: single file, `--card` SD root, `--wizard` setup wizard |
+| `tools/clops_gpsinfo.cpp` | GPS info utility; `--scan-all-trips` batch lock scanner; `MID:TID` addressing |
+| `tools/clops_findgpslock.cpp` | Scan raw .ts files and report GPS lock acquisition time |
+| `tools/clops_gpsexport.cpp` | Non-interactive GPS track exporter |
+| `tools/clops_ls.cpp` | Non-interactive trip lister; supports `--format` / `--fields` |
+| `tools/clops_audit.cpp` | Footage integrity checker |
+| `tools/clops_tripdebug.cpp` | Trip detection debug/inspection tool |
+| `tools/clops_videos.cpp` | Batch map/dashboard/HUD video generator; `--mid=XX` / `--tid=MM:TT`; `--map`/`--dash`/`--hud`/`--all`; updates manifest on completion |
 
-### GUI (`gui/`) — compiled into `pathmux-gui` binary (Qt6, Phase 2)
+### GUI (`gui/`) — compiled into `camclops-gui` binary (Qt6, Phase 2)
 
 | File | Role |
 |---|---|
@@ -88,7 +88,7 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 | `gui/ManifestManagerDialog.cpp/.h` | Manifests menu management dialog |
 | `gui/SettingsDialog.cpp/.h` | Settings / preferences dialog |
 | `gui/SetupWizard.cpp/.h` | First-run setup wizard |
-| `gui/AboutDialog.cpp/.h` | About dialog (Nutball-Labs logo + PathMux icon) |
+| `gui/AboutDialog.cpp/.h` | About dialog (Nutball-Labs logo + CamClops icon) |
 | `gui/EmptyManifestWidget.cpp/.h` | Placeholder widget when no manifests loaded |
 
 ### Other
@@ -97,21 +97,21 @@ experience — don't over-explain Linux basics. Does need help with C++ idioms.
 |---|---|
 | `json.hpp` | nlohmann/json v3.11.3 (vendored, root, do not modify) |
 | `CMakeLists.txt` | Primary build system |
-| `pathmux.1` | Man page (canonical location: `man1/pathmux.1`) |
+| `camclops.1` | Man page (canonical location: `man1/camclops.1`) |
 
-### pathmux-tl (`pathmux-tl/`) — standalone Qt6 timelapse editor
+### camclops-tl (`camclops-tl/`) — standalone Qt6 timelapse editor
 
 | File | Role |
 |---|---|
-| `pathmux-tl/main.cpp` | Qt application entry point; accepts optional MP4 path as argv[1] |
-| `pathmux-tl/MainWindow.cpp/.h` | Main window: file open, video player, process runner |
-| `pathmux-tl/TimelineWidget.cpp/.h` | Custom timeline: marks, playhead, right-click menu |
-| `pathmux-tl/MarkDialog.cpp/.h` | Mark settings popup (duration → target seconds) |
-| `pathmux-tl/compat.hpp` | Cross-platform shims: shell launch, macOS PATH, ffmpeg location |
+| `camclops-tl/main.cpp` | Qt application entry point; accepts optional MP4 path as argv[1] |
+| `camclops-tl/MainWindow.cpp/.h` | Main window: file open, video player, process runner |
+| `camclops-tl/TimelineWidget.cpp/.h` | Custom timeline: marks, playhead, right-click menu |
+| `camclops-tl/MarkDialog.cpp/.h` | Mark settings popup (duration → target seconds) |
+| `camclops-tl/compat.hpp` | Cross-platform shims: shell launch, macOS PATH, ffmpeg location |
 
-Named `pathmux-tl` (not `pm_tl`) to follow the `pathmux-gui` convention for GUI binaries; `pm_*` names are reserved for CLI tools.
+Named `camclops-tl` (not `clops_tl`) to follow the `camclops-gui` convention for GUI binaries; `clops_*` names are reserved for CLI tools.
 Requires Qt6::Multimedia + Qt6::MultimediaWidgets. On Alma: `dnf install qt6-qtmultimedia-devel gstreamer1-plugins-good`
-Launched from pathmux-gui via **Tools → Timelapse Editor**.
+Launched from camclops-gui via **Tools → Timelapse Editor**.
 
 ---
 
@@ -127,7 +127,7 @@ bottom of the file:
 ```
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00106`
+- There is one project-wide **high-water mark** SN, currently `00117`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -156,12 +156,12 @@ not needed. Files are edited in-place and delivered via `git push origin main`.
 bump SNs, bump version, commit, and push.
 
 **Tarball format (if ever needed outside VSCode):**
-- Output to `/mnt/user-data/outputs/pathmux_X.Y.Z.tgz`
+- Output to `/mnt/user-data/outputs/camclops_X.Y.Z.tgz`
 - Format is always `.tgz` — never `.zip` or `.tar.gz` (redundant extension)
-- Standard contents: all `.cpp`, `.hpp`, `CMakeLists.txt`, `pathmux.1`,
+- Standard contents: all `.cpp`, `.hpp`, `CMakeLists.txt`, `camclops.1`,
   `cmake/`, `ROADMAP.md`, `CHANGELOG.md`
 - Do NOT include: `build/`, `*.o`, `*.a`, `archive/`, test video files,
-  `pm_ls-lR.txt`, `json.hpp` (too large, user already has it)
+  `clops_ls-lR.txt`, `json.hpp` (too large, user already has it)
 
 ---
 
@@ -187,10 +187,10 @@ bump SNs, bump version, commit, and push.
   description and does not care what brand produced the footage
 - `detectTrips()` takes a `CameraProfile` param (defaults to `d90Default()`)
 - `activeProfileId` field in `AppSettings` (default `"pruveeo_d90"`)
-- `ConfigManager::getCameraProfile()` loads from `~/.config/pathmux/profiles/<id>.json`,
+- `ConfigManager::getCameraProfile()` loads from `~/.config/camclops/profiles/<id>.json`,
   falls back to `d90Default()` if absent/invalid
-- `pm_probe --wizard` detects camera layout and saves profile to disk
-- Profile saved to: `~/.config/pathmux/profiles/<sanitized_name>.json`
+- `clops_probe --wizard` detects camera layout and saves profile to disk
+- Profile saved to: `~/.config/camclops/profiles/<sanitized_name>.json`
 - Design: filename token is authoritative for camera ID; `scanSubdir` is scan hint only
 - `CameraProfile::slots` → renamed `cameraSlots` (Qt macro conflict — permanent)
 
@@ -203,14 +203,14 @@ bump SNs, bump version, commit, and push.
 - Stream selection: use `-map 0:d:0` not `-map 0:2` (select by type not index)
 
 ### Manifest Storage
-- Colocated with footage: `<path>/pm_manifest_<id>.json` (2-char base36 manifest ID)
-- Fallback: `~/.config/pathmux/pm_manifest_<id>.json` if footage dir not writable
+- Colocated with footage: `<path>/clops_manifest_<id>.json` (2-char base36 manifest ID)
+- Fallback: `~/.config/camclops/clops_manifest_<id>.json` if footage dir not writable
 - `getManifestFilePath()` — write path; calls `ensureManifestId()` to guarantee ID exists
 - `lookupManifestFilePath()` — read-only path; returns "" if not in index; transparently
-  migrates old `pm_manifest_<sanitized_path>.json` filenames to ID-based names via `fs::rename()`
+  migrates old `clops_manifest_<sanitized_path>.json` filenames to ID-based names via `fs::rename()`
 - `sanitizePath()` retained for migration detection only
-- Manifest index: `~/.config/pathmux/manifests.json`
-- Blacklisted names: `pathmux`, `manifests`, `lastpath`
+- Manifest index: `~/.config/camclops/manifests.json`
+- Blacklisted names: `camclops`, `manifests`, `lastpath`
 - MD5-based integrity checking via `updateManifestMd5()`
 
 ### Segment File Paths
@@ -245,10 +245,10 @@ bump SNs, bump version, commit, and push.
 - Altitude from D90 is incorrect (negative values at sea level) — stored but ignored
 - Starts scanning first segment to find first sample with GPS lock. Avoids the cold start lag on the GPS
 - Format string: `-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude# $GPSAltitude# $GPSSpeed# $GPSTrack# $Accelerometer'`
-- Output stored as GeoJSON FeatureCollection: `pm_trip_<ID>_track.geojson`
+- Output stored as GeoJSON FeatureCollection: `clops_trip_<ID>_track.geojson`
 - GPS lock time: D90 firmware does NOT write records before lock — `gpsLockSeconds` uses
   epoch arithmetic (`filenameToEpoch()` + `gpsTimestampToEpoch()`), not record index
-- GPS extraction implemented in `lib/gps_export.cpp` (`Pathmux::extractGps()`)
+- GPS extraction implemented in `lib/gps_export.cpp` (`CamClops::extractGps()`)
 
 ### GPS Export
 - GPX and KML generated from extracted track data (`lib/gps_export.cpp`)
@@ -301,12 +301,12 @@ bump SNs, bump version, commit, and push.
 
 - ~~Man page needs update for `-G` interactive flow, `--validate`, `-t` flags~~ — done v0.9.11
 - ~~GPX/KML output default should be manifest directory, not global `defaultExportDir`~~ — fixed v0.9.6a
-- ~~`pm_gpsinfo` enhancements~~ — all done (POSIX arg order, `--scan-all-trips`, `gpsLockSeconds`, `MID:TID`)
+- ~~`clops_gpsinfo` enhancements~~ — all done (POSIX arg order, `--scan-all-trips`, `gpsLockSeconds`, `MID:TID`)
 - ~~`selectTrip()` has unused `mode` parameter~~ — fixed v0.9.5a
 - ~~`--clear-cache` / `--clear-stale` UX rework~~ — done v0.9.8
 - ~~`manifests_stale.json` archive for pruned entries~~ — done v0.9.8
 - ~~CameraProfile abstraction layer~~ — done v1.0.0 (2026-03-21)
-- ~~`pm_probe --wizard` trial scan~~ — done (D90 + Cobra confirmed working)
+- ~~`clops_probe --wizard` trial scan~~ — done (D90 + Cobra confirmed working)
 - ~~ffmpeg build progress + ETA display~~ — done v0.9.11a; Qt callback hook ready
 - ~~Distribution packaging (RPM/DEB/pkg)~~ — done v1.0.1a; packages posted to GitHub 2026-03-29
 - GPS extraction to GeoJSON — architecture done, `lib/gps_export.cpp` exists; GUI integration pending
@@ -322,8 +322,8 @@ bump SNs, bump version, commit, and push.
 
 - All work on `main` branch
 - Commit after each stable version cut
-- Commit message format: `"Fix/Add/Update description — PathMux vX.Y.Z (SN NNNNN)"`
-- Remote: `git@github.com:Nutball-Labs/PathMux.git` (SSH key auth)
+- Commit message format: `"Fix/Add/Update description — CamClops vX.Y.Z (SN NNNNN)"`
+- Remote: `git@github.com:Nutball-Labs/CamClops.git` (SSH key auth)
 - After committing: `git push origin main`
 
 ---

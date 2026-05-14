@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>clops_tripdebug(1) — Trip Detection Debugger</title>
+</head>
+<body>
+
+<h1>clops_tripdebug</h1>
+<p class="mandesc">Trip detection debugger for CamClops</p>
+
+<h2>Synopsis</h2>
+<div class="synopsis">
+clops_tripdebug [-T | -f] <i>path_to_dashcam_folder</i>
+</div>
+
+<h2>Description</h2>
+
+<p>
+<b>clops_tripdebug</b> runs CamClops trip detection directly against a dashcam footage
+directory and displays the results without reading or writing any manifest.  It is
+a diagnostic tool for verifying that footage is being grouped into trips as expected.
+</p>
+
+<p>Without options, <b>clops_tripdebug</b> prints a summary table of detected trips.
+Use <b>-T</b> for a full segment listing or <b>-f</b> for an interactive drill-down.</p>
+
+<h2>Options</h2>
+
+<dl>
+<dt>-T, --tree</dt>
+<dd>Print the complete segment tree for every detected trip and exit.  Each segment
+shows its timestamp and which cameras (Front/Rear/Left/Right) have footage files
+present.</dd>
+
+<dt>-f, --full</dt>
+<dd>Interactive mode.  Displays the summary list, then prompts for a trip ID to
+inspect.  Enter a numeric ID to see its segment tree.  Enter <b>R</b> to redraw the
+summary, <b>Q</b> to quit.</dd>
+
+<dt>-v, --version</dt>
+<dd>Print the CamClops version string and exit.</dd>
+
+<dt>-h, --help</dt>
+<dd>Print a usage summary and exit.</dd>
+</dl>
+
+<h2>Output — Summary (default)</h2>
+
+<pre>  ID    Start Timestamp      Duration        Segments
+  -----------------------------------------------------------------
+  1     2026-02-09 04:38:38  1h 22m 14s      83
+  2     2026-02-09 08:14:01  0h 34m 07s      35
+
+2 trip(s) detected.</pre>
+
+<h2>Output — Tree (-T or -f drill-down)</h2>
+
+<pre>Trip #1  [2026-02-09  04:38:38]  duration=1h 22m 14s  segments=83
+-----------------------------------------------------------------
+  [  1]  20260209_043838  [F.L.]
+         F: 20260209_043838F.ts
+         L: 20260209_043838L.ts
+  [  2]  20260209_043938  [FBLR]
+  ...</pre>
+
+<p>Camera presence indicators: <b>F</b> = Front, <b>B</b> = Rear, <b>L</b> = Left,
+<b>R</b> = Right.  A dot (<b>.</b>) means that camera has no file for that segment
+timestamp.</p>
+
+<h2>See Also</h2>
+<p class="seealso">
+<a href="camclops.html">camclops</a>
+<a href="clops_ls.html">clops_ls</a>
+<a href="clops_audit.html">clops_audit</a>
+</p>
+
+</body>
+</html>

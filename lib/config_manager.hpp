@@ -10,11 +10,11 @@
 #include "camera_profile.hpp"
 #include "logger.hpp"
 
-namespace Pathmux {
+namespace CamClops {
 
 // ---------------------------------------------------------------------------
 // NamedLocation — a user-defined point of interest for KML overlays.
-// Stored in ~/.config/pathmux/locations.json
+// Stored in ~/.config/camclops/locations.json
 // ---------------------------------------------------------------------------
 struct NamedLocation {
     std::string name;
@@ -26,7 +26,7 @@ struct NamedLocation {
 
 // ---------------------------------------------------------------------------
 // KmlSettings — visual styling for KML exports.
-// Stored inside pathmux.json under "kml" key.
+// Stored inside camclops.json under "kml" key.
 // Colors are KML AABBGGRR hex strings (AA=alpha, BB=blue, GG=green, RR=red).
 // ---------------------------------------------------------------------------
 struct KmlSettings {
@@ -43,7 +43,7 @@ struct KmlSettings {
 
 // ---------------------------------------------------------------------------
 // AppSettings — main application preferences.
-// Persisted to ~/.config/pathmux/pathmux.json.
+// Persisted to ~/.config/camclops/camclops.json.
 // Missing or corrupt file silently replaced with defaults on next save.
 //
 // Note: segdur is NOT a setting — determined per-trip by ffprobe.
@@ -88,7 +88,7 @@ struct AppSettings {
 
     // Output
     std::string defaultExportDir;      // default: "" (current directory)
-    std::string tmpDir;                // default: "" (use <exportDir>/pm_tmp/)
+    std::string tmpDir;                // default: "" (use <exportDir>/clops_tmp/)
     std::string timestampFormat  = "YYYYMMDD-HHMMSS";
     std::string timeDisplay      = "24-hour";
     bool        useImperial      = false;  // false=metric, true=imperial (dumb american mode)
@@ -112,6 +112,12 @@ struct AppSettings {
     // GUI display scale (set before QApplication; requires restart to take effect)
     double uiScale = 1.0;
 
+    // Job Queue panel placement: "docked" (bottom panel) or "window" (floating)
+    std::string jobQueueMode = "docked";
+
+    // Remote monitor HTTP port (clops_monitor.py --port)
+    int monitorPort = 8647;
+
     // HUD overlay appearance
     double      hudFontScale = 1.0;      // multiplier applied to all HUD font sizes
     double      hudLineScale = 1.0;      // multiplier applied to all HUD line widths
@@ -125,19 +131,19 @@ struct AppSettings {
 // ConfigState — returned by configState() to indicate first-run status.
 // ---------------------------------------------------------------------------
 enum class ConfigState {
-    VALID,           // pathmux.json exists and has key fields populated
-    FIRST_RUN,       // pathmux.json absent or empty
-    INCOMPLETE       // pathmux.json present but missing key fields
+    VALID,           // camclops.json exists and has key fields populated
+    FIRST_RUN,       // camclops.json absent or empty
+    INCOMPLETE       // camclops.json present but missing key fields
 };
 
 // ---------------------------------------------------------------------------
-// ManifestEntry — one entry in ~/.config/pathmux/manifests.json.
+// ManifestEntry — one entry in ~/.config/camclops/manifests.json.
 // Tracks all known path manifests for the browser and startup validation.
 // ---------------------------------------------------------------------------
 struct ManifestEntry {
     std::string id;              // Two-char base36 manifest ID — never changes
     std::string path;            // Absolute source path e.g. /z/srcdash/ex9
-    std::string manifestFile;    // Absolute path to pm_manifest_*.json
+    std::string manifestFile;    // Absolute path to clops_manifest_*.json
     std::string lastScan;        // ISO8601 timestamp of last successful scan
     int         tripCount  = 0;
     std::string firstTrip;       // startTime of first trip (for index display)
@@ -159,7 +165,7 @@ public:
     ConfigState        configState()   const { return cfgState; }
     bool               isFirstRun()   const { return cfgState != ConfigState::VALID; }
 
-    // --- Settings (pathmux.json) ---
+    // --- Settings (camclops.json) ---
     void               loadSettings();
     void               saveSettings();
     void               applySettings(const AppSettings& s)  { settings = s; }
@@ -186,7 +192,7 @@ public:
         if (!settings.tmpDir.empty()) return settings.tmpDir;
         std::string base = outputDir.empty() ? settings.defaultExportDir : outputDir;
         if (base.empty()) base = ".";
-        return base + "/pm_tmp";
+        return base + "/clops_tmp";
     }
     std::string        getTimestampFormat()  const { return settings.timestampFormat; }
     std::string        getTimeDisplay()      const { return settings.timeDisplay; }
@@ -205,7 +211,7 @@ public:
     CameraProfile      getCameraProfile()      const;
 
     // All known profiles: built-ins merged with any user JSON files in
-    // ~/.config/pathmux/profiles/.  User files win on profile_id conflict.
+    // ~/.config/camclops/profiles/.  User files win on profile_id conflict.
     std::vector<CameraProfile> loadAllProfiles() const;
 
     // Read the profile_id stored in an existing manifest for sourcePath.
@@ -217,7 +223,7 @@ public:
     // Falls back to profile_id lookup, then getCameraProfile() if neither present.
     CameraProfile getManifestProfile(const std::string& sourcePath) const;
 
-    // --- Host-specific settings (pathmux_<hostname>.json) ---
+    // --- Host-specific settings (camclops_<hostname>.json) ---
     // Host file overlays base prefs for this machine only.
     // Fields: encode.*, ffmpegPath, exiftoolPath,
     //         defaultExportDir, tmpDir, logLevel.
@@ -282,8 +288,8 @@ public:
     void                       saveLocations(const std::vector<NamedLocation>& locs);
 
     // --- Trip manifest cache ---
-    // Returns absolute path to pm_manifest_<sanitized>.json at source root.
-    // Falls back to ~/.config/pathmux/ if source path is not writable.
+    // Returns absolute path to clops_manifest_<sanitized>.json at source root.
+    // Falls back to ~/.config/camclops/ if source path is not writable.
     std::string    getManifestFilePath(const std::string& sourcePath);
 
     bool               isCached(const std::string& path);
@@ -298,7 +304,7 @@ public:
     std::vector<Trip>  loadTripCache(const std::string& path);
     void               clearCache(const std::string& path, bool force = false);
 
-    // --- Master manifest index (~/.config/pathmux/manifests.json) ---
+    // --- Master manifest index (~/.config/camclops/manifests.json) ---
     std::vector<ManifestEntry> loadManifestIndex();
     std::string                getManifestIdForPath(const std::string& path);
     void                       updateManifestMd5(const std::string& manifestFile);
@@ -342,12 +348,12 @@ public:
 
 private:
     std::string  configDir;
-    std::string  settingsFile;      // ~/.config/pathmux/pathmux.json
+    std::string  settingsFile;      // ~/.config/camclops/camclops.json
     std::string  hostname;          // short hostname, no domain
-    std::string  hostSettingsFile;  // ~/.config/pathmux/pathmux_<hostname>.json
-    std::string  locationsFile;     // ~/.config/pathmux/locations.json
-    std::string  manifestIndexFile; // ~/.config/pathmux/manifests.json
-    std::string  staleArchiveFile;  // ~/.config/pathmux/manifests_stale.json
+    std::string  hostSettingsFile;  // ~/.config/camclops/camclops_<hostname>.json
+    std::string  locationsFile;     // ~/.config/camclops/locations.json
+    std::string  manifestIndexFile; // ~/.config/camclops/manifests.json
+    std::string  staleArchiveFile;  // ~/.config/camclops/manifests_stale.json
     AppSettings  settings;
     ConfigState  cfgState = ConfigState::FIRST_RUN;
 
@@ -364,7 +370,7 @@ private:
     std::string  generateId(const std::set<std::string>& existing,
                              bool preferAlphaFirst);
 
-    // Apply host overlay from pathmux_<hostname>.json over already-loaded base settings.
+    // Apply host overlay from camclops_<hostname>.json over already-loaded base settings.
     void         loadHostOverlay();
 
     // Normalize user-typed ID input: uppercase, O→0, I→1, L→1
@@ -378,7 +384,7 @@ private:
         const Trip& trip, const std::string& sourcePath);
 };
 
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
-// SN: 00104
+// SN: 00115

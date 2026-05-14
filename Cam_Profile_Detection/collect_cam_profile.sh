@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# PathMux Camera Profile Collection Script v1.0
+# CamClops Camera Profile Collection Script v1.0
 #
 # Walks you through gathering the diagnostic information needed to add
-# detection support for a new dashcam model in PathMux.
+# detection support for a new dashcam model in CamClops.
 #
 # Saves everything to a single text file — attach it to a GitHub issue at:
-# https://github.com/Nutball-Labs/PathMux/issues/new/choose
+# https://github.com/Nutball-Labs/CamClops/issues/new/choose
 #
 # Requires:  ffprobe (part of ffmpeg)  +  exiftool 13.51+
 #   Linux:   sudo dnf install ffmpeg perl-Image-ExifTool
@@ -28,14 +28,14 @@ banner() {
     clear 2>/dev/null || true
     echo
     echo "${BOLD}${CYAN}============================================================${RESET}"
-    echo "${BOLD}${CYAN}   PathMux Camera Profile Collection  v${SCRIPT_VERSION}${RESET}"
+    echo "${BOLD}${CYAN}   CamClops Camera Profile Collection  v${SCRIPT_VERSION}${RESET}"
     echo "${BOLD}${CYAN}============================================================${RESET}"
     echo
     echo "  This script collects diagnostic info about your dashcam"
     echo "  and saves it to a single text file you can attach to a"
     echo "  GitHub issue so we can add support for your camera."
     echo
-    echo "  ${CYAN}https://github.com/Nutball-Labs/PathMux/issues/new/choose${RESET}"
+    echo "  ${CYAN}https://github.com/Nutball-Labs/CamClops/issues/new/choose${RESET}"
     echo
     echo "  Press Enter to continue, Ctrl-C to quit."
     read -r _
@@ -356,7 +356,7 @@ collect_user_notes() {
     ask SEG_MINUTES "Segment length in minutes (check camera settings)" "unknown"
 
     step "Additional notes  (press Enter on a blank line when done)"
-    info "Anything else: known quirks, irregular naming, PathMux errors seen, etc."
+    info "Anything else: known quirks, irregular naming, CamClops errors seen, etc."
     EXTRA_NOTES=""
     while IFS= read -r LINE; do
         [ -z "$LINE" ] && break
@@ -371,11 +371,11 @@ write_report() {
 
     SAFE_MODEL=$(printf '%s' "$CAM_MODEL" | tr ' /\\:' '____' | tr -dc '[:alnum:]_-')
     DATESTAMP=$(date '+%Y%m%d_%H%M%S')
-    OUTPUT_FILE="pathmux_cam_profile_${SAFE_MODEL}_${DATESTAMP}.txt"
+    OUTPUT_FILE="camclops_cam_profile_${SAFE_MODEL}_${DATESTAMP}.txt"
 
     {
         echo "============================================================"
-        echo "  PathMux Camera Fingerprint Report"
+        echo "  CamClops Camera Fingerprint Report"
         echo "  Script:    collect_cam_profile.sh v${SCRIPT_VERSION}"
         echo "  Generated: $(date '+%Y-%m-%d %H:%M:%S %Z')"
         echo "  Host:      $(uname -sr 2>/dev/null || echo 'unknown')"
@@ -426,7 +426,7 @@ write_report() {
         echo
         echo "============================================================"
         echo "  Attach this file to a GitHub issue:"
-        echo "  https://github.com/Nutball-Labs/PathMux/issues/new/choose"
+        echo "  https://github.com/Nutball-Labs/CamClops/issues/new/choose"
         echo "============================================================"
     } > "$OUTPUT_FILE"
 
@@ -435,7 +435,7 @@ write_report() {
     echo "${BOLD}  Report saved:  $OUTPUT_FILE${RESET}"
     echo "${BOLD}${GREEN}============================================================${RESET}"
     echo
-    echo "  1. Open: https://github.com/Nutball-Labs/PathMux/issues/new/choose"
+    echo "  1. Open: https://github.com/Nutball-Labs/CamClops/issues/new/choose"
     echo "  2. Choose 'Camera Fingerprint — New Dashcam Support'"
     echo "  3. Fill in the short text fields, then attach this file"
     echo
@@ -457,4 +457,4 @@ main() {
 
 main "$@"
 
-# SN: 00090
+# SN: 00112

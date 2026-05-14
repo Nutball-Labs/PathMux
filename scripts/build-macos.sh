@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-macos.sh — Full compile for PathMux on macOS (Homebrew Qt6)
+# build-macos.sh — Full compile for CamClops on macOS (Homebrew Qt6)
 # Run directly from any directory; locates project root relative to this script.
 #
 # Usage:
@@ -13,7 +13,7 @@
 #   — or modular install —
 #   brew install cmake qtbase qttools qtmultimedia
 #
-# pathmux-tl (timelapse editor) requires Qt6 Multimedia.  If it is skipped
+# camclops-tl (timelapse editor) requires Qt6 Multimedia.  If it is skipped
 # during configure, ensure qtmultimedia is installed and re-run with --clean.
 
 set -euo pipefail
@@ -34,9 +34,23 @@ fi
 if [[ -z "${QT_PREFIX:-}" ]]; then
     echo "WARNING: Qt6 not found via Homebrew — cmake will search system paths."
     echo "         If the build fails, run: brew install qt"
-    echo "         For pathmux-tl (timelapse editor), also: brew install qtmultimedia"
+    echo "         For camclops-tl (timelapse editor), also: brew install qtmultimedia"
     QT_PREFIX=""
 fi
+
+# ── Version banner ────────────────────────────────────────────────────────────
+VHP="$PROJ/lib/version.hpp"
+MAJOR=$(grep -m1 '#define VERSION_MAJOR'  "$VHP" | awk '{print $3}' | tr -d '\r')
+MINOR=$(grep -m1 '#define VERSION_MINOR'  "$VHP" | awk '{print $3}' | tr -d '\r')
+PATCH=$(grep -m1 '#define VERSION_PATCH'  "$VHP" | awk '{print $3}' | tr -d '\r')
+SUFFIX=$(grep -m1 '#define VERSION_SUFFIX' "$VHP" | sed 's/.*"\([^"]*\)".*/\1/' | tr -d '\r' || true)
+VERSION="${MAJOR}.${MINOR}.${PATCH}${SUFFIX}"
+INNER="  Building CamClops version ${VERSION}  "
+BORDER=$(printf '%*s' $(( ${#INNER} + 2 )) | tr ' ' '*')
+echo "$BORDER"
+echo "*${INNER}*"
+echo "$BORDER"
+echo ""
 
 if [[ "${1:-}" == "--clean" ]]; then
     echo "--- Cleaning build directory ---"
@@ -44,7 +58,7 @@ if [[ "${1:-}" == "--clean" ]]; then
 fi
 
 # Always run cmake configure so that newly-installed Qt components (e.g.
-# QtMultimedia for pathmux-tl) are detected even when build-mac already exists.
+# QtMultimedia for camclops-tl) are detected even when build-mac already exists.
 echo "--- Configuring (build-mac) ---"
 if [[ -n "$QT_PREFIX" ]]; then
     echo "    Qt6 prefix: $QT_PREFIX"
@@ -55,7 +69,13 @@ cmake -S "$PROJ" -B "$BUILD" \
 echo ""
 
 echo "--- Building ---"
+# Pre-clean AppleDouble ._* sidecars left by macdeployqt on previous NFS builds.
+# These confuse macdeployqt's otool pass and cause spurious codesign failures.
+[[ -d "$BUILD" ]] && find "$BUILD" -name "._*" -delete 2>/dev/null || true
 cmake --build "$BUILD" --parallel "$(sysctl -n hw.logicalcpu)"
+
+echo "--- Removing AppleDouble sidecars (post-build) ---"
+find "$BUILD" -name "._*" -delete 2>/dev/null || true
 
 # macOS creates ._* AppleDouble sidecar files on any NFS mount (unavoidable —
 # it's how macOS stores resource-fork metadata on non-APFS filesystems).
@@ -65,7 +85,7 @@ cmake --build "$BUILD" --parallel "$(sysctl -n hw.logicalcpu)"
 #
 # Fix: delete ._* files with find (no xattr needed), then re-sign ad-hoc.
 # Ad-hoc signing (identity "-") is sufficient for local use and packaging.
-for APP in "$BUILD/pathmux-gui.app" "$BUILD/pathmux-tl.app"; do
+for APP in "$BUILD/camclops-gui.app" "$BUILD/camclops-tl.app"; do
     [[ -d "$APP" ]] || continue
     echo "--- Removing AppleDouble sidecars: $(basename "$APP") ---"
     find "$APP" -name "._*" -delete
@@ -86,4 +106,4 @@ done
 echo ""
 echo "Done. Binaries in $BUILD/"
 
-# SN: 00106
+# SN: 00112

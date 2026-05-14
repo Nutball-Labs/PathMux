@@ -92,6 +92,7 @@ inline int windowsPclose(FILE* f) {
 #  ifndef WEXITSTATUS
 #    define WEXITSTATUS(s) (s)
 #  endif
+
 #elif defined(__APPLE__)
 // Apple's sys/wait.h defines WEXITSTATUS via _W_INT(w) = *(int*)&(w), which
 // requires an lvalue.  Pull the header in now so its definition is processed,
@@ -155,4 +156,4 @@ inline std::string pathBasename(const std::string& p) {
     return (pos != std::string::npos) ? p.substr(pos + 1) : p;
 }
 
-// SN: 00094
+// SN: 00117

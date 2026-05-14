@@ -5,7 +5,6 @@
 #include <QProcess>
 #include <string>
 #include "trip_detection.hpp"
-#include "BuildAllDialog.h"
 
 class QCheckBox;
 class QCloseEvent;
@@ -16,18 +15,18 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPlainTextEdit;
-class QProgressBar;
 class QPushButton;
 class QSpinBox;
 class QStackedWidget;
-class QTabBar;
+class InactiveAwareTabBar;
 class QThread;
 
 class TripPropertiesDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit TripPropertiesDialog(const Pathmux::Trip& trip,
+    explicit TripPropertiesDialog(const CamClops::Trip& trip,
                                   const std::string& sourcePath,
+                                  const std::string& mid,
                                   QWidget* parent = nullptr);
 
     // Returns the note text after the dialog is accepted.
@@ -36,6 +35,7 @@ public:
 signals:
     void gpsExtracted();   // emitted immediately when GPS extraction succeeds
     void videosChanged();  // emitted when mapVideos/dashVideos/hudVideos are updated
+    void syncAnalyzed();   // emitted when camera sync analysis completes successfully
 
 protected:
     void reject() override;
@@ -48,8 +48,6 @@ private slots:
     void onGenerateDashboard();
     void onGenerateHud();
     void onExtractGps();
-    void onExtractGpsProgress(int done, int total);
-    void onExtractGpsFinished(bool ok, const QString& error);
     void onExportFormatChanged(int idx);
     void onExportBrowse();
     void onExportGps();
@@ -57,14 +55,13 @@ private slots:
     void onSyncFinished(int exitCode, QProcess::ExitStatus status);
 
 private:
-    Pathmux::Trip m_trip;
+    CamClops::Trip m_trip;
     std::string   m_sourcePath;
+    std::string   m_mid;
 
-    // Two-row tab bar system
-    QTabBar*       m_topTabBar  = nullptr;   // General + camera tabs
-    QTabBar*       m_botTabBar  = nullptr;   // GPS, Map, Dashboard, HUD
-    QStackedWidget* m_tabStack  = nullptr;
-    int            m_topCount   = 0;         // pages belonging to top bar
+    // Single tab bar
+    InactiveAwareTabBar* m_topTabBar  = nullptr;
+    QStackedWidget*      m_tabStack   = nullptr;
 
     // General tab
     QLineEdit*    m_noteEdit        = nullptr;
@@ -72,9 +69,7 @@ private:
     // GPS tab — extraction
     QLabel*           m_gpsStatusLabel  = nullptr;
     QPushButton*      m_extractGpsBtn   = nullptr;
-    QProgressBar*     m_extractBar      = nullptr;
     QLabel*           m_extractMsgLabel = nullptr;
-    QThread*          m_extractThread   = nullptr;
 
     // Bottom button box (Ok / Cancel)
     QDialogButtonBox* m_buttonBox       = nullptr;
@@ -138,4 +133,4 @@ private:
     QWidget* buildSyncWidget();
     void     refreshSyncTab();
 };
-// SN: 00111
+// SN: 00113

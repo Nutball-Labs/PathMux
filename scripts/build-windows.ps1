@@ -1,4 +1,4 @@
-# build-windows.ps1 — Full compile for PathMux on Windows (MinGW + Qt6)
+# build-windows.ps1 — Full compile for CamClops on Windows (MinGW + Qt6)
 # Run directly from PowerShell — locates project root relative to this script.
 #
 # Usage:
@@ -6,7 +6,7 @@
 #   .\scripts\build-windows.ps1 -Clean    -- wipe build dir first, then configure + build
 #   .\scripts\build-windows.ps1 -NoGui    -- build CLI tools only (skip Qt6 GUI + windeployqt)
 #
-# Build dir: C:\tmp\pathmux-build-win  (local drive avoids NFS file-locking)
+# Build dir: C:\tmp\camclops-build-win  (local drive avoids NFS file-locking)
 # Requires:  Qt6 Online Installer -> MinGW 13.1 toolchain + Ninja + CMake
 #            https://www.qt.io/download-qt-installer
 #
@@ -26,35 +26,47 @@ $wix          = "$env:USERPROFILE\.dotnet\tools\wix.exe"
 $gcc          = "$mingwBin\gcc.exe"
 $gpp          = "$mingwBin\g++.exe"
 $src          = (Split-Path $PSScriptRoot -Parent)
-$build        = "C:\tmp\pathmux-build-win"   # local drive — NFS locks break AutoRcc
-$dest         = "N:\pathmux\build-win"       # final artifact destination on NFS
+$build        = "C:\tmp\camclops-build-win"   # local drive — NFS locks break AutoRcc
+$dest         = "N:\camclops\build-win"       # final artifact destination on NFS
 
 # MinGW must be on PATH so Ninja and the linker can find runtime DLLs
 $env:PATH = "$mingwBin;$env:PATH"
+
+# ── Version banner ────────────────────────────────────────────────────────────
+$vhp    = Join-Path $src "lib\version.hpp"
+$major  = (Select-String '#define VERSION_MAJOR\s+(\d+)'    $vhp).Matches[0].Groups[1].Value
+$minor  = (Select-String '#define VERSION_MINOR\s+(\d+)'    $vhp).Matches[0].Groups[1].Value
+$patch  = (Select-String '#define VERSION_PATCH\s+(\d+)'    $vhp).Matches[0].Groups[1].Value
+$suffix = (Select-String '#define VERSION_SUFFIX\s+"([^"]*)"' $vhp).Matches[0].Groups[1].Value
+$version = "${major}.${minor}.${patch}${suffix}"
+$inner  = "  Building CamClops version $version  "
+$border = "*" * ($inner.Length + 2)
+Write-Host $border
+Write-Host "*${inner}*"
+Write-Host $border
+Write-Host ""
 
 if ($Clean -and (Test-Path $build)) {
     Write-Host "--- Cleaning build directory ---"
     Remove-Item -Recurse -Force $build
 }
 
-if (-not (Test-Path $build)) {
-    Write-Host "--- Configuring (build-win) ---"
-    $wixArg = if (Test-Path $wix) { "-DWIX_EXECUTABLE=$wix" } else { $null }
-    $cmakeArgs = @(
-        "-S", $src,
-        "-B", $build,
-        "-G", "Ninja",
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-DCMAKE_C_COMPILER=$gcc",
-        "-DCMAKE_CXX_COMPILER=$gpp",
-        "-DCMAKE_MAKE_PROGRAM=$ninja",
-        "-DCMAKE_PREFIX_PATH=$qtDir"
-    )
-    if ($wixArg) { $cmakeArgs += $wixArg }
-    & $cmake @cmakeArgs
-    if ($LASTEXITCODE -ne 0) { Write-Host "Configure failed"; exit 1 }
-    Write-Host ""
-}
+Write-Host "--- Configuring (build-win) ---"
+$wixArg = if (Test-Path $wix) { "-DWIX_EXECUTABLE=$wix" } else { $null }
+$cmakeArgs = @(
+    "-S", $src,
+    "-B", $build,
+    "-G", "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_C_COMPILER=$gcc",
+    "-DCMAKE_CXX_COMPILER=$gpp",
+    "-DCMAKE_MAKE_PROGRAM=$ninja",
+    "-DCMAKE_PREFIX_PATH=$qtDir"
+)
+if ($wixArg) { $cmakeArgs += $wixArg }
+& $cmake @cmakeArgs
+if ($LASTEXITCODE -ne 0) { Write-Host "Configure failed"; exit 1 }
+Write-Host ""
 
 Write-Host "--- Building ---"
 & $cmake --build $build
@@ -66,11 +78,11 @@ if (-not $NoGui) {
     if (Test-Path $windeployqt) {
         Write-Host ""
         Write-Host "--- Qt deployment (windeployqt) ---"
-        & $windeployqt --release --no-translations "$build\pathmux-gui.exe"
-        if ($LASTEXITCODE -ne 0) { Write-Host "windeployqt (pathmux-gui) failed"; exit 1 }
-        if (Test-Path "$build\pathmux-tl.exe") {
-            & $windeployqt --release --no-translations "$build\pathmux-tl.exe"
-            if ($LASTEXITCODE -ne 0) { Write-Host "windeployqt (pathmux-tl) failed"; exit 1 }
+        & $windeployqt --release --no-translations "$build\camclops-gui.exe"
+        if ($LASTEXITCODE -ne 0) { Write-Host "windeployqt (camclops-gui) failed"; exit 1 }
+        if (Test-Path "$build\camclops-tl.exe") {
+            & $windeployqt --release --no-translations "$build\camclops-tl.exe"
+            if ($LASTEXITCODE -ne 0) { Write-Host "windeployqt (camclops-tl) failed"; exit 1 }
         }
     } else {
         Write-Host "WARNING: windeployqt not found at $windeployqt - Qt DLLs will not be bundled"
@@ -87,4 +99,4 @@ Get-ChildItem -Path $build -File | Copy-Item -Destination $dest -Force
 Get-ChildItem -Path $build -Directory | Copy-Item -Destination $dest -Recurse -Force
 Write-Host "Done. Artifacts in ${dest}"
 
-# SN: 00109
+# SN: 00112

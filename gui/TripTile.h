@@ -11,13 +11,15 @@ class QPushButton;
 class TripTile : public QWidget {
     Q_OBJECT
 public:
-    explicit TripTile(const Pathmux::Trip& trip, bool imperial,
+    explicit TripTile(const CamClops::Trip& trip, bool imperial,
                       const std::string& manifestFile,
+                      const std::string& mid,
                       QWidget* parent = nullptr);
 
-    const Pathmux::Trip& trip() const { return m_trip; }
+    const CamClops::Trip& trip() const { return m_trip; }
     void setThumbnail(const QString& slot, const QPixmap& pixmap);
     void setZoom(double factor);
+    void refreshFrom(const CamClops::Trip& trip);
 
     // Layout constants — shared with TripGridPanel
     static constexpr int W         = 360;
@@ -33,10 +35,12 @@ public:
     static constexpr int RIGHT_W   = W - RIGHT_X - PADDING;       // 168
 
     // Layout constants for right-column elements (all absolute Y positions)
-    static constexpr int BUILD_BTN_Y = 123;  // was 101; shifted by BADGE_H
-    static constexpr int BUILD_BTN_H =  28;
-    static constexpr int NOTE_Y      =  72;  // relative to (BADGE_H + PADDING); absolute = 102
-    static constexpr int NOTE_H      =  16;
+    static constexpr int BUILD_BTN_Y    = 100;  // Build Video button
+    static constexpr int BUILD_BTN_H    =  28;
+    static constexpr int NOTE_Y         =  72;  // relative to (BADGE_H + PADDING)
+    static constexpr int NOTE_H         =  16;
+    static constexpr int DETAIL_LABEL_Y = 160;  // segs · distance label
+    static constexpr int EXTRAS_BTN_Y   = 186;  // Extras… button
 
 signals:
     void doubleClicked();
@@ -50,14 +54,21 @@ protected:
     void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
+private slots:
+    void onExtrasClicked();
+
 private:
     void archiveWholeTrip();
     void deleteWholeTrip();
     std::string archiveDestPath(const std::string& absPath) const;
+    void drawStatusIndicators(QPainter& p) const;
+    void updateTitleBar();
 
-    Pathmux::Trip m_trip;
+    CamClops::Trip m_trip;
     std::string   m_sourcePath;
+    std::string   m_mid;
     double        m_zoomFactor = 1.0;
+
     QLabel*       m_frontThumb;
     QLabel*       m_rearThumb;
     QLabel*       m_idLabel;
@@ -66,5 +77,6 @@ private:
     QLabel*       m_noteLabel;
     QLabel*       m_detailLabel;
     QPushButton*  m_buildBtn;
+    QPushButton*  m_extrasBtn = nullptr;
 };
-// SN: 00097
+// SN: 00113

@@ -1,6 +1,6 @@
 @echo off
 set SRC=%~dp0
-set BLD=C:\tmp\pathmux-build-win
+set BLD=C:\tmp\camclops-build-win
 set CMAKE=C:\Qt\Tools\CMake_64\bin\cmake.exe
 set VCVARS=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat
 

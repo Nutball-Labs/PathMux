@@ -1,10 +1,10 @@
 @echo off
-:: PathMux Camera Profile Collection — Windows launcher  v1.1
+:: CamClops Camera Profile Collection — Windows launcher  v1.1
 :: Double-click this file to run the collection script.
 :: Requires PowerShell 5.1 or later (built into Windows 10/11).
 ::
-:: https://github.com/Nutball-Labs/PathMux/issues/new/choose
-:: SN: 00089
+:: https://github.com/Nutball-Labs/CamClops/issues/new/choose
+:: SN: 00112
 
 setlocal
 

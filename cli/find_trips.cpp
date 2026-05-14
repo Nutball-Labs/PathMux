@@ -15,7 +15,7 @@
 #include "compat.hpp"
 #include <vector>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // normalizeId — uppercase + remap lookalike chars
@@ -37,7 +37,7 @@ std::string FindTrips::normalizeId(const std::string& input) {
 // ---------------------------------------------------------------------------
 void FindTrips::drawManifestList(const std::vector<ManifestEntry>& index) {
     std::cout << "\n";
-    UI::printTitle("PathMux v" + std::string(APP_VERSION) + " -- Manifests");
+    UI::printTitle("CamClops v" + std::string(APP_VERSION) + " -- Manifests");
     if (index.empty()) {
         UI::printLine("  (No manifests found — use [S] to scan a path)");
     } else {
@@ -184,7 +184,7 @@ bool FindTrips::runManifestMenu(ConfigManager& config,
         auto trips = config.loadTripCache(entry.path);
 
         std::cout << "\n";
-        UI::printTitle("PathMux v" + std::string(APP_VERSION)
+        UI::printTitle("CamClops v" + std::string(APP_VERSION)
                        + " -- Manifest " + entry.id
                        + "  " + entry.path);
         {
@@ -528,7 +528,7 @@ void FindTrips::jsonDump(ConfigManager& config) {
     auto index = config.loadManifestIndex();
 
     json root;
-    root["pathmux_version"] = APP_VERSION;
+    root["camclops_version"] = APP_VERSION;
     root["generated"] = []() -> std::string {
         auto t = std::time(nullptr);
         std::tm tmBuf{};

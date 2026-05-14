@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=CamClops
+GenericName=Dashcam Footage Manager
+Comment=Organize dashcam trips, extract GPS tracks, and build video exports
+Icon=camclops
+Exec=camclops-gui
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=dashcam;gps;video;trip;footage;
+# SN: 00092

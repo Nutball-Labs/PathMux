@@ -13,7 +13,7 @@
 #include <cmath>
 #include <cstdio>
 
-namespace Pathmux {
+namespace CamClops {
 
 // ---------------------------------------------------------------------------
 // truncate — truncate string to maxCols, appending "..." if needed.
@@ -113,7 +113,7 @@ inline std::string formatFrameRate(const std::string& raw) {
     return buf;
 }
 
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
 // SN: 00089

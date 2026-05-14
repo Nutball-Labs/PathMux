@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace Pathmux {
+namespace CamClops {
 
 // ---------------------------------------------------------------------------
 // CameraSlot — describes one camera in a multi-camera dashcam setup.
@@ -134,7 +134,7 @@ struct CameraProfile {
     static std::vector<CameraProfile> getBuiltinProfiles();
 };
 
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
 // SN: 00109

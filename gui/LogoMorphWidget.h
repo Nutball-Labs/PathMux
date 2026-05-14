@@ -6,7 +6,7 @@
 #include <QElapsedTimer>
 class QTimer;
 
-// Cross-fades between the PathMux and Nutball-Labs logos on a 6-second sine
+// Cross-fades between the CamClops and Nutball-Labs logos on a 6-second sine
 // ease-in-out cycle.  Timer only runs while the widget is visible.
 class LogoMorphWidget : public QWidget {
     Q_OBJECT
@@ -26,7 +26,7 @@ private slots:
 private:
     void rebuildCache();
 
-    QPixmap       m_pmxOrig;     // PathMux logo — original resolution
+    QPixmap       m_pmxOrig;     // CamClops logo — original resolution
     QPixmap       m_ntbOrig;     // Nutball-Labs logo — original resolution
     QPixmap       m_pmxCached;   // scaled to current widget size
     QPixmap       m_ntbCached;

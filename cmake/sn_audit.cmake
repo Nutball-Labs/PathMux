@@ -36,7 +36,7 @@ foreach(EXTRA
 endforeach()
 
 string(TIMESTAMP NOW "%Y-%m-%d %H:%M:%S")
-file(WRITE "${OUTFILE}" "--- PathMux SN Audit: ${NOW} ---\n")
+file(WRITE "${OUTFILE}" "--- CamClops SN Audit: ${NOW} ---\n")
 
 foreach(F ${ALL_SRC})
     get_filename_component(FNAME "${F}" NAME)

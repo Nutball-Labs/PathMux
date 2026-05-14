@@ -1,13 +1,21 @@
-# PathMux — Proposed Utility Tools
+# CamClops — Proposed Utility Tools
 
-## `pm_ls` — Non-Interactive Trip Lister
+## `clops_ls` — Non-Interactive Trip Lister
 Done
 
-## `pm_audit` — Footage Integrity Checker
+## `clops_audit` — Footage Integrity Checker
 Done
 
-## `pm_gpsexport` — Non-Interactive GPS Track Exporter
+## `clops_gpsexport` — Non-Interactive GPS Track Exporter
 Done
 
-## `pm_probe` — Camera Compatibility Profiler
+## `clops_probe` — Camera Compatibility Profiler
 Done
+
+## `clops_videos` — Batch Map/Dashboard/HUD Video Generator
+Done
+
+## `clops_sync_analyze.py` — Audio Cross-Correlation Camera Sync Analyzer
+Done (Python script, not a compiled binary — lives in `scripts/`)
+
+<!-- SN: 00112 -->

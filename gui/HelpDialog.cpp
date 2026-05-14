@@ -15,7 +15,7 @@
 HelpDialog::HelpDialog(QWidget* parent)
     : QDialog(parent)
 {
-    setWindowTitle("PathMux Help");
+    setWindowTitle("CamClops Help");
     resize(960, 680);
 
     m_splitter   = new QSplitter(Qt::Horizontal, this);
@@ -36,14 +36,14 @@ HelpDialog::HelpDialog(QWidget* parent)
     // ---- Topic list ----
     addTopic("Overview",        "qrc:/help/index.html");
     addTopic("GUI Overview",    "qrc:/help/gui_overview.html");
-    addTopic("pathmux",         "qrc:/help/pathmux.html");
-    addTopic("pm_probe",        "qrc:/help/pm_probe.html");
-    addTopic("pm_gpsinfo",      "qrc:/help/pm_gpsinfo.html");
-    addTopic("pm_gpsexport",    "qrc:/help/pm_gpsexport.html");
-    addTopic("pm_ls",           "qrc:/help/pm_ls.html");
-    addTopic("pm_audit",        "qrc:/help/pm_audit.html");
-    addTopic("pm_findgpslock",  "qrc:/help/pm_findgpslock.html");
-    addTopic("pm_tripdebug",    "qrc:/help/pm_tripdebug.html");
+    addTopic("camclops",         "qrc:/help/camclops.html");
+    addTopic("clops_probe",        "qrc:/help/clops_probe.html");
+    addTopic("clops_gpsinfo",      "qrc:/help/clops_gpsinfo.html");
+    addTopic("clops_gpsexport",    "qrc:/help/clops_gpsexport.html");
+    addTopic("clops_ls",           "qrc:/help/clops_ls.html");
+    addTopic("clops_audit",        "qrc:/help/clops_audit.html");
+    addTopic("clops_findgpslock",  "qrc:/help/clops_findgpslock.html");
+    addTopic("clops_tripdebug",    "qrc:/help/clops_tripdebug.html");
     addTopic("About",           "internal:about");
 
     // Pre-cache logo images as base64 data URIs (used by the About page).
@@ -52,7 +52,7 @@ HelpDialog::HelpDialog(QWidget* parent)
         if (!f.open(QIODevice::ReadOnly)) return {};
         return "data:image/png;base64," + QString::fromLatin1(f.readAll().toBase64());
     };
-    m_pmLogoB64 = encodeImg(":/images/pathmux_256.png");
+    m_pmLogoB64 = encodeImg(":/images/camclops_256.png");
     m_nlLogoB64 = encodeImg(":/images/Nutball-Labs_logo.png");
 
     // ---- Layout ----
@@ -116,7 +116,7 @@ void HelpDialog::loadAboutPage()
     int padding = 40;          // body padding left+right
     int avail   = bw - padding;
 
-    // PathMux logo is square-ish (256×256); cap at 220px so it doesn't dwarf text.
+    // CamClops logo is square-ish (256×256); cap at 220px so it doesn't dwarf text.
     int pmW = qMin(avail, 220);
     // Nutball Labs logo is wide; let it fill most of the available width.
     int nlW = qMin(avail, 500);
@@ -134,13 +134,13 @@ void HelpDialog::loadAboutPage()
         "        margin: 20px auto; width: 70%; }"
         "</style></head><body>"
         "<img src=\"" + m_pmLogoB64 + "\" width=\"" + QString::number(pmW) + "\">"
-        "<h1>PathMux</h1>"
+        "<h1>CamClops</h1>"
         "<p class=\"ver\">Version " APP_VERSION "</p>"
         "<p class=\"tag\">Dashcam footage organizer &amp; GPS track extractor</p>"
         "<p class=\"meta\">"
         "&copy; 2026 Nutball Labs / Stephen Berg<br>"
         "Licensed under the GNU General Public License v3 or later<br><br>"
-        "PathMux: https://github.com/Nutball-Labs/PathMux<br>"
+        "CamClops: https://github.com/Nutball-Labs/CamClops<br>"
         "Nutball Labs: https://github.com/Nutball-Labs"
         "</p>"
         "<hr>"
@@ -164,7 +164,7 @@ void HelpDialog::onTopicSelected(int row)
 
 void HelpDialog::showTopic(const QString& topic)
 {
-    // Match by resource filename stem (e.g. "pathmux" → "qrc:/help/pathmux.html")
+    // Match by resource filename stem (e.g. "camclops" → "qrc:/help/camclops.html")
     // or by label (e.g. "Overview", "About").
     for (int i = 0; i < m_topics.size(); ++i) {
         const Topic& t = m_topics[i];

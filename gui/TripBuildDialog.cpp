@@ -16,7 +16,6 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRadioButton>
-#include <QButtonGroup>
 #include <QFileDialog>
 #include <QDialogButtonBox>
 #include <QTabWidget>
@@ -30,7 +29,7 @@
 #include <QMessageBox>
 #include <QSignalBlocker>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // Extract logo_morph.mp4 from QRC to a temp file once per process.
@@ -46,7 +45,7 @@ static std::string logoMorphPath()
     }
     QFile src(":/images/logo_morph.mp4");
     if (!src.open(QIODevice::ReadOnly)) return {};
-    QString tmp = QDir::temp().filePath("pm_logo_morph.mp4");
+    QString tmp = QDir::temp().filePath("clops_logo_morph.mp4");
     QFile dst(tmp);
     if (!dst.open(QIODevice::WriteOnly)) return {};
     dst.write(src.readAll());
@@ -79,9 +78,9 @@ TripBuildDialog::TripBuildDialog(const ManifestEntry& manifest,
                                  QWidget* parent)
     : QDialog(parent), m_manifest(manifest), m_trip(trip)
 {
-    setWindowTitle(QString("Build Trip \u2014 %1  %2")
-        .arg(QString::fromStdString(trip.date))
-        .arg(QString::fromStdString(trip.startTime)));
+    setWindowTitle(QString("Build Trip \u2014 %1:%2")
+        .arg(QString::fromStdString(manifest.id).toUpper())
+        .arg(QString::fromStdString(trip.id).toUpper()));
     setMinimumWidth(560);
 
     ConfigManager config;
@@ -144,10 +143,7 @@ TripBuildDialog::TripBuildDialog(const ManifestEntry& manifest,
 
     vbox->addWidget(makeActionRow());
 
-    auto* bbox = new QDialogButtonBox(
-        QDialogButtonBox::Cancel | QDialogButtonBox::Ok, this);
-    bbox->button(QDialogButtonBox::Ok)->setText("Build \u25b6");
-    connect(bbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    auto* bbox = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
     connect(bbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     vbox->addWidget(bbox);
 }
@@ -329,7 +325,7 @@ QWidget* TripBuildDialog::makeOverlayCell()
     {
         namespace fs = std::filesystem;
         std::string candidate = m_manifest.path
-            + "/pm_trip_" + m_trip.id + "_map.mp4";
+            + "/clops_trip_" + m_trip.id + "_map.mp4";
         std::error_code ec;
         bool found = false;
         if (fs::exists(candidate, ec)) {
@@ -804,46 +800,23 @@ QWidget* TripBuildDialog::makeActionRow()
     auto* hbox = new QHBoxLayout(w);
     hbox->setContentsMargins(0, 4, 0, 0);
 
-    hbox->addWidget(new QLabel("Action:", w));
-    hbox->addSpacing(8);
-
-    m_btnNow   = new QPushButton("Process Now", w);
-    m_btnQueue = new QPushButton("Add to Batch Queue", w);
-
-    m_btnNow->setCheckable(true);
-    m_btnNow->setChecked(true);
-    m_btnQueue->setCheckable(true);
-    m_btnQueue->setEnabled(false);
-    m_btnQueue->setToolTip("Batch queue — coming in a future release");
-
-    auto* grp = new QButtonGroup(w);
-    grp->addButton(m_btnNow);
-    grp->addButton(m_btnQueue);
-    grp->setExclusive(true);
-
-    m_btnNow->setStyleSheet(
-        "QPushButton {"
-        "  border: 1px solid #0078d4; border-right: none;"
-        "  border-radius: 4px 0 0 4px; padding: 4px 14px; min-width: 100px; }"
-        "QPushButton:checked { background: #0078d4; color: white; }"
-        "QPushButton:!checked { background: white; color: #0078d4; }"
-    );
-    m_btnQueue->setStyleSheet(
-        "QPushButton {"
-        "  border: 1px solid #c8c8c8;"
-        "  border-radius: 0 4px 4px 0; padding: 4px 14px; min-width: 140px;"
-        "  background: #f0f0f0; color: #a0a0a0; }"
-    );
-
-    hbox->addWidget(m_btnNow);
-    hbox->addWidget(m_btnQueue);
-    hbox->addStretch();
-
     m_chkVerbose = new QCheckBox("Verbose output", w);
     m_chkVerbose->setToolTip(
         "Show full ffmpeg output in the progress dialog.\n"
         "Useful for diagnosing build failures.");
     hbox->addWidget(m_chkVerbose);
+
+    hbox->addStretch();
+
+    auto* btnBuild = new QPushButton("Build Video ▶", w);
+    btnBuild->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    btnBuild->setStyleSheet(
+        "QPushButton { background: #0078d4; color: white; border: none;"
+        "  border-radius: 4px; padding: 5px 16px; font-weight: bold; }"
+        "QPushButton:hover { background: #006cbd; }"
+        "QPushButton:pressed { background: #005aa3; }");
+    connect(btnBuild, &QPushButton::clicked, this, &QDialog::accept);
+    hbox->addWidget(btnBuild);
 
     return w;
 }
@@ -939,7 +912,7 @@ void TripBuildDialog::onPreviewFrame()
             continue;
         }
 
-        QString tmp = QString("/tmp/pm_preview_%1.png").arg(i);
+        QString tmp = QString("/tmp/clops_preview_%1.png").arg(i);
         bool ok = grabFrame(src[i], tmp);
         QPixmap frame(ok ? tmp : QString{});
 
@@ -978,7 +951,7 @@ void TripBuildDialog::onPreviewFrame()
     }();
 
     if (!overlayPath.isEmpty()) {
-        QString tmpOv = "/tmp/pm_preview_overlay.png";
+        QString tmpOv = "/tmp/clops_preview_overlay.png";
         if (grabFrame(overlayPath, tmpOv)) {
             QPixmap ovFrame(tmpOv);
             if (!ovFrame.isNull()) {
@@ -1009,7 +982,7 @@ void TripBuildDialog::onPreviewFrame()
     }();
 
     if (!hudPreviewPath.isEmpty()) {
-        QString tmpHud = "/tmp/pm_preview_hud.png";
+        QString tmpHud = "/tmp/clops_preview_hud.png";
         // Grab with alpha preserved (-pix_fmt rgba keeps the alpha channel in PNG)
         QStringList hudArgs = {
             "-y", "-ss", "2",
@@ -1058,7 +1031,7 @@ void TripBuildDialog::onPreviewFrame()
 
     // Cleanup temp frame files
     for (int i = 0; i < 4; ++i)
-        QFile::remove(QString("/tmp/pm_preview_%1.png").arg(i));
+        QFile::remove(QString("/tmp/clops_preview_%1.png").arg(i));
 }
 
 void TripBuildDialog::onBrowseOverlay()
@@ -1228,6 +1201,6 @@ VideoOptions TripBuildDialog::buildOptions() const
 
 bool TripBuildDialog::processNow() const
 {
-    return m_btnNow && m_btnNow->isChecked();
+    return true;
 }
-// SN: 00111
+// SN: 00112

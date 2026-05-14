@@ -3,12 +3,13 @@
 #ifndef TRIP_DETECTION_HPP
 #define TRIP_DETECTION_HPP
 
+#include <functional>
 #include <string>
 #include <vector>
 #include <map>
 #include "camera_profile.hpp"
 
-namespace Pathmux {
+namespace CamClops {
 
 // One GPS fix extracted from the LIGOGPSINFO stream via ExifTool 13.51+.
 // Timestamp format: "YYYY:MM:DD HH:MM:SS" (as returned by exiftool -p).
@@ -60,7 +61,7 @@ struct ValidationFile {
     std::string md5;       // hex md5 computed at scan time
 };
 
-// Per-trip camera start-offset sync data, produced by pm_sync_analyze.py.
+// Per-trip camera start-offset sync data, produced by clops_sync_analyze.py.
 // segmentTrims key = front camera filename timestamp ("YYYYMMDD_HHMMSS").
 // Keying by front timestamp prevents silent misalignment when segments are
 // dropped, reordered, or partially re-analyzed.
@@ -115,7 +116,7 @@ struct Trip {
     // endLat/Lon:   last valid fix of the last segment.
     // gpsLockSeconds: seconds from segment start to first valid fix.
     //   -1 = not yet scanned; >=0 = seconds to lock (0 means immediate).
-    //   Written by pm_gpsinfo --scan-all-trips; read by UI for display.
+    //   Written by clops_gpsinfo --scan-all-trips; read by UI for display.
     double      firstLockLat       = 0.0;
     double      firstLockLon       = 0.0;
     std::string firstLockTimestamp;       // "2026:02:16 14:32:05"
@@ -135,7 +136,7 @@ struct Trip {
     std::vector<std::string> dashVideos;  // dashboard MP4s  (dash1, dash2, …)
     std::vector<std::string> hudVideos;   // HUD overlay WebMs (hud1, hud2, …)
 
-    // Camera start-offset sync data from pm_sync_analyze.py --write.
+    // Camera start-offset sync data from clops_sync_analyze.py --write.
     CameraSync cameraSync;
 
     // Full GPS track — one point per second extracted from all segments.
@@ -167,15 +168,20 @@ public:
     //
     // profile: camera layout description.  Defaults to the Pruveeo D90
     // built-in profile so existing callers compile without modification.
+    // segProgressCb(done, total): called once per primary-camera file processed.
+    // gpsProgressCb(done, total): called once per trip during the GPS coord pass.
+    // Pass nullptr for either to omit.
     std::vector<Trip> detectTrips(const std::string& path,
                                   const CameraProfile& profile    = CameraProfile::d90Default(),
                                   int gapThresholdSeconds         = 900,
                                   int fuzzyWindowSeconds          = 5,
                                   const std::string& ffprobePath  = "ffprobe",
-                                  const std::string& exiftoolPath = "exiftool");
+                                  const std::string& exiftoolPath = "exiftool",
+                                  std::function<void(int,int)> segProgressCb = nullptr,
+                                  std::function<void(int,int)> gpsProgressCb = nullptr);
 };
 
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
-// SN: 00111
+// SN: 00113

@@ -28,7 +28,7 @@ class QLabel;
 class DangerousDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit DangerousDialog(const Pathmux::Trip& trip,
+    explicit DangerousDialog(const CamClops::Trip& trip,
                              const std::string& sourcePath,
                              QWidget* parent = nullptr);
 
@@ -63,7 +63,7 @@ private:
     // Update status label and enable/disable action buttons.
     void refreshActionState();
 
-    Pathmux::Trip            m_trip;
+    CamClops::Trip            m_trip;
     std::string              m_sourcePath;
     std::vector<std::string> m_slots;   // active camera slot names, canonical order
 

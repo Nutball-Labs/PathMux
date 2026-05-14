@@ -1,4 +1,4 @@
-# PathMux — Camera Profile Collection Kit
+# CamClops — Camera Profile Collection Kit
 
 Run this tool to generate a diagnostic report about your dashcam.
 Attach the output file to a GitHub issue and we can add detection support
@@ -6,7 +6,7 @@ for your camera without needing the hardware in hand. An empty SD card
 will not work with this process. Please have at least two trips recorded
 with a time gap of at least 15 minutes between them for proper detection.
 
-**Open an issue:** https://github.com/Nutball-Labs/PathMux/issues/new/choose
+**Open an issue:** https://github.com/Nutball-Labs/CamClops/issues/new/choose
 
 ---
 
@@ -37,7 +37,7 @@ anyway — but the report will be incomplete without them.
    ```
 4. Follow the prompts. The script will find video files on your SD card
    automatically.
-5. Attach the generated `pathmux_cam_profile_*.txt` file to a GitHub issue.
+5. Attach the generated `camclops_cam_profile_*.txt` file to a GitHub issue.
 
 ### Windows
 
@@ -49,7 +49,7 @@ anyway — but the report will be incomplete without them.
      them in the same folder as these scripts and they will be found
      automatically
 4. Follow the on-screen prompts
-5. Attach the generated `pathmux_cam_profile_*.txt` file to a GitHub issue
+5. Attach the generated `camclops_cam_profile_*.txt` file to a GitHub issue
 
 ---
 

@@ -13,7 +13,7 @@ class QPushButton;
 // CameraProfilesDialog — Tools > Camera Profiles
 //
 // Lists all built-in and user-created camera profiles.
-// User JSON profiles (~/.config/pathmux/profiles/<id>.json) can be deleted.
+// User JSON profiles (~/.config/camclops/profiles/<id>.json) can be deleted.
 // Built-in profiles are read-only.
 // ---------------------------------------------------------------------------
 class CameraProfilesDialog : public QDialog {
@@ -32,8 +32,8 @@ private:
     void loadProfiles();
     void showDetails(int index);
 
-    Pathmux::ConfigManager              m_config;
-    std::vector<Pathmux::CameraProfile> m_profiles;
+    CamClops::ConfigManager              m_config;
+    std::vector<CamClops::CameraProfile> m_profiles;
     std::vector<bool>                   m_hasUserFile; // true = deletable user JSON exists
 
     QListWidget*  m_list          = nullptr;

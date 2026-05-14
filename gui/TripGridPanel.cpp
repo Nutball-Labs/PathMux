@@ -3,7 +3,7 @@
 #include "TripGridPanel.h"
 #include "TripTile.h"
 #include "TripBuildDialog.h"
-#include "BuildProgressDialog.h"
+#include "JobQueue.h"
 #include "EmptyManifestWidget.h"
 #include <QStackedWidget>
 #include <QScrollArea>
@@ -15,7 +15,7 @@
 #include <QTimer>
 #include <algorithm>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 TripGridPanel::TripGridPanel(QWidget* parent)
     : QWidget(parent)
@@ -83,6 +83,13 @@ TripGridPanel::TripGridPanel(QWidget* parent)
     m_imperial = config.getUseImperial();
     auto index = config.loadManifestIndex();
     m_stack->setCurrentIndex(index.empty() ? PAGE_EMPTY : PAGE_NONE);
+
+    // Refresh tile indicators whenever any job finishes — GPS/map/dash/hud data
+    // is written to the manifest by the job; tiles need a refreshFrom() so
+    // indicator dots reflect the current state without requiring the user to
+    // open TripPropertiesDialog first.
+    connect(&JobQueue::instance(), &JobQueue::jobFinished,
+            this, &TripGridPanel::onJobFinished);
 }
 
 void TripGridPanel::paintEvent(QPaintEvent* ev)
@@ -132,7 +139,7 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
     }
 
     for (const auto& t : trips) {
-        auto* tile = new TripTile(t, m_imperial, entry.path, m_gridContainer);
+        auto* tile = new TripTile(t, m_imperial, entry.path, entry.id, m_gridContainer);
         tile->show();
         connect(tile, &TripTile::doubleClicked,
                 [this, t]() { emit tripDoubleClicked(m_currentManifest, t); });
@@ -176,16 +183,16 @@ void TripGridPanel::layoutTiles()
     for (int i = 0; i < n; ++i) {
         int row = i / cols;
         int col = i % cols;
-        int x = TILE_SPACING + col * (tileW + TILE_SPACING);
-        int y = TILE_SPACING + row * (tileH + TILE_SPACING);
+        int x   = TILE_SPACING + col * (tileW + TILE_SPACING);
+        int y   = TILE_SPACING + row * (tileH + TILE_SPACING);
         m_tiles[i]->setGeometry(x, y, tileW, tileH);
     }
 
-    int rows   = n == 0 ? 0 : (n + cols - 1) / cols;
-    int totalH = rows * (tileH + TILE_SPACING) + TILE_SPACING;
-    m_gridContainer->setMinimumSize(
-        cols * (tileW + TILE_SPACING) + TILE_SPACING,
-        qMax(totalH, m_scrollArea->viewport()->height()));
+    int rows       = n == 0 ? 0 : (n + cols - 1) / cols;
+    int totalH     = rows * (tileH + TILE_SPACING) + TILE_SPACING;
+    int containerW = cols * (tileW + TILE_SPACING) + TILE_SPACING;
+    int containerH = qMax(totalH, m_scrollArea->viewport()->height());
+    m_gridContainer->resize(containerW, containerH);
 }
 
 void TripGridPanel::enqueueThumb(TripTile* tile,
@@ -261,14 +268,14 @@ void TripGridPanel::applyZoom()
     layoutTiles();
 }
 
-void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
+void TripGridPanel::onBuildRequested(const CamClops::Trip& trip)
 {
-    // Reload this trip from disk — pm_sync_analyze.py (or any other tool) may
+    // Reload this trip from disk — clops_sync_analyze.py (or any other tool) may
     // have written cameraSync or other data to the manifest after the GUI last
     // scanned.  Fall back to the cached trip if the reload fails.
-    Pathmux::Trip freshTrip = trip;
+    CamClops::Trip freshTrip = trip;
     if (!m_currentManifest.manifestFile.empty()) {
-        Pathmux::ConfigManager mgr;
+        CamClops::ConfigManager mgr;
         auto trips = mgr.loadTripCache(m_currentManifest.manifestFile);
         for (const auto& t : trips) {
             if (t.id == trip.id) { freshTrip = t; break; }
@@ -281,13 +288,27 @@ void TripGridPanel::onBuildRequested(const Pathmux::Trip& trip)
 
     if (dlg.processNow()) {
         VideoOptions opts = dlg.buildOptions();
-        // Non-modal: allocate on heap so the main window stays interactive.
-        // WA_DeleteOnClose cleans up when the user dismisses it.
-        auto* progress = new BuildProgressDialog(freshTrip, opts, nullptr);
-        progress->setAttribute(Qt::WA_DeleteOnClose);
-        progress->show();
-        progress->startBuild();
+        auto* job = new CollageJob(freshTrip, opts, m_currentManifest.id);
+        JobQueue::instance().enqueue(job);
     }
-    // "Add to Batch Queue" path: dlg.processNow() == false — handled in future release
 }
-// SN: 00109
+
+void TripGridPanel::onJobFinished(Job*, bool ok)
+{
+    if (!ok || m_currentManifest.manifestFile.empty()) return;
+
+    // Reload trip data from the manifest so tile indicators (GPS/MAP/DASH/HUD)
+    // reflect whatever the job just wrote, without rebuilding the tile widgets.
+    ConfigManager config;
+    config.loadSettings();
+    auto trips = config.loadTripCache(m_currentManifest.manifestFile);
+    for (auto* tile : m_tiles) {
+        for (const auto& t : trips) {
+            if (t.id == tile->trip().id) {
+                tile->refreshFrom(t);
+                break;
+            }
+        }
+    }
+}
+// SN: 00113

@@ -32,7 +32,7 @@ private slots:
     void onDelete();
     void onEditNickname();
     void onSelectionChanged();
-    void onScanComplete(const Pathmux::ManifestEntry& entry);
+    void onScanComplete(const CamClops::ManifestEntry& entry);
 
 private:
     void loadManifests();
@@ -45,6 +45,6 @@ private:
     QPushButton*  m_deleteBtn  = nullptr;
     QPushButton*  m_nickBtn    = nullptr;
 
-    std::vector<Pathmux::ManifestEntry> m_entries;
+    std::vector<CamClops::ManifestEntry> m_entries;
 };
 // SN: 00095

@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-namespace Pathmux {
+namespace CamClops {
 namespace Platform {
 
 std::string getHomePath() {
@@ -41,14 +41,14 @@ std::string getConfigDir() {
 #ifdef _WIN32
     // %APPDATA% is the conventional location on Windows (%USERPROFILE%\AppData\Roaming).
     const char* appdata = getenv("APPDATA");
-    std::string dir = appdata ? std::string(appdata) + "\\pathmux\\"
-                              : getHomePath() + "\\AppData\\Roaming\\pathmux\\";
+    std::string dir = appdata ? std::string(appdata) + "\\camclops\\"
+                              : getHomePath() + "\\AppData\\Roaming\\camclops\\";
 #elif defined(__APPLE__)
     // macOS convention: ~/Library/Application Support/<app>/
-    std::string dir = getHomePath() + "/Library/Application Support/pathmux/";
+    std::string dir = getHomePath() + "/Library/Application Support/camclops/";
 #else
     // Linux / other POSIX: XDG base dir convention
-    std::string dir = getHomePath() + "/.config/pathmux/";
+    std::string dir = getHomePath() + "/.config/camclops/";
 #endif
     std::error_code ec;
     if (!fs::exists(dir, ec))
@@ -71,6 +71,6 @@ int getTerminalWidth() {
 }
 
 } // namespace Platform
-} // namespace Pathmux
+} // namespace CamClops
 
 // SN: 00089

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>clops_ls(1) — Trip Lister</title>
+</head>
+<body>
+
+<h1>clops_ls</h1>
+<p class="mandesc">Non-interactive trip lister for CamClops manifests</p>
+
+<h2>Synopsis</h2>
+<div class="synopsis">
+clops_ls [--json] [<i>MID</i> | <i>MID</i>:<i>TID</i>]
+</div>
+
+<h2>Description</h2>
+
+<p>
+<b>clops_ls</b> lists dashcam trips from cached CamClops manifests.  It is the
+scriptable, pipe-friendly alternative to <b>camclops -t</b> and <b>camclops -T</b>.
+All output goes to stdout; errors go to stderr.
+</p>
+
+<p>Without arguments, <b>clops_ls</b> prints a one-line summary for every trip across
+all manifests, grouped under a manifest header line.  A <i>MID</i> argument filters
+output to one manifest.  A <i>MID:TID</i> argument prints a full detail block for
+a single trip.</p>
+
+<p>Both <i>MID</i> and <i>TID</i> are case-insensitive.  Ambiguous characters are
+normalised (O→0, I→1, L→1).</p>
+
+<h2>Options</h2>
+
+<dl>
+<dt>--json</dt>
+<dd>Emit JSON instead of text.  With no filter, outputs an array of manifest objects
+each containing a <b>trips</b> array.  With <i>MID:TID</i>, outputs a single trip
+object.  Suitable for piping to <b>jq</b>.</dd>
+
+<dt>-v, --version</dt>
+<dd>Print the CamClops version string and exit.</dd>
+
+<dt>-h, --help</dt>
+<dd>Print a usage summary and exit.</dd>
+</dl>
+
+<h2>Default Output Format</h2>
+
+<pre>MID TID Date        Start     Duration  Segs  Distance  GPS
+----------------------------------------------------------------
+[CY]  /z/srcdash/ex10
+CY  7E  2026-02-25  04:44:24  18m 29s   7     22.7 km   pts
+CY  0Y  2026-02-25  13:56:53  42m 6s    15    56.8 km   pts</pre>
+
+<p>Columns:</p>
+<dl>
+<dt>MID</dt><dd>Two-character manifest ID.</dd>
+<dt>TID</dt><dd>Two-character trip ID within the manifest.</dd>
+<dt>Date</dt><dd>Trip date in YYYY-MM-DD format.</dd>
+<dt>Start</dt><dd>Trip start time in HH:MM:SS format (local time from filename timestamps).</dd>
+<dt>Duration</dt><dd>Human-readable trip duration (e.g. 39m 52s).</dd>
+<dt>Segs</dt><dd>Number of video segments in the trip.</dd>
+<dt>Distance</dt><dd>Crow-flies haversine distance between the trip start and end GPS
+coordinates.  Displayed in km or miles depending on the <b>useImperial</b> preference.
+Shows <b>-</b> if no GPS coordinate data is available for the trip.</dd>
+<dt>GPS</dt><dd>GPS data availability indicator:
+<dl>
+<dt>track</dt><dd>Full per-second GPS track has been extracted (via <b>camclops -G</b>
+or <b>clops_gpsexport</b>).  Ready for GPX/KML/GeoJSON export.</dd>
+<dt>pts</dt><dd>Start and end coordinates only, captured automatically during the
+initial <b>-s</b> scan.  Sufficient for distance calculation; run <b>clops_gpsexport</b>
+to extract the full route.</dd>
+<dt>-</dt><dd>No GPS data.  Typically a cold-start stub segment where the GPS receiver
+never acquired a fix.</dd>
+</dl>
+</dd>
+</dl>
+
+<h2>Detail Output (MID:TID)</h2>
+
+<pre>Trip:       X1:87
+Date:       2026-02-09
+Start:      04:38:38
+Duration:   39m 52s
+Segments:   14
+Seg dur:    180s
+Manifest:   /z/srcdash/ex2/clops_manifest_X1.json
+Source:     /z/srcdash/ex2
+Start pos:  30.419000, -89.025191
+End pos:    30.367684, -89.613496
+Distance:   56.7 km
+GPS:        complete  (lock: 0s)</pre>
+
+<p><b>Duration</b> shows the computed ffprobe duration in parentheses if available:
+<i>39m 52s  (ffprobe: 39m 51s)</i>.
+<b>GPS</b> shows the track status and GPS lock time in seconds if it has been scanned
+by <b>clops_gpsinfo --scan-all-trips</b>.</p>
+
+<h2>JSON Output</h2>
+
+<pre>{
+  "id": "87",
+  "date": "2026-02-09",
+  "start_time": "04:38:38",
+  "duration": "39m 52s",
+  "segment_count": 14,
+  "segdur": 180,
+  "distance_km": 56.71,
+  "start_lat": 30.419,
+  "start_lon": -89.025,
+  "end_lat": 30.367,
+  "end_lon": -89.613,
+  "gps_status": "complete",
+  "gps_lock_sec": 0,
+  "duration_ffprobed": -1,
+  "note": ""
+}</pre>
+
+<p><b>distance_km</b> is -1 if no GPS coordinates are available.
+<b>duration_ffprobed</b> is -1 if the ffprobe duration has not yet been computed.
+<b>gps_lock_sec</b> is -1 if <b>--scan-all-trips</b> has not been run for that trip.</p>
+
+<h2>Examples</h2>
+
+<dl>
+<dt>List all trips across all manifests:</dt>
+<dd><pre>clops_ls</pre></dd>
+
+<dt>List trips for manifest X1 only:</dt>
+<dd><pre>clops_ls X1</pre></dd>
+
+<dt>Show detail for one trip:</dt>
+<dd><pre>clops_ls X1:87</pre></dd>
+
+<dt>JSON output for all manifests, extract trip IDs with jq:</dt>
+<dd><pre>clops_ls --json | jq '.[] | .trips[] | .id'</pre></dd>
+
+<dt>JSON output for one manifest:</dt>
+<dd><pre>clops_ls --json X1</pre></dd>
+
+<dt>Find all trips with full GPS tracks:</dt>
+<dd><pre>clops_ls --json | jq '.[] | .trips[] | select(.gps_status == "complete") | .id'</pre></dd>
+</dl>
+
+<h2>Files</h2>
+<dl>
+<dt>~/.config/camclops/manifests.json</dt>
+<dd>Manifest index listing all known manifests.</dd>
+
+<dt>~/.config/camclops/camclops.json</dt>
+<dd>Application settings (<b>useImperial</b> controls distance display units).</dd>
+</dl>
+
+<h2>Exit Status</h2>
+<dl>
+<dt>0</dt><dd>Success.</dd>
+<dt>1</dt><dd>No manifests found, unknown MID, or unknown TID.</dd>
+</dl>
+
+<h2>See Also</h2>
+<p class="seealso">
+<a href="camclops.html">camclops</a>
+<a href="clops_gpsinfo.html">clops_gpsinfo</a>
+<a href="clops_gpsexport.html">clops_gpsexport</a>
+</p>
+
+</body>
+</html>

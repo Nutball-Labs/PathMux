@@ -7,7 +7,7 @@
 #include <iostream>
 #include <string>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 bool HostPrefsEditor::run(ConfigManager& config) {
     AppSettings working = config.getSettings();
@@ -18,7 +18,7 @@ bool HostPrefsEditor::run(ConfigManager& config) {
             return p.empty() ? def : p;
         };
 
-        std::string title = std::string("PathMux v") + APP_VERSION
+        std::string title = std::string("CamClops v") + APP_VERSION
                             + " Host Preferences (" + config.getHostname() + ")";
         std::string unsaved = changed ? "  * unsaved changes" : "";
 
@@ -36,7 +36,7 @@ bool HostPrefsEditor::run(ConfigManager& config) {
                       + fmtPath(working.defaultExportDir, "(current directory)"));
         UI::printLine("[D]  Temp directory         "
                       + (working.tmpDir.empty()
-                         ? "(auto: <output dir>/pm_tmp)"
+                         ? "(auto: <output dir>/clops_tmp)"
                          : working.tmpDir));
         UI::printLine("[E]  Log level              " + working.logLevel
                       + "  (off|normal|debug)");

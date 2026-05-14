@@ -1,6 +1,6 @@
-# PathMux — macOS Port Checklist
+# CamClops — macOS Port Checklist
 
-Tracks what must be done to build and run PathMux (CLI and Qt6 GUI) on macOS.
+Tracks what must be done to build and run CamClops (CLI and Qt6 GUI) on macOS.
 Overall development direction lives in ROADMAP.md. This file covers platform-specific
 porting blockers only.
 
@@ -9,7 +9,7 @@ porting blockers only.
 ## Good News First
 
 macOS is POSIX/BSD, which means the porting lift is substantially smaller than Windows.
-Most POSIX APIs used by PathMux exist on macOS unchanged:
+Most POSIX APIs used by CamClops exist on macOS unchanged:
 
 - `localtime_r` — available (BSD POSIX)
 - `ioctl(TIOCGWINSZ)` / terminal width — available
@@ -61,7 +61,7 @@ Xcode Command Line Tools) or Homebrew GCC. CMake works identically.
 
 ### Config Directory
 - [x] `lib/platform.cpp` `getConfigDir()` — macOS path implemented.
-  Returns `~/Library/Application Support/pathmux/`. ✓
+  Returns `~/Library/Application Support/camclops/`. ✓
 
 ### Platform Detection Macro
 - [x] `__APPLE__` used throughout `compat.hpp` and `platform.cpp`. ✓
@@ -71,10 +71,10 @@ Xcode Command Line Tools) or Homebrew GCC. CMake works identically.
   lvalue; replaced with portable `(((s) >> 8) & 0xff)` form). ✓
 - [x] `video_build.cpp`: VideoToolbox encoders reject `-q`; replaced with `-b:v <quality>M`
   when encoder name contains `videotoolbox`. ✓
-- [x] Host config `pathmux_Patsys-Air.json` created with VideoToolbox encoder profile. ✓
+- [x] Host config `camclops_Patsys-Air.json` created with VideoToolbox encoder profile. ✓
 
 ### No Other Changes Required
-- All POSIX calls used by PathMux work unchanged on macOS. ✓
+- All POSIX calls used by CamClops work unchanged on macOS. ✓
 
 ---
 
@@ -109,12 +109,12 @@ All installable via Homebrew:
 
 ## Testing
 
-- [x] `pathmux --version` runs on macOS (tested on Ventura/Sonoma, MacBook Air i5-8210Y) ✓
+- [x] `camclops --version` runs on macOS (tested on Ventura/Sonoma, MacBook Air i5-8210Y) ✓
 - [x] `-s <path>` scan against footage on NFS-mounted volume ✓
-- [x] Manifest written to `~/Library/Application Support/pathmux/` correctly ✓
+- [x] Manifest written to `~/Library/Application Support/camclops/` correctly ✓
 - [x] Terminal box drawing renders correctly in iTerm2 ✓
 - [x] Full collage build (4K + 1080p) via VideoToolbox confirmed working ✓
-- [ ] `pm_gpsinfo` operates correctly — not yet tested on macOS
+- [ ] `clops_gpsinfo` operates correctly — not yet tested on macOS
 - [ ] Test on Apple Silicon hardware (or arm64 GitHub Actions runner)
 - [ ] Test paths with spaces (common on macOS, e.g., `/Volumes/My Dashcam/`)
 
@@ -131,13 +131,13 @@ Qt6 is fully supported on macOS and handles all platform differences natively.
   - Native Aqua window chrome (traffic light buttons, title bar)
   - macOS file picker dialog
   - Dark mode follows system setting (macOS 10.14+ Mojave)
-  - `QStandardPaths::AppDataLocation` returns `~/Library/Application Support/pathmux/`
+  - `QStandardPaths::AppDataLocation` returns `~/Library/Application Support/camclops/`
     automatically — consistent with `Platform::getConfigDir()` macOS implementation
   - Keyboard shortcuts follow macOS convention (Cmd instead of Ctrl)
-- [ ] Build and launch `pathmux-gui.app` on macOS 13+
+- [ ] Build and launch `camclops-gui.app` on macOS 13+
 
 ### Distribution — `.app` Bundle and `.dmg`
-- [ ] Use `macdeployqt` to bundle Qt6 frameworks into `pathmux-gui.app`
+- [ ] Use `macdeployqt` to bundle Qt6 frameworks into `camclops-gui.app`
   (avoids dependency on system Qt, which may not match the build version)
 - [ ] Bundle `ffprobe` and `exiftool` inside the `.app` bundle, or document as
   Homebrew prerequisites in the README
@@ -147,9 +147,9 @@ Qt6 is fully supported on macOS and handles all platform differences natively.
 - [ ] **Code signing and notarization** — required for Gatekeeper to allow launch
   without user override on macOS 10.15+:
   - [ ] Enroll in Apple Developer Program ($99/year) to get a signing certificate
-  - [ ] Sign `.app` bundle: `codesign --deep --sign "Developer ID Application: ..." pathmux-gui.app`
-  - [ ] Notarize with Apple: `xcrun notarytool submit pathmux-gui.zip --wait`
-  - [ ] Staple notarization ticket: `xcrun stapler staple pathmux-gui.app`
+  - [ ] Sign `.app` bundle: `codesign --deep --sign "Developer ID Application: ..." camclops-gui.app`
+  - [ ] Notarize with Apple: `xcrun notarytool submit camclops-gui.zip --wait`
+  - [ ] Staple notarization ticket: `xcrun stapler staple camclops-gui.app`
   - Without notarization: users see "unidentified developer" dialog; can bypass with
     right-click → Open, but this is a barrier for non-technical users
 - [ ] Add `.quadeye` file association in `Info.plist` for future archive format

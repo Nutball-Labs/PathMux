@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Nutball Labs / Stephen Berg
 #
-# Generates logo_morph.mp4 — 6-second PathMux <-> Nutball-Labs cross-fade.
+# Generates logo_morph.mp4 — 6-second CamClops <-> Nutball-Labs cross-fade.
 # Called by CMake at build time:
-#   gen_logo_morph.py <ffmpeg> <output.mp4> <pathmux_256.png> <Nutball-Labs_logo.png>
+#   gen_logo_morph.py <ffmpeg> <output.mp4> <camclops_256.png> <Nutball-Labs_logo.png>
 #
 # Output: 960x540 H.264 CRF23 yuv420p, 30fps, 6s (180 frames), no audio.
 # Sine ease-in-out: 3s fade in, 3s fade back.

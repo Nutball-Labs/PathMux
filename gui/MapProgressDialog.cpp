@@ -17,7 +17,7 @@
 #include <QCloseEvent>
 #include <QMutex>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // MapWorker — runs the render script on a background QThread.
@@ -164,7 +164,7 @@ MapProgressDialog::MapProgressDialog(const Trip&       trip,
     : QDialog(parent),
       m_trip(trip), m_manifestFile(manifestFile), m_outputPath(outputPath),
       m_width(width), m_height(height),
-      m_scriptName(scriptName.isEmpty() ? "pm_maprender.py" : scriptName),
+      m_scriptName(scriptName.isEmpty() ? "clops_maprender.py" : scriptName),
       m_extraArgs(extraArgs)
 {
     setWindowTitle(title.isEmpty() ? "Generating Map" : title);
@@ -233,7 +233,7 @@ void MapProgressDialog::startRender()
     if (script.isEmpty()) {
         m_statusLog->append(
             "Error: " + m_scriptName + " not found.\n"
-            "Expected alongside the pathmux-gui binary in a scripts/ subdirectory.");
+            "Expected alongside the camclops-gui binary in a scripts/ subdirectory.");
         m_finalLabel->setText("Error: script not found");
         m_finalLabel->setStyleSheet("color: red;");
         m_closeBtn->setEnabled(true);
@@ -358,7 +358,7 @@ QString MapProgressDialog::findScript() const
     const QStringList candidates = {
         appDir + "/scripts/" + m_scriptName,                           // Windows: next to binary
         appDir + "/../scripts/" + m_scriptName,                        // macOS: app bundle Contents/scripts
-        appDir + "/../share/pathmux/scripts/" + m_scriptName,         // Linux: /usr/share/pathmux/scripts
+        appDir + "/../share/camclops/scripts/" + m_scriptName,         // Linux: /usr/share/camclops/scripts
         appDir + "/" + m_scriptName,
     };
     for (const QString& p : candidates) {

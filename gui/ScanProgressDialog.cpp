@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "ScanProgressDialog.h"
-#include "pathmux.hpp"
+#include "camclops.hpp"
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QProgressBar>
@@ -9,7 +9,7 @@
 #include <QThread>
 #include <QDialogButtonBox>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // ScanWorker — runs detectTrips() + saveTripCache() on a background thread.

@@ -18,7 +18,7 @@
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-using namespace Pathmux;
+using namespace CamClops;
 
 // ===========================================================================
 // Static helpers
@@ -46,11 +46,11 @@ std::string GpxExport::resolveManifestFile(const std::string& pathOrStem)
         if (!config.isCached(pathOrStem)) return "";
         std::string san = pathOrStem.substr(1);
         for (char& c : san) if (c == '/' || c == '\\' || c == ':') c = '_';
-        return (fs::path(Pathmux::Platform::getConfigDir()) / (san + ".json")).string();
+        return (fs::path(CamClops::Platform::getConfigDir()) / (san + ".json")).string();
     }
 
     // No slashes → treat as cache stem
-    std::string candidate = (fs::path(Pathmux::Platform::getConfigDir()) / (pathOrStem + ".json")).string();
+    std::string candidate = (fs::path(CamClops::Platform::getConfigDir()) / (pathOrStem + ".json")).string();
     if (fs::exists(candidate)) return candidate;
     return "";
 }
@@ -91,7 +91,7 @@ std::string GpxExport::buildStem(const json& jTrip)
 {
     if (!jTrip.contains("segments") || !jTrip["segments"].is_array()
             || jTrip["segments"].empty())
-        return "pathmux_unknown";
+        return "camclops_unknown";
 
     // Support both new ("cameras" object) and old (flat named fields) formats.
     std::string front;
@@ -101,7 +101,7 @@ std::string GpxExport::buildStem(const json& jTrip)
     else
         front = seg0.value("front", "");
     if (front.empty() || front == "-")
-        return "pathmux_unknown";
+        return "camclops_unknown";
 
     // Get filename without directory
     fs::path p(front);
@@ -383,7 +383,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
                            ? (int)root["trips"][idx]["segments"].size() : 0;
             std::cout << "Extracting GPS for trip " << tId
                       << " (" << segCount << " segments)";
-            if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, m_verbose)) {
+            if (!CamClops::extractGps(root, idx, manifestFile, opts.exiftoolPath, m_verbose)) {
                 std::cout << "\nGPS extraction failed for trip " << tId << ".\n"
                           << "Verify exiftool is installed and the options match your camera format.\n"
                           << "If GPS is unsupported for your camera, contact https://exiftool.org\n";
@@ -395,7 +395,7 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
                            ? (int)root["trips"][idx]["segments"].size() : 0;
             std::cout << "Extracting GPS for trip " << tId
                       << " (" << segCount << " segments)";
-            if (!Pathmux::extractGps(root, idx, manifestFile, opts.exiftoolPath, m_verbose)) {
+            if (!CamClops::extractGps(root, idx, manifestFile, opts.exiftoolPath, m_verbose)) {
                 std::cout << "\nGPS extraction failed for trip " << tId << ".\n"
                           << "Verify exiftool is installed and the options match your camera format.\n"
                           << "If GPS is unsupported for your camera, contact https://exiftool.org\n";
@@ -421,8 +421,8 @@ void GpxExport::run(ExportMode mode, const ExportOptions& opts)
         // Write file
         std::string result =
             (mode == ExportMode::Kml)
-                ? Pathmux::writeKml(root, idx, outPath)
-                : Pathmux::writeGpx(root, idx, outPath);
+                ? CamClops::writeKml(root, idx, outPath)
+                : CamClops::writeGpx(root, idx, outPath);
 
         if (result.empty()) {
             std::cout << "Export failed for trip " << tId << ".\n";
@@ -600,7 +600,7 @@ void GpxExport::runInteractive(const ExportOptions& opts)
                     // if source dir is not writable.
                     bool srcWritable = false;
                     {
-                        std::string tf = sourcePath + "/.pm_write_test";
+                        std::string tf = sourcePath + "/.clops_write_test";
                         std::ofstream tst(tf);
                         if (tst.is_open()) {
                             tst.close();
@@ -682,7 +682,7 @@ void GpxExport::runInteractive(const ExportOptions& opts)
                     std::cout << "  Extracting GPS for trip " << tId
                               << " (" << segCount << " segments)...";
                     std::cout.flush();
-                    if (!Pathmux::extractGps(root, i, manifestFile,
+                    if (!CamClops::extractGps(root, i, manifestFile,
                                     actionOpts.exiftoolPath,
                                     m_verbose)) {
                         // extractGps already printed the reason to stderr
@@ -708,9 +708,9 @@ void GpxExport::runInteractive(const ExportOptions& opts)
                 std::string outPath = resolveOutputPath(stem, ext, dirO, filO, actionOpts.force);
                 if (outPath.empty()) { std::cout << "  Skipping trip " << tId << ".\n"; continue; }
 
-                std::string result = (ch == 'K') ? Pathmux::writeKml(root, i, outPath)
-                                   : (ch == 'J') ? Pathmux::writeGeoJson(root, i, outPath)
-                                   :               Pathmux::writeGpx(root, i, outPath);
+                std::string result = (ch == 'K') ? CamClops::writeKml(root, i, outPath)
+                                   : (ch == 'J') ? CamClops::writeGeoJson(root, i, outPath)
+                                   :               CamClops::writeGpx(root, i, outPath);
                 if (result.empty()) { std::cout << "  Export failed for trip " << tId << ".\n"; continue; }
 
                 int ptCount = root["trips"][i].contains("gpsTrack")

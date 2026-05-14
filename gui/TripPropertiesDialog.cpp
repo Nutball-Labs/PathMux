@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "TripPropertiesDialog.h"
-#include "MapProgressDialog.h"
+#include "JobQueue.h"
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
-#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -18,6 +17,8 @@
 #include <QTabBar>
 #include <QStackedWidget>
 #include <QPainter>
+#include <QStylePainter>
+#include <QStyleOptionTab>
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -25,11 +26,10 @@
 #include <QMessageBox>
 #include <QDesktopServices>
 #include <QCloseEvent>
-#include <QMutex>
 #include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QProcess>
 #include <QScrollArea>
-#include <QThread>
 #include <QUrl>
 #include <QString>
 #include <QCoreApplication>
@@ -41,97 +41,8 @@
 #include "gps_export.hpp"
 #include "json.hpp"
 
-using namespace Pathmux;
+using namespace CamClops;
 using json = nlohmann::json;
-
-// ---------------------------------------------------------------------------
-// Per-manifest mutex registry — ensures only one extraction at a time per
-// manifest file.  Workers on different manifests run concurrently.
-// s_registryMutex protects the map itself; each entry is a per-file mutex.
-// ---------------------------------------------------------------------------
-static QMutex s_registryMutex;
-static std::map<std::string, std::shared_ptr<QMutex>> s_manifestLocks;
-
-static std::shared_ptr<QMutex> manifestLockFor(const std::string& path)
-{
-    QMutexLocker reg(&s_registryMutex);
-    auto& ptr = s_manifestLocks[path];
-    if (!ptr) ptr = std::make_shared<QMutex>();
-    return ptr;
-}
-
-// ---------------------------------------------------------------------------
-// GpsExtractWorker — runs extractGps() on a background QThread.
-// Q_OBJECT in a .cpp requires the moc include at EOF.
-// ---------------------------------------------------------------------------
-class GpsExtractWorker : public QObject {
-    Q_OBJECT
-public:
-    GpsExtractWorker(const std::string& tripId,
-                     const std::string& manifestFile,
-                     const std::string& exiftoolPath)
-        : m_tripId(tripId), m_manifestFile(manifestFile),
-          m_exiftoolPath(exiftoolPath) {}
-
-public slots:
-    void start() {
-        // Acquire the per-manifest lock.  Blocks if another extraction is
-        // already running against the same manifest file.
-        auto lock = manifestLockFor(m_manifestFile);
-        QMutexLocker manifestLocker(lock.get());
-
-        std::ifstream ifs(m_manifestFile);
-        if (!ifs.is_open()) {
-            emit finished(false,
-                QString("Cannot open manifest: %1")
-                    .arg(QString::fromStdString(m_manifestFile)));
-            return;
-        }
-        json root;
-        try { ifs >> root; } catch (...) {
-            emit finished(false, "Manifest JSON parse error");
-            return;
-        }
-        ifs.close();
-
-        if (!root.contains("trips") || !root["trips"].is_array()) {
-            emit finished(false, "No trips array in manifest");
-            return;
-        }
-        int tripIdx = -1;
-        for (int i = 0; i < (int)root["trips"].size(); ++i) {
-            if (root["trips"][i].value("id", "") == m_tripId) {
-                tripIdx = i;
-                break;
-            }
-        }
-        if (tripIdx < 0) {
-            emit finished(false,
-                QString("Trip %1 not found in manifest")
-                    .arg(QString::fromStdString(m_tripId)));
-            return;
-        }
-
-        bool ok = Pathmux::extractGps(root, tripIdx, m_manifestFile,
-                                      m_exiftoolPath,
-                                      /*verbose=*/false,
-                                      [this](int done, int total) {
-                                          emit progress(done, total);
-                                      });
-        emit finished(ok,
-            ok ? "" : "GPS extraction failed — verify exiftool is installed "
-                      "and the camera profile is compatible");
-    }
-
-signals:
-    void progress(int done, int total);
-    void finished(bool ok, const QString& error);
-
-private:
-    std::string m_tripId;
-    std::string m_manifestFile;
-    std::string m_exiftoolPath;
-};
 
 // ---------------------------------------------------------------------------
 // Humanize a byte count: B / KB / MB / GB
@@ -229,63 +140,63 @@ static QWidget* makeCameraTab(const Trip& t, const std::string& slot, QWidget* p
 }
 
 // ---------------------------------------------------------------------------
-// makeStatusIcon — green check or red X dot for bottom tab bar indicators.
-// File-scope so it can be called from constructor and update methods.
-// ---------------------------------------------------------------------------
-static QIcon makeStatusIcon(bool ok)
-{
-    QPixmap pix(14, 14);
-    pix.fill(Qt::transparent);
-    QPainter p(&pix);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(ok ? QColor("#22cc44") : QColor("#cc2222"));
-    p.setPen(Qt::NoPen);
-    p.drawEllipse(1, 1, 12, 12);
-    p.setPen(QPen(Qt::white, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    if (ok) {
-        p.drawLine(3, 7, 6, 11);
-        p.drawLine(6, 11, 11, 3);
-    } else {
-        p.drawLine(4, 4, 10, 10);
-        p.drawLine(10, 4, 4, 10);
-    }
-    return QIcon(pix);
-}
 
-// Bottom-bar tab indices (fixed regardless of how many camera tabs are in the top bar).
-static constexpr int kBotTabGps  = 0;
-static constexpr int kBotTabMap  = 1;
-static constexpr int kBotTabDash = 2;
-static constexpr int kBotTabHud  = 3;
+// ---------------------------------------------------------------------------
+// InactiveAwareTabBar
+// A QTabBar that can be marked inactive.  When inactive, all tabs are drawn
+// without the State_Selected flag so no tab appears highlighted — only the
+// active bar's current tab shows the platform selection indicator.
+// ---------------------------------------------------------------------------
+class InactiveAwareTabBar : public QTabBar {
+    Q_OBJECT
+    bool m_active = true;
+public:
+    using QTabBar::QTabBar;
+    void setBarActive(bool active) { m_active = active; update(); }
+protected:
+    void paintEvent(QPaintEvent* event) override {
+        if (m_active) { QTabBar::paintEvent(event); return; }
+        QStylePainter p(this);
+        for (int i = 0; i < count(); ++i) {
+            QStyleOptionTab opt;
+            initStyleOption(&opt, i);
+            opt.state &= ~(QStyle::State_Selected | QStyle::State_HasFocus);
+            opt.palette.setColor(QPalette::ButtonText, QColor(0x80, 0x80, 0x80));
+            opt.palette.setColor(QPalette::WindowText, QColor(0x80, 0x80, 0x80));
+            p.drawControl(QStyle::CE_TabBarTab, opt);
+        }
+    }
+};
 
 // ---------------------------------------------------------------------------
 // TripPropertiesDialog
 // ---------------------------------------------------------------------------
 TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
                                            const std::string& sourcePath,
+                                           const std::string& mid,
                                            QWidget* parent)
-    : QDialog(parent), m_trip(trip), m_sourcePath(sourcePath)
+    : QDialog(parent), m_trip(trip), m_sourcePath(sourcePath), m_mid(mid)
 {
-    setWindowTitle(QString("Trip Properties \u2014 %1  %2")
-        .arg(QString::fromStdString(trip.date))
-        .arg(QString::fromStdString(trip.startTime)));
-    resize(640, 500);
+    QString addr = mid.empty()
+        ? QString::fromStdString(trip.id)
+        : QString::fromStdString(mid + ":" + trip.id);
+    setWindowTitle(QString("Trip Properties \u2014 %1").arg(addr));
+    resize(640, 520);
+    setSizeGripEnabled(true);
 
     auto* vbox = new QVBoxLayout(this);
 
-    m_topTabBar = new QTabBar(this);
+    m_topTabBar = new InactiveAwareTabBar(this);
     m_topTabBar->setExpanding(false);
-    m_botTabBar = new QTabBar(this);
-    m_botTabBar->setExpanding(false);
     m_tabStack  = new QStackedWidget(this);
 
     bool hasGps = (trip.gpsTrackStatus == "complete");
 
     // makeStatusIcon is a file-scope static function defined above.
 
-    // Stylesheet applied to the bar that is NOT currently driving the content.
-    static const char* kInactiveBarStyle =
-        "QTabBar::tab:selected { color: #888888; }";
+    // Active/inactive state is managed by InactiveAwareTabBar::setBarActive().
+    // No stylesheet needed — the custom paintEvent suppresses the selection
+    // indicator entirely when the bar is inactive.
 
     // -----------------------------------------------------------------------
     // -----------------------------------------------------------------------
@@ -365,8 +276,7 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
     }
 
     // -----------------------------------------------------------------------
-    // Per-camera tabs  (top bar — built here so m_topCount is set before
-    // the bottom-bar functional tabs are added)
+    // Per-camera tabs  (top bar)
     // -----------------------------------------------------------------------
     {
         // Note: "slots" is a Qt macro — use cameraSlots instead.
@@ -400,506 +310,446 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
     m_topTabBar->addTab("Sync Values");
     m_tabStack->addWidget(buildSyncWidget());
 
-    m_topCount = m_tabStack->count();
 
     // -----------------------------------------------------------------------
-    // GPS tab  (bottom bar)
+    // Outputs tab — GPS / Map / Dashboard / HUD in one scrolled page
     // -----------------------------------------------------------------------
     {
-        auto* w    = new QWidget;
-        auto* vlay = new QVBoxLayout(w);
-        vlay->setContentsMargins(12, 12, 12, 12);
-        vlay->setSpacing(10);
+        auto* scroll = new QScrollArea;
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
 
-        // --- Extraction group ---
-        auto* extractGrp  = new QGroupBox("Extract GPS Track to Manifest", w);
-        auto* extractVlay = new QVBoxLayout(extractGrp);
-        extractVlay->setSpacing(6);
+        auto* outer    = new QWidget;
+        auto* outerLay = new QVBoxLayout(outer);
+        outerLay->setContentsMargins(8, 8, 8, 8);
+        outerLay->setSpacing(10);
 
-        m_gpsStatusLabel = new QLabel(extractGrp);
-        m_gpsStatusLabel->setText(hasGps ? "Status: complete" : "Status: not extracted");
-        m_gpsStatusLabel->setStyleSheet(hasGps
-            ? "color: green; font-weight: bold;"
-            : "color: #cc6600;");
-        extractVlay->addWidget(m_gpsStatusLabel);
+        const QString sourceDir = QString::fromStdString(m_sourcePath);
+        const QString tripId    = QString::fromStdString(trip.id);
+        const QString ftid      = m_mid.empty() ? tripId.toUpper()
+                                : QString::fromStdString(m_mid).toUpper() + "-" + tripId.toUpper();
 
-        m_extractGpsBtn = new QPushButton("Extract GPS Track", extractGrp);
-        connect(m_extractGpsBtn, &QPushButton::clicked,
-                this, &TripPropertiesDialog::onExtractGps);
-        extractVlay->addWidget(m_extractGpsBtn);
+        // ── GPS Track ────────────────────────────────────────────────────────
+        {
+            auto* grp  = new QGroupBox("GPS Track", outer);
+            auto* vlay = new QVBoxLayout(grp);
+            vlay->setContentsMargins(10, 6, 10, 10);
+            vlay->setSpacing(6);
 
-        m_extractBar = new QProgressBar(extractGrp);
-        m_extractBar->setRange(0, 0);   // indeterminate until first progress signal
-        m_extractBar->hide();
-        extractVlay->addWidget(m_extractBar);
+            auto* extRow = new QHBoxLayout;
+            m_gpsStatusLabel = new QLabel(
+                hasGps ? "✓ Extracted" : "✗ Not extracted", grp);
+            m_gpsStatusLabel->setStyleSheet(
+                hasGps ? "color: green; font-weight: bold;" : "color: #cc6600;");
+            extRow->addWidget(m_gpsStatusLabel, 1);
+            m_extractGpsBtn = new QPushButton("Extract GPS…", grp);
+            connect(m_extractGpsBtn, &QPushButton::clicked,
+                    this, &TripPropertiesDialog::onExtractGps);
+            extRow->addWidget(m_extractGpsBtn);
+            vlay->addLayout(extRow);
 
-        m_extractMsgLabel = new QLabel(extractGrp);
-        m_extractMsgLabel->setStyleSheet("font-size: 8pt; color: gray;");
-        m_extractMsgLabel->setWordWrap(true);
-        extractVlay->addWidget(m_extractMsgLabel);
+            m_extractMsgLabel = new QLabel(grp);
+            m_extractMsgLabel->setStyleSheet("font-size: 8pt; color: gray;");
+            m_extractMsgLabel->setWordWrap(true);
+            vlay->addWidget(m_extractMsgLabel);
 
-        vlay->addWidget(extractGrp);
+            auto* sep = new QFrame(grp);
+            sep->setFrameShape(QFrame::HLine);
+            sep->setFrameShadow(QFrame::Sunken);
+            vlay->addWidget(sep);
 
-        // --- Export group ---
-        auto* exportGrp  = new QGroupBox("Export Track", w);
-        auto* exportForm = new QFormLayout(exportGrp);
-        exportForm->setContentsMargins(8, 8, 8, 8);
-        exportForm->setVerticalSpacing(6);
+            auto* exportForm = new QFormLayout;
+            exportForm->setContentsMargins(0, 0, 0, 0);
+            exportForm->setSpacing(4);
+            m_exportFormatCombo = new QComboBox(grp);
+            m_exportFormatCombo->addItems({"GPX", "KML", "GeoJSON"});
+            exportForm->addRow("Export format:", m_exportFormatCombo);
 
-        m_exportFormatCombo = new QComboBox(exportGrp);
-        m_exportFormatCombo->addItems({"GPX", "KML", "GeoJSON"});
-        exportForm->addRow("Format:", m_exportFormatCombo);
+            m_exportPathEdit  = new QLineEdit(grp);
+            m_exportPathEdit->setText(sourceDir + "/clops_trip_" + ftid + "_track.gpx");
+            auto* browseBtn = new QPushButton("…", grp);
+            browseBtn->setFixedWidth(28);
+            connect(browseBtn, &QPushButton::clicked,
+                    this, &TripPropertiesDialog::onExportBrowse);
+            auto* pathRow = new QHBoxLayout;
+            pathRow->addWidget(m_exportPathEdit);
+            pathRow->addWidget(browseBtn);
+            exportForm->addRow("Output:", pathRow);
 
-        // Default export path: next to the footage source
-        QString sourceDir = QString::fromStdString(m_sourcePath);
-        QString tripId    = QString::fromStdString(trip.id);
-        m_exportPathEdit  = new QLineEdit(exportGrp);
-        m_exportPathEdit->setText(sourceDir + "/pm_trip_" + tripId + "_track.gpx");
+            m_exportGpsBtn = new QPushButton("Export", grp);
+            m_exportGpsBtn->setEnabled(hasGps);
+            exportForm->addRow("", m_exportGpsBtn);
+            vlay->addLayout(exportForm);
 
-        auto* browseBtn = new QPushButton("\u2026", exportGrp);
-        browseBtn->setFixedWidth(28);
-        connect(browseBtn, &QPushButton::clicked,
-                this, &TripPropertiesDialog::onExportBrowse);
+            connect(m_exportFormatCombo,
+                    QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    this, &TripPropertiesDialog::onExportFormatChanged);
+            connect(m_exportGpsBtn, &QPushButton::clicked,
+                    this, &TripPropertiesDialog::onExportGps);
 
-        auto* pathRow = new QHBoxLayout;
-        pathRow->addWidget(m_exportPathEdit);
-        pathRow->addWidget(browseBtn);
-        exportForm->addRow("Output:", pathRow);
+            outerLay->addWidget(grp);
+        }
 
-        m_exportGpsBtn = new QPushButton("Export", exportGrp);
-        m_exportGpsBtn->setEnabled(hasGps);
-        exportForm->addRow("", m_exportGpsBtn);
+        // ── Map Video ────────────────────────────────────────────────────────
+        {
+            auto* grp  = new QGroupBox("Map Video", outer);
+            auto* vlay = new QVBoxLayout(grp);
+            vlay->setContentsMargins(10, 6, 10, 10);
+            vlay->setSpacing(6);
 
-        connect(m_exportFormatCombo,
-                QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, &TripPropertiesDialog::onExportFormatChanged);
-        connect(m_exportGpsBtn, &QPushButton::clicked,
-                this, &TripPropertiesDialog::onExportGps);
+            m_mapWarnLabel = new QLabel(
+                "GPS track not yet extracted — extract it first.", grp);
+            m_mapWarnLabel->setWordWrap(true);
+            m_mapWarnLabel->setStyleSheet("color: #cc6600;");
+            m_mapWarnLabel->setVisible(!hasGps);
+            vlay->addWidget(m_mapWarnLabel);
 
-        vlay->addWidget(exportGrp);
+            auto* outRow = new QHBoxLayout;
+            auto* outLbl = new QLabel("Output:", grp); outLbl->setFixedWidth(54);
+            m_mapOutputEdit = new QLineEdit(grp);
+            m_mapOutputEdit->setText(
+                QString::fromStdString(m_sourcePath) + "/clops_trip_" + ftid + "_map.mp4");
+            auto* mapBrowseBtn = new QPushButton("…", grp);
+            mapBrowseBtn->setFixedWidth(28);
+            connect(mapBrowseBtn, &QPushButton::clicked, [this]() {
+                QString path = QFileDialog::getSaveFileName(
+                    this, "Map Output", m_mapOutputEdit->text(), "Video (*.mp4)");
+                if (!path.isEmpty()) m_mapOutputEdit->setText(path);
+            });
+            outRow->addWidget(outLbl);
+            outRow->addWidget(m_mapOutputEdit);
+            outRow->addWidget(mapBrowseBtn);
+            vlay->addLayout(outRow);
 
-        // --- Build All group ---
-        auto* buildGrp  = new QGroupBox("Build Overlay Videos", w);
-        auto* buildVlay = new QVBoxLayout(buildGrp);
-        buildVlay->setSpacing(6);
-        auto* buildNote = new QLabel(
-            "Generate map, dashboard, and HUD using the settings "
-            "configured on their respective tabs. Existing files are overwritten.", buildGrp);
-        buildNote->setWordWrap(true);
-        buildNote->setStyleSheet("font-size: 8pt; color: gray;");
-        buildVlay->addWidget(buildNote);
-        m_buildAllBtn = new QPushButton("Build All", buildGrp);
-        m_buildAllBtn->setEnabled(true);
+            auto* resLbl = new QLabel(
+                QString("Resolution: %1×%2  (trip video profile)")
+                    .arg(trip.videoProfile.width).arg(trip.videoProfile.height), grp);
+            resLbl->setStyleSheet("font-size: 8pt; color: gray;");
+            vlay->addWidget(resLbl);
+
+            m_mapFileList = new QListWidget(grp);
+            m_mapFileList->setMaximumHeight(80);
+            m_mapFileList->setAlternatingRowColors(true);
+            connect(m_mapFileList, &QListWidget::itemDoubleClicked,
+                    [](QListWidgetItem* item) {
+                QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
+            });
+            vlay->addWidget(m_mapFileList);
+
+            m_mapGenerateBtn = new QPushButton("Generate Map…", grp);
+            m_mapGenerateBtn->setEnabled(hasGps);
+            connect(m_mapGenerateBtn, &QPushButton::clicked,
+                    this, &TripPropertiesDialog::onGenerateMap);
+            vlay->addWidget(m_mapGenerateBtn);
+
+            outerLay->addWidget(grp);
+        }
+
+        // ── Dashboard ────────────────────────────────────────────────────────
+        {
+            auto* grp  = new QGroupBox("Dashboard", outer);
+            auto* vlay = new QVBoxLayout(grp);
+            vlay->setContentsMargins(10, 6, 10, 10);
+            vlay->setSpacing(6);
+
+            m_dashWarnLabel = new QLabel(
+                "GPS track not yet extracted — extract it first.", grp);
+            m_dashWarnLabel->setWordWrap(true);
+            m_dashWarnLabel->setStyleSheet("color: #cc6600;");
+            m_dashWarnLabel->setVisible(!hasGps);
+            vlay->addWidget(m_dashWarnLabel);
+
+            auto* outRow = new QHBoxLayout;
+            auto* outLbl = new QLabel("Output:", grp); outLbl->setFixedWidth(54);
+            m_dashOutputEdit = new QLineEdit(grp);
+            m_dashOutputEdit->setText(
+                QString::fromStdString(m_sourcePath) + "/clops_trip_" + ftid + "_dash.mp4");
+            auto* dashBrowseBtn = new QPushButton("…", grp);
+            dashBrowseBtn->setFixedWidth(28);
+            connect(dashBrowseBtn, &QPushButton::clicked, [this]() {
+                bool transp = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
+                QString filter = transp ? "Video (*.webm)" : "Video (*.mp4)";
+                QString path = QFileDialog::getSaveFileName(
+                    this, "Dashboard Output", m_dashOutputEdit->text(),
+                    filter + ";;All Files (*)");
+                if (!path.isEmpty()) m_dashOutputEdit->setText(path);
+            });
+            outRow->addWidget(outLbl);
+            outRow->addWidget(m_dashOutputEdit);
+            outRow->addWidget(dashBrowseBtn);
+            vlay->addLayout(outRow);
+
+            m_dashTransparentCheck = new QCheckBox(
+                "Transparent background  (WebM/VP9, for overlay use)", grp);
+            connect(m_dashTransparentCheck, &QCheckBox::toggled, this, [this](bool checked) {
+                if (!m_dashOutputEdit) return;
+                QString path = m_dashOutputEdit->text();
+                if (checked && path.endsWith(".mp4", Qt::CaseInsensitive))
+                    m_dashOutputEdit->setText(path.chopped(4) + ".webm");
+                else if (!checked && path.endsWith(".webm", Qt::CaseInsensitive))
+                    m_dashOutputEdit->setText(path.chopped(5) + ".mp4");
+            });
+            vlay->addWidget(m_dashTransparentCheck);
+
+            {
+                auto* layoutRow = new QHBoxLayout;
+                auto* layoutLbl = new QLabel("Layout:", grp); layoutLbl->setFixedWidth(54);
+                m_dashLayoutCombo = new QComboBox(grp);
+                m_dashLayoutCombo->addItem("Standard (3-panel)", QString("standard"));
+                m_dashLayoutCombo->addItem("Quadrant HUD",       QString("quadrant-hud"));
+                m_dashLayoutCombo->addItem("Custom JSON…",  QString("custom"));
+                layoutRow->addWidget(layoutLbl);
+                layoutRow->addWidget(m_dashLayoutCombo, 1);
+                vlay->addLayout(layoutRow);
+
+                auto* customRowW = new QWidget(grp);
+                auto* customRowL = new QHBoxLayout(customRowW);
+                customRowL->setContentsMargins(54, 0, 0, 0);
+                m_dashLayoutPath = new QLineEdit(customRowW);
+                m_dashLayoutPath->setPlaceholderText("layout.json…");
+                auto* customBrowseBtn = new QPushButton("…", customRowW);
+                customBrowseBtn->setFixedWidth(28);
+                connect(customBrowseBtn, &QPushButton::clicked, [this]() {
+                    QString path = QFileDialog::getOpenFileName(
+                        this, "Layout JSON", m_dashLayoutPath->text(),
+                        "JSON (*.json);;All Files (*)");
+                    if (!path.isEmpty()) m_dashLayoutPath->setText(path);
+                });
+                customRowL->addWidget(m_dashLayoutPath, 1);
+                customRowL->addWidget(customBrowseBtn);
+                m_dashLayoutRow = customRowW;
+                m_dashLayoutRow->setVisible(false);
+                vlay->addWidget(m_dashLayoutRow);
+
+                connect(m_dashLayoutCombo, &QComboBox::currentIndexChanged,
+                        this, [this](int) {
+                    if (m_dashLayoutRow)
+                        m_dashLayoutRow->setVisible(
+                            m_dashLayoutCombo->currentData().toString() == "custom");
+                });
+            }
+
+            auto* infoLbl = new QLabel(
+                "Resolution: 960×540  (collage quadrant slot)", grp);
+            infoLbl->setStyleSheet("font-size: 8pt; color: gray;");
+            vlay->addWidget(infoLbl);
+
+            m_dashFileList = new QListWidget(grp);
+            m_dashFileList->setMaximumHeight(80);
+            m_dashFileList->setAlternatingRowColors(true);
+            connect(m_dashFileList, &QListWidget::itemDoubleClicked,
+                    [](QListWidgetItem* item) {
+                QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
+            });
+            vlay->addWidget(m_dashFileList);
+
+            m_dashGenerateBtn = new QPushButton("Generate Dashboard…", grp);
+            connect(m_dashGenerateBtn, &QPushButton::clicked,
+                    this, &TripPropertiesDialog::onGenerateDashboard);
+            vlay->addWidget(m_dashGenerateBtn);
+
+            outerLay->addWidget(grp);
+        }
+
+        // ── HUD Overlay ──────────────────────────────────────────────────────
+        {
+            auto* grp  = new QGroupBox("HUD Overlay", outer);
+            auto* vlay = new QVBoxLayout(grp);
+            vlay->setContentsMargins(10, 6, 10, 10);
+            vlay->setSpacing(6);
+
+            m_hudWarnLabel = new QLabel(
+                "GPS track not yet extracted — extract it first.", grp);
+            m_hudWarnLabel->setWordWrap(true);
+            m_hudWarnLabel->setStyleSheet("color: #cc6600;");
+            m_hudWarnLabel->setVisible(!hasGps);
+            vlay->addWidget(m_hudWarnLabel);
+
+            {
+                auto* row = new QHBoxLayout;
+                auto* lbl = new QLabel("Output:", grp); lbl->setFixedWidth(54);
+                m_hudOutputEdit = new QLineEdit(grp);
+                m_hudOutputEdit->setText(
+                    QString::fromStdString(m_sourcePath) + "/clops_trip_" + ftid + "_hud.webm");
+                auto* btn = new QPushButton("…", grp); btn->setFixedWidth(28);
+                connect(btn, &QPushButton::clicked, [this]() {
+                    QString path = QFileDialog::getSaveFileName(
+                        this, "HUD Output", m_hudOutputEdit->text(),
+                        "Video (*.webm);;All Files (*)");
+                    if (!path.isEmpty()) m_hudOutputEdit->setText(path);
+                });
+                row->addWidget(lbl); row->addWidget(m_hudOutputEdit); row->addWidget(btn);
+                vlay->addLayout(row);
+            }
+
+            {
+                auto* row = new QHBoxLayout;
+                row->addWidget(new QLabel("Render:", grp));
+                row->addWidget(new QLabel("W", grp));
+                m_hudWidth = new QSpinBox(grp);
+                m_hudWidth->setRange(640, 7680); m_hudWidth->setSingleStep(16);
+                m_hudWidth->setValue(3840);
+                row->addWidget(m_hudWidth);
+                row->addWidget(new QLabel("H", grp));
+                m_hudHeight = new QSpinBox(grp);
+                m_hudHeight->setRange(480, 4320); m_hudHeight->setSingleStep(16);
+                m_hudHeight->setValue(2160);
+                row->addWidget(m_hudHeight);
+                row->addWidget(new QLabel("px  (match collage resolution)", grp));
+                row->addStretch();
+                vlay->addLayout(row);
+            }
+
+            {
+                ConfigManager cfg_seed; cfg_seed.loadSettings();
+                auto* sg   = new QGroupBox("Style", grp);
+                auto* glay = new QFormLayout(sg);
+                glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
+                m_hudFontScale = new QDoubleSpinBox(sg);
+                m_hudFontScale->setRange(0.25, 4.0); m_hudFontScale->setSingleStep(0.25);
+                m_hudFontScale->setDecimals(2); m_hudFontScale->setSuffix("×");
+                m_hudFontScale->setValue(cfg_seed.getHudFontScale());
+                glay->addRow("Font scale:", m_hudFontScale);
+                m_hudLineScale = new QDoubleSpinBox(sg);
+                m_hudLineScale->setRange(0.25, 4.0); m_hudLineScale->setSingleStep(0.25);
+                m_hudLineScale->setDecimals(2); m_hudLineScale->setSuffix("×");
+                m_hudLineScale->setValue(cfg_seed.getHudLineScale());
+                glay->addRow("Line scale:", m_hudLineScale);
+                m_hudColorHex = new QLineEdit(sg);
+                m_hudColorHex->setMaxLength(7);
+                m_hudColorHex->setPlaceholderText("#00ff41");
+                m_hudColorHex->setText(QString::fromStdString(cfg_seed.getHudColor()));
+                glay->addRow("Color (hex):", m_hudColorHex);
+                vlay->addWidget(sg);
+            }
+
+            {
+                auto* sg   = new QGroupBox("Speed Tapes", grp);
+                auto* glay = new QVBoxLayout(sg);
+                glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
+                auto* globalRow = new QHBoxLayout;
+                globalRow->addWidget(new QLabel("Tape width:", sg));
+                m_hudTapeWidth = new QSpinBox(sg);
+                m_hudTapeWidth->setRange(0, 800); m_hudTapeWidth->setValue(0);
+                m_hudTapeWidth->setSpecialValueText("auto");
+                globalRow->addWidget(m_hudTapeWidth);
+                globalRow->addWidget(new QLabel("px", sg));
+                globalRow->addSpacing(16);
+                globalRow->addWidget(new QLabel("Visible range:", sg));
+                m_hudVisibleRange = new QSpinBox(sg);
+                m_hudVisibleRange->setRange(20, 200); m_hudVisibleRange->setSingleStep(10);
+                m_hudVisibleRange->setValue(100); m_hudVisibleRange->setSuffix(" units");
+                globalRow->addWidget(m_hudVisibleRange);
+                globalRow->addStretch();
+                glay->addLayout(globalRow);
+                auto addPosRow = [&](const QString& label, QSpinBox*& spX, QSpinBox*& spY,
+                                     int defX, int defY) {
+                    auto* row = new QHBoxLayout;
+                    row->addWidget(new QLabel(label, sg));
+                    row->addWidget(new QLabel("X:", sg));
+                    spX = new QSpinBox(sg); spX->setRange(-1, 7680); spX->setValue(defX);
+                    spX->setSpecialValueText("auto");
+                    row->addWidget(spX);
+                    row->addWidget(new QLabel("Y:", sg));
+                    spY = new QSpinBox(sg); spY->setRange(-1, 4320); spY->setValue(defY);
+                    spY->setSpecialValueText("auto");
+                    row->addWidget(spY);
+                    row->addWidget(new QLabel("px  (-1 = auto)", sg));
+                    row->addStretch();
+                    glay->addLayout(row);
+                };
+                addPosRow("Left tape (KPH):",  m_hudLsX, m_hudLsY, 0,  -1);
+                addPosRow("Right tape (MPH):", m_hudRsX, m_hudRsY, -1, -1);
+                vlay->addWidget(sg);
+            }
+
+            {
+                auto* sg   = new QGroupBox("Compass Rose", grp);
+                auto* glay = new QVBoxLayout(sg);
+                glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
+                auto* roseNote = new QLabel(
+                    "Auto = H\xc3\xb7" "8 (270 px at 4K). Rose is bottom-centered; "
+                    "Crop sets how much of the ring sits below the frame edge.", sg);
+                roseNote->setWordWrap(true);
+                roseNote->setStyleSheet("font-size: 8pt; color: gray;");
+                glay->addWidget(roseNote);
+                auto* rRow = new QHBoxLayout;
+                rRow->addWidget(new QLabel("Radius:", sg));
+                m_hudCompassRadius = new QSpinBox(sg);
+                m_hudCompassRadius->setRange(0, 1000); m_hudCompassRadius->setValue(0);
+                m_hudCompassRadius->setSpecialValueText("auto");
+                m_hudCompassRadius->setSingleStep(10);
+                connect(m_hudCompassRadius, QOverload<int>::of(&QSpinBox::valueChanged),
+                        sg, [this](int v) {
+                    if (v > 0 && v < 100) {
+                        QSignalBlocker sb(m_hudCompassRadius);
+                        m_hudCompassRadius->setValue(100);
+                    }
+                });
+                rRow->addWidget(m_hudCompassRadius);
+                rRow->addWidget(new QLabel("px", sg));
+                rRow->addStretch();
+                glay->addLayout(rRow);
+                auto* cropRow = new QHBoxLayout;
+                cropRow->addWidget(new QLabel("Crop:", sg));
+                m_hudCompassCrop = new QSpinBox(sg);
+                m_hudCompassCrop->setRange(0, 50); m_hudCompassCrop->setValue(20);
+                m_hudCompassCrop->setSingleStep(5); m_hudCompassCrop->setSuffix("%");
+                cropRow->addWidget(m_hudCompassCrop);
+                cropRow->addStretch();
+                glay->addLayout(cropRow);
+                auto* cRow = new QHBoxLayout;
+                cRow->addWidget(new QLabel("Center X:", sg));
+                m_hudCompassX = new QSpinBox(sg);
+                m_hudCompassX->setRange(-1, 7680); m_hudCompassX->setValue(-1);
+                m_hudCompassX->setSpecialValueText("auto");
+                cRow->addWidget(m_hudCompassX);
+                cRow->addWidget(new QLabel("Y:", sg));
+                m_hudCompassY = new QSpinBox(sg);
+                m_hudCompassY->setRange(-1, 4320); m_hudCompassY->setValue(-1);
+                m_hudCompassY->setSpecialValueText("auto");
+                cRow->addWidget(m_hudCompassY);
+                cRow->addWidget(new QLabel("px  (-1 = bottom-center)", sg));
+                cRow->addStretch();
+                glay->addLayout(cRow);
+                vlay->addWidget(sg);
+            }
+
+            auto* hudFileLbl = new QLabel(
+                "Generated HUD files (double-click to open):", grp);
+            hudFileLbl->setStyleSheet("font-size: 8pt; color: gray;");
+            vlay->addWidget(hudFileLbl);
+
+            m_hudFileList = new QListWidget(grp);
+            m_hudFileList->setMaximumHeight(80);
+            m_hudFileList->setAlternatingRowColors(true);
+            connect(m_hudFileList, &QListWidget::itemDoubleClicked,
+                    [](QListWidgetItem* item) {
+                QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
+            });
+            vlay->addWidget(m_hudFileList);
+
+            m_hudGenerateBtn = new QPushButton("Generate HUD…", grp);
+            connect(m_hudGenerateBtn, &QPushButton::clicked,
+                    this, &TripPropertiesDialog::onGenerateHud);
+            vlay->addWidget(m_hudGenerateBtn);
+
+            outerLay->addWidget(grp);
+        }
+
+        // ── Queue All Pending ─────────────────────────────────────────────────
+        m_buildAllBtn = new QPushButton("Queue All Pending…", outer);
         connect(m_buildAllBtn, &QPushButton::clicked,
                 this, &TripPropertiesDialog::onBuildAll);
-        buildVlay->addWidget(m_buildAllBtn);
-        vlay->addWidget(buildGrp);
+        outerLay->addWidget(m_buildAllBtn);
+        outerLay->addStretch();
 
-        vlay->addStretch();
-
-        m_botTabBar->addTab(makeStatusIcon(hasGps), "GPS");
-        m_tabStack->addWidget(w);
-    }
-
-    // -----------------------------------------------------------------------
-    // Map tab  (bottom bar)
-    // -----------------------------------------------------------------------
-    {
-        auto* w    = new QWidget;
-        auto* vlay = new QVBoxLayout(w);
-        vlay->setContentsMargins(12, 12, 12, 12);
-        vlay->setSpacing(8);
-
-        m_mapWarnLabel = new QLabel(
-            "GPS track not yet extracted for this trip.\n"
-            "Use the GPS tab to extract the track first.", w);
-        m_mapWarnLabel->setWordWrap(true);
-        m_mapWarnLabel->setStyleSheet("color: #cc6600;");
-        m_mapWarnLabel->setVisible(!hasGps);
-        vlay->addWidget(m_mapWarnLabel);
-
-        auto* outRow  = new QHBoxLayout;
-        auto* outLbl  = new QLabel("Output:", w);
-        outLbl->setFixedWidth(54);
-        m_mapOutputEdit = new QLineEdit(w);
-        QString sourceDir = QString::fromStdString(m_sourcePath);
-        m_mapOutputEdit->setText(
-            sourceDir + "/pm_trip_" +
-            QString::fromStdString(trip.id) + "_map.mp4");
-        auto* mapBrowseBtn = new QPushButton("\u2026", w);
-        mapBrowseBtn->setFixedWidth(28);
-        connect(mapBrowseBtn, &QPushButton::clicked, [this]() {
-            QString path = QFileDialog::getSaveFileName(
-                this, "Map Output", m_mapOutputEdit->text(),
-                "Video (*.mp4)");
-            if (!path.isEmpty())
-                m_mapOutputEdit->setText(path);
-        });
-        outRow->addWidget(outLbl);
-        outRow->addWidget(m_mapOutputEdit);
-        outRow->addWidget(mapBrowseBtn);
-        vlay->addLayout(outRow);
-
-        auto* resLbl = new QLabel(
-            QString("Resolution: %1\u00d7%2  (trip video profile)")
-                .arg(trip.videoProfile.width)
-                .arg(trip.videoProfile.height), w);
-        resLbl->setStyleSheet("font-size: 8pt; color: gray;");
-        vlay->addWidget(resLbl);
-
-        auto* mp4Label = new QLabel("Generated map files (double-click to open):", w);
-        mp4Label->setStyleSheet("font-size: 8pt; color: gray;");
-        vlay->addWidget(mp4Label);
-
-        m_mapFileList = new QListWidget(w);
-        m_mapFileList->setMaximumHeight(100);
-        m_mapFileList->setAlternatingRowColors(true);
-        connect(m_mapFileList, &QListWidget::itemDoubleClicked,
-                [](QListWidgetItem* item) {
-            QDesktopServices::openUrl(
-                QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
-        });
-        vlay->addWidget(m_mapFileList);
-
-        vlay->addStretch();
-
-        m_mapGenerateBtn = new QPushButton("Generate Map\u2026", w);
-        m_mapGenerateBtn->setEnabled(hasGps);
-        connect(m_mapGenerateBtn, &QPushButton::clicked,
-                this, &TripPropertiesDialog::onGenerateMap);
-        vlay->addWidget(m_mapGenerateBtn);
-
-        m_botTabBar->addTab(makeStatusIcon(!m_trip.mapVideos.empty()), "Map");
-        m_tabStack->addWidget(w);
-    }
-
-    // -----------------------------------------------------------------------
-    // Dashboard tab  (bottom bar)
-    // -----------------------------------------------------------------------
-    {
-        auto* w    = new QWidget;
-        auto* vlay = new QVBoxLayout(w);
-        vlay->setContentsMargins(12, 12, 12, 12);
-        vlay->setSpacing(8);
-
-        m_dashWarnLabel = new QLabel(
-            "GPS track not yet extracted for this trip.\n"
-            "Use the GPS tab to extract the track first.", w);
-        m_dashWarnLabel->setWordWrap(true);
-        m_dashWarnLabel->setStyleSheet("color: #cc6600;");
-        m_dashWarnLabel->setVisible(!hasGps);
-        vlay->addWidget(m_dashWarnLabel);
-
-        auto* outRow    = new QHBoxLayout;
-        auto* outLbl    = new QLabel("Output:", w);
-        outLbl->setFixedWidth(54);
-        m_dashOutputEdit = new QLineEdit(w);
-        QString sourceDir = QString::fromStdString(m_sourcePath);
-        m_dashOutputEdit->setText(
-            sourceDir + "/pm_trip_" +
-            QString::fromStdString(trip.id) + "_dash.mp4");
-        auto* dashBrowseBtn = new QPushButton("\u2026", w);
-        dashBrowseBtn->setFixedWidth(28);
-        connect(dashBrowseBtn, &QPushButton::clicked, [this]() {
-            bool transp = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
-            QString filter = transp ? "Video (*.webm)" : "Video (*.mp4)";
-            QString path = QFileDialog::getSaveFileName(
-                this, "Dashboard Output", m_dashOutputEdit->text(),
-                filter + ";;All Files (*)");
-            if (!path.isEmpty())
-                m_dashOutputEdit->setText(path);
-        });
-        outRow->addWidget(outLbl);
-        outRow->addWidget(m_dashOutputEdit);
-        outRow->addWidget(dashBrowseBtn);
-        vlay->addLayout(outRow);
-
-        m_dashTransparentCheck = new QCheckBox("Transparent background  (WebM/VP9, for overlay use)", w);
-        connect(m_dashTransparentCheck, &QCheckBox::toggled, this, [this](bool checked) {
-            if (!m_dashOutputEdit) return;
-            QString path = m_dashOutputEdit->text();
-            if (checked && path.endsWith(".mp4", Qt::CaseInsensitive))
-                m_dashOutputEdit->setText(path.chopped(4) + ".webm");
-            else if (!checked && path.endsWith(".webm", Qt::CaseInsensitive))
-                m_dashOutputEdit->setText(path.chopped(5) + ".mp4");
-        });
-        vlay->addWidget(m_dashTransparentCheck);
-
-        // Layout picker
-        {
-            auto* layoutRow = new QHBoxLayout;
-            auto* layoutLbl = new QLabel("Layout:", w); layoutLbl->setFixedWidth(54);
-            m_dashLayoutCombo = new QComboBox(w);
-            m_dashLayoutCombo->addItem("Standard (3-panel)", QString("standard"));
-            m_dashLayoutCombo->addItem("Quadrant HUD",       QString("quadrant-hud"));
-            m_dashLayoutCombo->addItem("Custom JSON\u2026", QString("custom"));
-            layoutRow->addWidget(layoutLbl);
-            layoutRow->addWidget(m_dashLayoutCombo, 1);
-            vlay->addLayout(layoutRow);
-
-            // File-browse row — shown only when Custom JSON is selected
-            auto* customRowW = new QWidget(w);
-            auto* customRowL = new QHBoxLayout(customRowW);
-            customRowL->setContentsMargins(54, 0, 0, 0);
-            m_dashLayoutPath = new QLineEdit(customRowW);
-            m_dashLayoutPath->setPlaceholderText("layout.json\u2026");
-            auto* customBrowseBtn = new QPushButton("\u2026", customRowW);
-            customBrowseBtn->setFixedWidth(28);
-            connect(customBrowseBtn, &QPushButton::clicked, [this]() {
-                QString path = QFileDialog::getOpenFileName(
-                    this, "Layout JSON", m_dashLayoutPath->text(),
-                    "JSON (*.json);;All Files (*)");
-                if (!path.isEmpty()) m_dashLayoutPath->setText(path);
-            });
-            customRowL->addWidget(m_dashLayoutPath, 1);
-            customRowL->addWidget(customBrowseBtn);
-            m_dashLayoutRow = customRowW;
-            m_dashLayoutRow->setVisible(false);
-            vlay->addWidget(m_dashLayoutRow);
-
-            connect(m_dashLayoutCombo, &QComboBox::currentIndexChanged, this, [this](int) {
-                if (m_dashLayoutRow)
-                    m_dashLayoutRow->setVisible(
-                        m_dashLayoutCombo->currentData().toString() == "custom");
-            });
-        }
-
-        auto* infoLbl = new QLabel(
-            "Resolution: 960\u00d7540  (collage quadrant slot)", w);
-        infoLbl->setStyleSheet("font-size: 8pt; color: gray;");
-        vlay->addWidget(infoLbl);
-
-        auto* mp4Label = new QLabel("Generated dashboard files (double-click to open):", w);
-        mp4Label->setStyleSheet("font-size: 8pt; color: gray;");
-        vlay->addWidget(mp4Label);
-
-        m_dashFileList = new QListWidget(w);
-        m_dashFileList->setMaximumHeight(100);
-        m_dashFileList->setAlternatingRowColors(true);
-        connect(m_dashFileList, &QListWidget::itemDoubleClicked,
-                [](QListWidgetItem* item) {
-            QDesktopServices::openUrl(
-                QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
-        });
-        vlay->addWidget(m_dashFileList);
-
-        vlay->addStretch();
-
-        m_dashGenerateBtn = new QPushButton("Generate Dashboard\u2026", w);
-        connect(m_dashGenerateBtn, &QPushButton::clicked,
-                this, &TripPropertiesDialog::onGenerateDashboard);
-        vlay->addWidget(m_dashGenerateBtn);
-
-        m_botTabBar->addTab(makeStatusIcon(!m_trip.dashVideos.empty()), "Dashboard");
-        m_tabStack->addWidget(w);
-    }
-
-    // -----------------------------------------------------------------------
-    // HUD tab  (bottom bar)
-    // -----------------------------------------------------------------------
-    {
-        auto* w    = new QWidget;
-        auto* vlay = new QVBoxLayout(w);
-        vlay->setContentsMargins(12, 12, 12, 12);
-        vlay->setSpacing(8);
-
-        m_hudWarnLabel = new QLabel(
-            "GPS track not yet extracted for this trip.\n"
-            "Use the GPS tab to extract the track first.", w);
-        m_hudWarnLabel->setWordWrap(true);
-        m_hudWarnLabel->setStyleSheet("color: #cc6600;");
-        m_hudWarnLabel->setVisible(!hasGps);
-        vlay->addWidget(m_hudWarnLabel);
-
-        // Output path
-        {
-            auto* row = new QHBoxLayout;
-            auto* lbl = new QLabel("Output:", w); lbl->setFixedWidth(54);
-            m_hudOutputEdit = new QLineEdit(w);
-            m_hudOutputEdit->setText(
-                QString::fromStdString(m_sourcePath) + "/pm_trip_" +
-                QString::fromStdString(trip.id) + "_hud.webm");
-            auto* btn = new QPushButton("…", w); btn->setFixedWidth(28);
-            connect(btn, &QPushButton::clicked, [this]() {
-                QString path = QFileDialog::getSaveFileName(
-                    this, "HUD Output", m_hudOutputEdit->text(),
-                    "Video (*.webm);;All Files (*)");
-                if (!path.isEmpty()) m_hudOutputEdit->setText(path);
-            });
-            row->addWidget(lbl); row->addWidget(m_hudOutputEdit); row->addWidget(btn);
-            vlay->addLayout(row);
-        }
-
-        // Render resolution
-        {
-            auto* row = new QHBoxLayout;
-            row->addWidget(new QLabel("Render:", w));
-            row->addWidget(new QLabel("W", w));
-            m_hudWidth = new QSpinBox(w);
-            m_hudWidth->setRange(640, 7680); m_hudWidth->setSingleStep(16); m_hudWidth->setValue(3840);
-            row->addWidget(m_hudWidth);
-            row->addWidget(new QLabel("H", w));
-            m_hudHeight = new QSpinBox(w);
-            m_hudHeight->setRange(480, 4320); m_hudHeight->setSingleStep(16); m_hudHeight->setValue(2160);
-            row->addWidget(m_hudHeight);
-            row->addWidget(new QLabel("px  (match collage resolution)", w));
-            row->addStretch();
-            vlay->addLayout(row);
-        }
-
-        // ── Style ───────────────────────────────────────────────────────────
-        {
-            ConfigManager cfg_seed; cfg_seed.loadSettings();
-            auto* grp  = new QGroupBox("Style", w);
-            auto* glay = new QFormLayout(grp);
-            glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
-
-            m_hudFontScale = new QDoubleSpinBox(grp);
-            m_hudFontScale->setRange(0.25, 4.0); m_hudFontScale->setSingleStep(0.25);
-            m_hudFontScale->setDecimals(2); m_hudFontScale->setSuffix("×");
-            m_hudFontScale->setValue(cfg_seed.getHudFontScale());
-            glay->addRow("Font scale:", m_hudFontScale);
-
-            m_hudLineScale = new QDoubleSpinBox(grp);
-            m_hudLineScale->setRange(0.25, 4.0); m_hudLineScale->setSingleStep(0.25);
-            m_hudLineScale->setDecimals(2); m_hudLineScale->setSuffix("×");
-            m_hudLineScale->setValue(cfg_seed.getHudLineScale());
-            glay->addRow("Line scale:", m_hudLineScale);
-
-            m_hudColorHex = new QLineEdit(grp);
-            m_hudColorHex->setMaxLength(7);
-            m_hudColorHex->setPlaceholderText("#00ff41");
-            m_hudColorHex->setText(QString::fromStdString(cfg_seed.getHudColor()));
-            glay->addRow("Color (hex):", m_hudColorHex);
-
-            vlay->addWidget(grp);
-        }
-
-        // ── Speed Tapes ─────────────────────────────────────────────────────
-        {
-            auto* grp  = new QGroupBox("Speed Tapes", w);
-            auto* glay = new QVBoxLayout(grp);
-            glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
-
-            // Global tape settings
-            auto* globalRow = new QHBoxLayout;
-            globalRow->addWidget(new QLabel("Tape width:", grp));
-            m_hudTapeWidth = new QSpinBox(grp);
-            m_hudTapeWidth->setRange(0, 800); m_hudTapeWidth->setValue(0);
-            m_hudTapeWidth->setSpecialValueText("auto");
-            globalRow->addWidget(m_hudTapeWidth);
-            globalRow->addWidget(new QLabel("px", grp));
-            globalRow->addSpacing(16);
-            globalRow->addWidget(new QLabel("Visible range:", grp));
-            m_hudVisibleRange = new QSpinBox(grp);
-            m_hudVisibleRange->setRange(20, 200); m_hudVisibleRange->setSingleStep(10);
-            m_hudVisibleRange->setValue(100); m_hudVisibleRange->setSuffix(" units");
-            globalRow->addWidget(m_hudVisibleRange);
-            globalRow->addStretch();
-            glay->addLayout(globalRow);
-
-            auto addPosRow = [&](const QString& label, QSpinBox*& spX, QSpinBox*& spY, int defX, int defY) {
-                auto* row = new QHBoxLayout;
-                row->addWidget(new QLabel(label, grp));
-                row->addWidget(new QLabel("X:", grp));
-                spX = new QSpinBox(grp); spX->setRange(-1, 7680); spX->setValue(defX);
-                spX->setSpecialValueText("auto");
-                row->addWidget(spX);
-                row->addWidget(new QLabel("Y:", grp));
-                spY = new QSpinBox(grp); spY->setRange(-1, 4320); spY->setValue(defY);
-                spY->setSpecialValueText("auto");
-                row->addWidget(spY);
-                row->addWidget(new QLabel("px  (-1 = auto)", grp));
-                row->addStretch();
-                glay->addLayout(row);
-            };
-
-            addPosRow("Left tape (KPH) position:", m_hudLsX, m_hudLsY, 0, -1);
-            addPosRow("Right tape (MPH) position:", m_hudRsX, m_hudRsY, -1, -1);
-            vlay->addWidget(grp);
-        }
-
-        // ── Compass Rose ────────────────────────────────────────────────────
-        {
-            auto* grp  = new QGroupBox("Compass Rose", w);
-            auto* glay = new QVBoxLayout(grp);
-            glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
-
-            auto* roseNote = new QLabel(
-                "Auto = H\xc3\xb7" "8 (270 px at 4K). Rose is bottom-centered; "
-                "Crop sets how much of the ring sits below the frame edge.", grp);
-            roseNote->setWordWrap(true);
-            roseNote->setStyleSheet("font-size: 8pt; color: gray;");
-            glay->addWidget(roseNote);
-
-            auto* rRow = new QHBoxLayout;
-            rRow->addWidget(new QLabel("Radius:", grp));
-            m_hudCompassRadius = new QSpinBox(grp);
-            m_hudCompassRadius->setRange(0, 1000); m_hudCompassRadius->setValue(0);
-            m_hudCompassRadius->setSpecialValueText("auto");
-            m_hudCompassRadius->setSingleStep(10);
-            connect(m_hudCompassRadius, QOverload<int>::of(&QSpinBox::valueChanged),
-                    grp, [this](int v) {
-                if (v > 0 && v < 100) {
-                    QSignalBlocker sb(m_hudCompassRadius);
-                    m_hudCompassRadius->setValue(100);
-                }
-            });
-            rRow->addWidget(m_hudCompassRadius);
-            rRow->addWidget(new QLabel("px", grp));
-            rRow->addStretch();
-            glay->addLayout(rRow);
-
-            auto* cropRow = new QHBoxLayout;
-            cropRow->addWidget(new QLabel("Crop:", grp));
-            m_hudCompassCrop = new QSpinBox(grp);
-            m_hudCompassCrop->setRange(0, 50); m_hudCompassCrop->setValue(20);
-            m_hudCompassCrop->setSingleStep(5); m_hudCompassCrop->setSuffix("%");
-            cropRow->addWidget(m_hudCompassCrop);
-            cropRow->addStretch();
-            glay->addLayout(cropRow);
-
-            auto* cRow = new QHBoxLayout;
-            cRow->addWidget(new QLabel("Center X:", grp));
-            m_hudCompassX = new QSpinBox(grp);
-            m_hudCompassX->setRange(-1, 7680); m_hudCompassX->setValue(-1);
-            m_hudCompassX->setSpecialValueText("auto");
-            cRow->addWidget(m_hudCompassX);
-            cRow->addWidget(new QLabel("Y:", grp));
-            m_hudCompassY = new QSpinBox(grp);
-            m_hudCompassY->setRange(-1, 4320); m_hudCompassY->setValue(-1);
-            m_hudCompassY->setSpecialValueText("auto");
-            cRow->addWidget(m_hudCompassY);
-            cRow->addWidget(new QLabel("px  (-1 = bottom-center)", grp));
-            cRow->addStretch();
-            glay->addLayout(cRow);
-
-            vlay->addWidget(grp);
-        }
-
-        auto* hudFileLbl = new QLabel("Generated HUD files (double-click to open):", w);
-        hudFileLbl->setStyleSheet("font-size: 8pt; color: gray;");
-        vlay->addWidget(hudFileLbl);
-
-        m_hudFileList = new QListWidget(w);
-        m_hudFileList->setMaximumHeight(80);
-        m_hudFileList->setAlternatingRowColors(true);
-        connect(m_hudFileList, &QListWidget::itemDoubleClicked,
-                [](QListWidgetItem* item) {
-            QDesktopServices::openUrl(
-                QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
-        });
-        vlay->addWidget(m_hudFileList);
-
-        vlay->addStretch();
-
-        m_hudGenerateBtn = new QPushButton("Generate HUD…", w);
-        connect(m_hudGenerateBtn, &QPushButton::clicked,
-                this, &TripPropertiesDialog::onGenerateHud);
-        vlay->addWidget(m_hudGenerateBtn);
-
-        m_botTabBar->addTab(makeStatusIcon(!m_trip.hudVideos.empty()), "HUD");
-        m_tabStack->addWidget(w);
+        scroll->setWidget(outer);
+        m_topTabBar->addTab("Outputs");
+        m_tabStack->addWidget(scroll);
     }
 
     // Populate video lists from manifest data.
@@ -907,41 +757,12 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
     populateVideoList(m_dashFileList, m_trip.dashVideos);
     populateVideoList(m_hudFileList,  m_trip.hudVideos);
 
-    // -----------------------------------------------------------------------
-    // Wire tab bars → stack; mutual deactivation via stylesheet
-    // -----------------------------------------------------------------------
-    connect(m_topTabBar, &QTabBar::tabBarClicked, this, [this](int idx) {
-        if (idx < 0) return;
-        static const char* kInactive =
-            "QTabBar::tab:selected { color: #888888; }";
-        m_tabStack->setCurrentIndex(idx);
-        m_topTabBar->setStyleSheet("");
-        m_botTabBar->setStyleSheet(kInactive);
-    });
-    connect(m_botTabBar, &QTabBar::tabBarClicked, this, [this](int idx) {
-        if (idx < 0) return;
-        static const char* kInactive =
-            "QTabBar::tab:selected { color: #888888; }";
-        m_tabStack->setCurrentIndex(m_topCount + idx);
-        m_topTabBar->setStyleSheet(kInactive);
-        m_botTabBar->setStyleSheet("");
-    });
+    // Single tab bar — direct index mapping to stacked widget.
+    connect(m_topTabBar, &QTabBar::currentChanged,
+            m_tabStack, &QStackedWidget::setCurrentIndex);
+    m_topTabBar->setCurrentIndex(0);
 
-    // Initial state: General (top bar) is active.
-    m_botTabBar->setStyleSheet(kInactiveBarStyle);
-
-    // -----------------------------------------------------------------------
-    // Assemble layout
-    // -----------------------------------------------------------------------
-    auto* tabBarsWidget = new QWidget(this);
-    tabBarsWidget->setContentsMargins(0, 0, 0, 0);
-    auto* tabBarsLayout = new QVBoxLayout(tabBarsWidget);
-    tabBarsLayout->setContentsMargins(0, 0, 0, 0);
-    tabBarsLayout->setSpacing(0);
-    tabBarsLayout->addWidget(m_topTabBar);
-    tabBarsLayout->addWidget(m_botTabBar);
-
-    vbox->addWidget(tabBarsWidget);
+    vbox->addWidget(m_topTabBar);
     vbox->addWidget(m_tabStack, 1);
 
     m_buttonBox = new QDialogButtonBox(
@@ -950,6 +771,7 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     vbox->addWidget(m_buttonBox);
 }
+
 
 // ---------------------------------------------------------------------------
 // Accessors
@@ -960,32 +782,13 @@ std::string TripPropertiesDialog::updatedNote() const
 }
 
 // ---------------------------------------------------------------------------
-// Close / reject guards — block while GPS extraction thread is running.
-// Destroying a running QThread is UB; we must wait until it stops.
+// Close / reject — GPS extraction runs in the job queue; dialog closes freely.
 // ---------------------------------------------------------------------------
-void TripPropertiesDialog::reject()
-{
-    if (m_extractThread && m_extractThread->isRunning()) {
-        QMessageBox::information(this, "Extraction In Progress",
-            "GPS extraction is running. Please wait for it to finish.");
-        return;
-    }
-    QDialog::reject();
-}
-
-void TripPropertiesDialog::closeEvent(QCloseEvent* event)
-{
-    if (m_extractThread && m_extractThread->isRunning()) {
-        QMessageBox::information(this, "Extraction In Progress",
-            "GPS extraction is running. Please wait for it to finish.");
-        event->ignore();
-        return;
-    }
-    QDialog::closeEvent(event);
-}
+void TripPropertiesDialog::reject()   { QDialog::reject(); }
+void TripPropertiesDialog::closeEvent(QCloseEvent* event) { QDialog::closeEvent(event); }
 
 // ---------------------------------------------------------------------------
-// GPS — extract
+// GPS — extract (submit to job queue)
 // ---------------------------------------------------------------------------
 void TripPropertiesDialog::onExtractGps()
 {
@@ -993,109 +796,40 @@ void TripPropertiesDialog::onExtractGps()
     config.loadSettings();
     std::string manifestFile = config.lookupManifestFilePath(m_sourcePath);
     if (manifestFile.empty()) {
-        m_extractMsgLabel->setText(
+        if (m_extractMsgLabel) m_extractMsgLabel->setText(
             "Error: manifest file not found. Try rescanning this source directory.");
         return;
     }
 
     m_extractGpsBtn->setEnabled(false);
-    m_exportGpsBtn->setEnabled(false);
-    m_extractBar->setRange(0, 0);   // indeterminate until first callback
-    m_extractBar->setValue(0);
-    m_extractBar->show();
-    m_extractMsgLabel->setText("Running exiftool on segments\u2026");
+    if (m_extractMsgLabel) m_extractMsgLabel->setText("Queued for extraction...");
 
-    auto* worker = new GpsExtractWorker(
-        m_trip.id, manifestFile,
-        config.getExiftoolPath());
-    auto* thread = new QThread(this);
-    worker->moveToThread(thread);
-
-    connect(thread, &QThread::started,    worker, &GpsExtractWorker::start);
-    connect(worker, &GpsExtractWorker::progress,
-            this,   &TripPropertiesDialog::onExtractGpsProgress);
-    connect(worker, &GpsExtractWorker::finished,
-            this,   &TripPropertiesDialog::onExtractGpsFinished);
-    connect(worker, &GpsExtractWorker::finished, thread, &QThread::quit);
-    connect(thread, &QThread::finished,   worker, &QObject::deleteLater);
-    connect(thread, &QThread::finished,   this,   [this]{ m_extractThread = nullptr; });
-
-    m_extractThread = thread;
-    m_buttonBox->setEnabled(false);
-    thread->start();
-}
-
-void TripPropertiesDialog::onExtractGpsProgress(int done, int total)
-{
-    if (m_extractBar->maximum() == 0)
-        m_extractBar->setRange(0, total);   // switch from indeterminate on first callback
-    m_extractBar->setValue(done);
-    m_extractMsgLabel->setText(
-        QString("Segment %1 of %2").arg(done).arg(total));
-}
-
-void TripPropertiesDialog::onExtractGpsFinished(bool ok, const QString& error)
-{
-    m_buttonBox->setEnabled(true);
-    m_extractBar->hide();
-    m_extractGpsBtn->setEnabled(true);
-
-    if (ok) {
-        m_trip.gpsTrackStatus = "complete";
-        m_gpsStatusLabel->setText("Status: complete");
-        m_gpsStatusLabel->setStyleSheet("color: green; font-weight: bold;");
-        m_exportGpsBtn->setEnabled(true);
-        m_mapGenerateBtn->setEnabled(true);
-        if (m_mapWarnLabel)  m_mapWarnLabel->hide();
-        if (m_dashWarnLabel) m_dashWarnLabel->hide();
-        if (m_hudWarnLabel)  m_hudWarnLabel->hide();
-        if (m_botTabBar)     m_botTabBar->setTabIcon(kBotTabGps, makeStatusIcon(true));
-
-        // GPS clapperboard: measure inter-camera recording start offsets from the
-        // first segment.  Only succeeds on cold-start trips where GPS locks during
-        // recording.  Persists offsets into the manifest's embedded camera_profile
-        // so the collage build picks them up immediately without a rescan.
-        QString offsetMsg = "Extraction complete.";
-        if (!m_trip.segments.empty()) {
-            std::map<std::string, std::string> firstCamPaths;
-            for (const auto& [slot, path] : m_trip.segments[0].cameras)
-                if (!path.empty() && path != "-") firstCamPaths[slot] = path;
-
-            ConfigManager cfg;
-            cfg.loadSettings();
-            CameraProfile profile = cfg.getManifestProfile(m_sourcePath);
-
-            bool measured = Pathmux::measureCameraOffsets(
-                firstCamPaths, m_trip.startEpoch, cfg.getExiftoolPath(), profile);
-
-            if (measured) {
-                // Write offsets into the manifest's embedded camera_profile so
-                // getManifestProfile() returns them for the next collage build.
-                std::string mf = cfg.lookupManifestFilePath(m_sourcePath);
-                if (!mf.empty()) {
-                    try {
-                        json root;
-                        { std::ifstream ifs(mf); ifs >> root; }
-                        if (root.contains("camera_profile")
-                                && root["camera_profile"].is_object()) {
-                            json offs = json::object();
-                            for (const auto& [k, v] : profile.cameraStartOffsets)
-                                offs[k] = v;
-                            root["camera_profile"]["camera_start_offsets"] = offs;
-                            std::ofstream ofs(mf);
-                            ofs << root.dump(2) << "\n";
-                        }
-                    } catch (...) {}
-                }
-                offsetMsg = "Extraction complete — camera offsets measured.";
+    auto* job = new GpsExtractJob(m_mid, m_trip.id, manifestFile, config.getExiftoolPath());
+    connect(job, &Job::statusChanged, this, [this](const QString& msg) {
+        if (m_extractMsgLabel) m_extractMsgLabel->setText(msg);
+    });
+    connect(job, &Job::finished, this, [this](bool ok) {
+        m_extractGpsBtn->setEnabled(true);
+        if (ok) {
+            m_trip.gpsTrackStatus = "complete";
+            if (m_gpsStatusLabel) {
+                m_gpsStatusLabel->setText("Status: complete");
+                m_gpsStatusLabel->setStyleSheet("color: green; font-weight: bold;");
             }
+            if (m_exportGpsBtn)   m_exportGpsBtn->setEnabled(true);
+            if (m_mapGenerateBtn) m_mapGenerateBtn->setEnabled(true);
+            if (m_mapWarnLabel)   m_mapWarnLabel->hide();
+            if (m_dashWarnLabel)  m_dashWarnLabel->hide();
+            if (m_hudWarnLabel)   m_hudWarnLabel->hide();
+            if (m_extractMsgLabel) m_extractMsgLabel->setText("Extraction complete.");
+            emit gpsExtracted();
+            onRunSyncAnalysis();
+        } else {
+            if (m_extractMsgLabel)
+                m_extractMsgLabel->setStyleSheet("font-size: 8pt; color: red;");
         }
-        m_extractMsgLabel->setText(offsetMsg);
-        emit gpsExtracted();
-    } else {
-        m_extractMsgLabel->setText(error.isEmpty() ? "Extraction failed." : error);
-        m_extractMsgLabel->setStyleSheet("font-size: 8pt; color: red;");
-    }
+    });
+    JobQueue::instance().enqueue(job);
 }
 
 // ---------------------------------------------------------------------------
@@ -1170,9 +904,9 @@ void TripPropertiesDialog::onExportGps()
 
     int fmt = m_exportFormatCombo->currentIndex();
     std::string result;
-    if      (fmt == 0) result = Pathmux::writeGpx    (root, tripIdx, outPath);
-    else if (fmt == 1) result = Pathmux::writeKml    (root, tripIdx, outPath);
-    else               result = Pathmux::writeGeoJson(root, tripIdx, outPath);
+    if      (fmt == 0) result = CamClops::writeGpx    (root, tripIdx, outPath);
+    else if (fmt == 1) result = CamClops::writeKml    (root, tripIdx, outPath);
+    else               result = CamClops::writeGeoJson(root, tripIdx, outPath);
 
     if (result.empty()) {
         m_exportGpsBtn->setText("Export \u2717");
@@ -1192,130 +926,135 @@ void TripPropertiesDialog::onBuildAll()
     config.loadSettings();
     std::string manifestFile = config.lookupManifestFilePath(m_sourcePath);
     if (manifestFile.empty()) return;
-    QString mf = QString::fromStdString(manifestFile);
+    QString mf       = QString::fromStdString(manifestFile);
+    QString tripQId  = QString::fromStdString(m_trip.id);
+    QString tripAddr = m_mid.empty() ? tripQId
+                                     : QString::fromStdString(m_mid + ":" + m_trip.id);
 
-    QList<BuildAllStage> stages;
-
-    // --- GPS Extract (always first — ensures track reflects current segments) ---
+    // GPS Extract — always first; renders depend on the track it produces.
     {
-        BuildAllStage s;
-        s.type         = BuildAllStage::Type::GpsExtract;
-        s.name         = "Extract GPS";
-        s.exiftoolPath = QString::fromStdString(config.getExiftoolPath());
-        s.manifestKey  = "gpsExtract";
-        stages.append(s);
+        auto* job = new GpsExtractJob(m_mid, m_trip.id, manifestFile, config.getExiftoolPath());
+        connect(job, &Job::statusChanged, this, [this](const QString& msg) {
+            if (m_extractMsgLabel) m_extractMsgLabel->setText(msg);
+        });
+        connect(job, &Job::finished, this, [this](bool ok) {
+            if (!ok) return;
+            m_trip.gpsTrackStatus = "complete";
+            if (m_gpsStatusLabel) {
+                m_gpsStatusLabel->setText("Status: complete");
+                m_gpsStatusLabel->setStyleSheet("color: green; font-weight: bold;");
+            }
+            if (m_exportGpsBtn)    m_exportGpsBtn->setEnabled(true);
+            if (m_mapGenerateBtn)  m_mapGenerateBtn->setEnabled(true);
+            if (m_mapWarnLabel)    m_mapWarnLabel->hide();
+            if (m_dashWarnLabel)   m_dashWarnLabel->hide();
+            if (m_hudWarnLabel)    m_hudWarnLabel->hide();
+            if (m_extractMsgLabel) m_extractMsgLabel->setText("Extraction complete.");
+            emit gpsExtracted();
+            onRunSyncAnalysis();
+        });
+        JobQueue::instance().enqueue(job);
     }
 
-    // --- Map ---
+    // Map
     {
-        BuildAllStage s;
-        s.name        = "Map Video";
-        s.scriptName  = "pm_maprender.py";
-        s.outputPath  = m_mapOutputEdit ? m_mapOutputEdit->text().trimmed()
-                                        : QString::fromStdString(m_sourcePath)
-                          + "/pm_trip_" + QString::fromStdString(m_trip.id) + "_map.mp4";
-        s.width       = m_trip.videoProfile.width;
-        s.height      = m_trip.videoProfile.height;
-        s.manifestKey = "mapVideos";
-        stages.append(s);
-    }
-
-    // --- Dashboard ---
-    {
-        BuildAllStage s;
-        s.name        = "Dashboard Video";
-        s.scriptName  = "pm_dashboard.py";
-        s.outputPath  = m_dashOutputEdit ? m_dashOutputEdit->text().trimmed()
+        QString output = m_mapOutputEdit ? m_mapOutputEdit->text().trimmed()
                                          : QString::fromStdString(m_sourcePath)
-                           + "/pm_trip_" + QString::fromStdString(m_trip.id) + "_dash.mp4";
-        s.width       = 960;
-        s.height      = 540;
-        s.manifestKey = "dashVideos";
+                             + "/clops_trip_" + tripQId + "_map.mp4";
+        QStringList extraArgs;
+        {
+            QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
+            if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
+        }
+        auto* job = new MapRenderJob(
+            "Map — " + tripAddr, "clops_maprender.py",
+            mf, tripQId, output,
+            m_trip.videoProfile.width, m_trip.videoProfile.height,
+            extraArgs);
+        connect(job, &Job::finished, this, [this, output](bool ok) {
+            if (ok) appendVideoToManifest(output, "mapVideos", m_trip.mapVideos);
+        });
+        JobQueue::instance().enqueue(job);
+    }
+
+    // Dashboard
+    {
+        QString output = m_dashOutputEdit ? m_dashOutputEdit->text().trimmed()
+                                          : QString::fromStdString(m_sourcePath)
+                              + "/clops_trip_" + tripQId + "_dash.mp4";
         QString units = config.getUseImperial() ? "imperial" : "metric";
-        s.extraArgs << "--units" << units;
         bool transparent = m_dashTransparentCheck && m_dashTransparentCheck->isChecked();
-        if (transparent) s.extraArgs << "--transparent";
+        QStringList extraArgs{"--units", units};
+        if (transparent) extraArgs << "--transparent";
         if (m_dashLayoutCombo) {
             QString lv = m_dashLayoutCombo->currentData().toString();
             if (lv == "custom") {
                 QString lp = m_dashLayoutPath ? m_dashLayoutPath->text().trimmed() : "";
-                if (!lp.isEmpty()) s.extraArgs << "--layout" << lp;
+                if (!lp.isEmpty()) extraArgs << "--layout" << lp;
             } else if (lv != "standard") {
-                s.extraArgs << "--layout" << lv;
+                extraArgs << "--layout" << lv;
             }
         }
-        stages.append(s);
+        {
+            QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
+            if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
+        }
+        auto* job = new MapRenderJob(
+            "Dashboard — " + tripAddr, "clops_dashboard.py",
+            mf, tripQId, output, 960, 540, extraArgs);
+        connect(job, &Job::finished, this, [this, output](bool ok) {
+            if (ok) appendVideoToManifest(output, "dashVideos", m_trip.dashVideos);
+        });
+        JobQueue::instance().enqueue(job);
     }
 
-    // --- HUD ---
+    // HUD
     {
-        BuildAllStage s;
-        s.name        = "HUD Overlay";
-        s.scriptName  = "pm_hud.py";
-        s.outputPath  = m_hudOutputEdit ? m_hudOutputEdit->text().trimmed()
-                                        : QString::fromStdString(m_sourcePath)
-                          + "/pm_trip_" + QString::fromStdString(m_trip.id) + "_hud.webm";
-        if (!s.outputPath.endsWith(".webm", Qt::CaseInsensitive))
-            s.outputPath += ".webm";
-        s.width       = m_hudWidth  ? m_hudWidth->value()  : 3840;
-        s.height      = m_hudHeight ? m_hudHeight->value() : 2160;
-        s.manifestKey = "hudVideos";
-
+        QString output = m_hudOutputEdit ? m_hudOutputEdit->text().trimmed()
+                                         : QString::fromStdString(m_sourcePath)
+                             + "/clops_trip_" + tripQId + "_hud.webm";
+        if (!output.endsWith(".webm", Qt::CaseInsensitive))
+            output += ".webm";
+        int W = m_hudWidth  ? m_hudWidth->value()  : 3840;
+        int H = m_hudHeight ? m_hudHeight->value() : 2160;
         QString hexColor = m_hudColorHex ? m_hudColorHex->text().trimmed() : "#00ff41";
         if (hexColor.isEmpty() || !hexColor.startsWith('#')) hexColor = "#00ff41";
         double fontSc = m_hudFontScale ? m_hudFontScale->value() : 1.0;
         double lineSc = m_hudLineScale ? m_hudLineScale->value() : 1.0;
-        s.extraArgs << "--color-hex"  << hexColor
-                    << "--font-scale" << QString::number(fontSc, 'f', 2)
-                    << "--line-scale" << QString::number(lineSc, 'f', 2);
+        QStringList extraArgs{
+            "--color-hex",  hexColor,
+            "--font-scale", QString::number(fontSc, 'f', 2),
+            "--line-scale", QString::number(lineSc, 'f', 2),
+        };
         if (m_hudTapeWidth && m_hudTapeWidth->value() > 0)
-            s.extraArgs << "--tape-width" << QString::number(m_hudTapeWidth->value());
-        s.extraArgs << "--visible-range"
-                    << QString::number(m_hudVisibleRange ? m_hudVisibleRange->value() : 100);
+            extraArgs << "--tape-width" << QString::number(m_hudTapeWidth->value());
+        extraArgs << "--visible-range"
+                  << QString::number(m_hudVisibleRange ? m_hudVisibleRange->value() : 100);
         auto addNeg = [&](const QString& flag, QSpinBox* sp) {
-            if (sp && sp->value() >= 0) s.extraArgs << flag << QString::number(sp->value());
+            if (sp && sp->value() >= 0) extraArgs << flag << QString::number(sp->value());
         };
         addNeg("--left-speed-x",  m_hudLsX);
         addNeg("--left-speed-y",  m_hudLsY);
         addNeg("--right-speed-x", m_hudRsX);
         addNeg("--right-speed-y", m_hudRsY);
         if (m_hudCompassRadius && m_hudCompassRadius->value() > 0)
-            s.extraArgs << "--heading-height" << QString::number(m_hudCompassRadius->value());
+            extraArgs << "--heading-height" << QString::number(m_hudCompassRadius->value());
         if (m_hudCompassCrop && m_hudCompassCrop->value() != 20)
-            s.extraArgs << "--heading-crop" << QString::number(m_hudCompassCrop->value());
+            extraArgs << "--heading-crop" << QString::number(m_hudCompassCrop->value());
         addNeg("--heading-x", m_hudCompassX);
         addNeg("--heading-y", m_hudCompassY);
-        stages.append(s);
-    }
-
-    auto* dlg = new BuildAllDialog(m_trip, mf, stages, this);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dlg, &BuildAllDialog::stageComplete,
-            this, [this, stages](int idx, const QString& path, bool ok) {
-        if (idx < 0 || idx >= stages.size()) return;
-        const QString& key = stages[idx].manifestKey;
-        if (key == "gpsExtract") {
-            if (ok) {
-                m_trip.gpsTrackStatus = "complete";
-                if (m_gpsStatusLabel) {
-                    m_gpsStatusLabel->setText("Status: complete");
-                    m_gpsStatusLabel->setStyleSheet("color: green; font-weight: bold;");
-                }
-                if (m_exportGpsBtn)  m_exportGpsBtn->setEnabled(true);
-                if (m_mapGenerateBtn) m_mapGenerateBtn->setEnabled(true);
-                if (m_mapWarnLabel)  m_mapWarnLabel->hide();
-                if (m_dashWarnLabel) m_dashWarnLabel->hide();
-                if (m_hudWarnLabel)  m_hudWarnLabel->hide();
-                if (m_botTabBar)     m_botTabBar->setTabIcon(kBotTabGps, makeStatusIcon(true));
-            }
-        } else if (ok) {
-            if      (key == "mapVideos")  appendVideoToManifest(path, "mapVideos",  m_trip.mapVideos);
-            else if (key == "dashVideos") appendVideoToManifest(path, "dashVideos", m_trip.dashVideos);
-            else if (key == "hudVideos")  appendVideoToManifest(path, "hudVideos",  m_trip.hudVideos);
+        {
+            QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
+            if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
         }
-    });
-    dlg->show();
-    dlg->startBuild();
+        auto* job = new MapRenderJob(
+            "HUD — " + tripAddr, "clops_hud.py",
+            mf, tripQId, output, W, H, extraArgs);
+        connect(job, &Job::finished, this, [this, output](bool ok) {
+            if (ok) appendVideoToManifest(output, "hudVideos", m_trip.hudVideos);
+        });
+        JobQueue::instance().enqueue(job);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1350,23 +1089,21 @@ void TripPropertiesDialog::onGenerateMap()
         QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
         if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
     }
-    auto* dlg = new MapProgressDialog(
-        m_trip,
+    QString mapAddr = m_mid.empty()
+        ? QString::fromStdString(m_trip.id)
+        : QString::fromStdString(m_mid + ":" + m_trip.id);
+    auto* job = new MapRenderJob(
+        "Generating Map — " + mapAddr,
+        "clops_maprender.py",
         QString::fromStdString(manifestFile),
+        QString::fromStdString(m_trip.id),
         output,
-        m_trip.videoProfile.width,
-        m_trip.videoProfile.height,
-        this,
-        {},
-        {},
+        m_trip.videoProfile.width, m_trip.videoProfile.height,
         extraArgs);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dlg, &MapProgressDialog::renderComplete,
-            this, [this, output](bool ok) {
+    connect(job, &Job::finished, this, [this, output](bool ok) {
         if (ok) appendVideoToManifest(output, "mapVideos", m_trip.mapVideos);
     });
-    dlg->show();
-    dlg->startRender();
+    JobQueue::instance().enqueue(job);
 }
 
 // ---------------------------------------------------------------------------
@@ -1423,22 +1160,19 @@ void TripPropertiesDialog::onGenerateDashboard()
         QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
         if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
     }
-    auto* dlg = new MapProgressDialog(
-        m_trip,
+    QString dashAddr = m_mid.empty() ? QString::fromStdString(m_trip.id)
+                                     : QString::fromStdString(m_mid + ":" + m_trip.id);
+    auto* job = new MapRenderJob(
+        "Generating Dashboard — " + dashAddr,
+        "clops_dashboard.py",
         QString::fromStdString(manifestFile),
-        output,
-        960, 540,
-        this,
-        "pm_dashboard.py",
-        "Generating Dashboard",
+        QString::fromStdString(m_trip.id),
+        output, 960, 540,
         extraArgs);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dlg, &MapProgressDialog::renderComplete,
-            this, [this, output](bool ok) {
+    connect(job, &Job::finished, this, [this, output](bool ok) {
         if (ok) appendVideoToManifest(output, "dashVideos", m_trip.dashVideos);
     });
-    dlg->show();
-    dlg->startRender();
+    JobQueue::instance().enqueue(job);
 }
 
 // ---------------------------------------------------------------------------
@@ -1522,22 +1256,19 @@ void TripPropertiesDialog::onGenerateHud()
         QString fp = QString::fromStdString(config.getSettings().ffmpegPath);
         if (!fp.isEmpty()) extraArgs << "--ffmpeg" << fp;
     }
-    auto* dlg = new MapProgressDialog(
-        m_trip,
+    QString hudAddr = m_mid.empty() ? QString::fromStdString(m_trip.id)
+                                    : QString::fromStdString(m_mid + ":" + m_trip.id);
+    auto* job = new MapRenderJob(
+        "Generating HUD — " + hudAddr,
+        "clops_hud.py",
         QString::fromStdString(manifestFile),
-        output,
-        W, H,
-        this,
-        "pm_hud.py",
-        "Generating HUD",
+        QString::fromStdString(m_trip.id),
+        output, W, H,
         extraArgs);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dlg, &MapProgressDialog::renderComplete,
-            this, [this, output](bool ok) {
+    connect(job, &Job::finished, this, [this, output](bool ok) {
         if (ok) appendVideoToManifest(output, "hudVideos", m_trip.hudVideos);
     });
-    dlg->show();
-    dlg->startRender();
+    JobQueue::instance().enqueue(job);
 }
 
 // ---------------------------------------------------------------------------
@@ -1547,7 +1278,7 @@ void TripPropertiesDialog::onAccepted()
 {
     std::string newNote = updatedNote();
     if (newNote != m_trip.note && !m_sourcePath.empty()) {
-        Pathmux::ConfigManager config;
+        CamClops::ConfigManager config;
         config.loadSettings();
         auto trips = config.loadTripCache(m_sourcePath);
         for (auto& t : trips) {
@@ -1564,12 +1295,12 @@ void TripPropertiesDialog::onAccepted()
 // ---------------------------------------------------------------------------
 
 static QString findSyncScript() {
-    const QString name = "pm_sync_analyze.py";
+    const QString name = "clops_sync_analyze.py";
     const QString appDir = QCoreApplication::applicationDirPath();
     for (const QString& c : {
         appDir + "/scripts/" + name,
         appDir + "/../scripts/" + name,
-        appDir + "/../share/pathmux/scripts/" + name,
+        appDir + "/../share/camclops/scripts/" + name,
         appDir + "/" + name,
     }) {
         if (QFileInfo::exists(c)) return QFileInfo(c).canonicalFilePath();
@@ -1632,7 +1363,7 @@ QWidget* TripPropertiesDialog::buildSyncWidget() {
                 ++row;
             }
             tblVlay->addWidget(tbl);
-            vlay->addWidget(tblGrp, 1);
+            vlay->addWidget(tblGrp);
         }
 
         m_syncRunBtn = new QPushButton("Re-analyze");
@@ -1643,24 +1374,23 @@ QWidget* TripPropertiesDialog::buildSyncWidget() {
             "audio cross-correlation (~1–2 seconds per segment).");
         lbl->setWordWrap(true);
         vlay->addWidget(lbl);
-        vlay->addStretch();
         m_syncRunBtn = new QPushButton("Run Analysis");
     }
 
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addWidget(m_syncRunBtn);
+    btnRow->addStretch();
+    vlay->addLayout(btnRow);
+
     m_syncOutput = new QPlainTextEdit;
     m_syncOutput->setReadOnly(true);
-    m_syncOutput->setMaximumHeight(130);
+    m_syncOutput->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_syncOutput->setVisible(false);
     QFont mono("Monospace");
     mono.setPointSize(8);
     m_syncOutput->setFont(mono);
 
-    auto* btnRow = new QHBoxLayout;
-    btnRow->addWidget(m_syncRunBtn);
-    btnRow->addStretch();
-
-    vlay->addWidget(m_syncOutput);
-    vlay->addLayout(btnRow);
+    vlay->addWidget(m_syncOutput, 1);
 
     connect(m_syncRunBtn, &QPushButton::clicked,
             this, &TripPropertiesDialog::onRunSyncAnalysis);
@@ -1681,13 +1411,15 @@ void TripPropertiesDialog::refreshSyncTab() {
 }
 
 void TripPropertiesDialog::onRunSyncAnalysis() {
+    if (!m_syncRunBtn || !m_syncOutput)
+        return;   // sync tab not built for this camera profile
     if (m_syncProcess && m_syncProcess->state() != QProcess::NotRunning)
         return;
 
     QString scriptPath = findSyncScript();
     if (scriptPath.isEmpty()) {
         m_syncOutput->setVisible(true);
-        m_syncOutput->appendPlainText("Error: pm_sync_analyze.py not found.");
+        m_syncOutput->appendPlainText("Error: clops_sync_analyze.py not found.");
         return;
     }
 
@@ -1710,11 +1442,20 @@ void TripPropertiesDialog::onRunSyncAnalysis() {
     m_syncRunBtn->setText("Analyzing…");
     m_syncOutput->setVisible(true);
     m_syncOutput->clear();
-    m_syncOutput->appendPlainText("pm_sync_analyze.py --all-segments --write " + tripAddr + "\n");
+    m_syncOutput->appendPlainText("clops_sync_analyze.py --all-segments --write " + tripAddr + "\n");
+
+    ConfigManager syncCfg;
+    syncCfg.loadSettings();
+    const auto& syncSettings = syncCfg.getSettings();
+    QStringList syncArgs = {scriptPath, "--all-segments", "--write", tripAddr};
+    if (!syncSettings.ffmpegPath.empty())
+        syncArgs << "--ffmpeg" << QString::fromStdString(syncSettings.ffmpegPath);
+    if (!syncSettings.exiftoolPath.empty())
+        syncArgs << "--exiftool" << QString::fromStdString(syncSettings.exiftoolPath);
 
     m_syncProcess = new QProcess(this);
     m_syncProcess->setProgram("python3");
-    m_syncProcess->setArguments({scriptPath, "--all-segments", "--write", tripAddr});
+    m_syncProcess->setArguments(syncArgs);
     m_syncProcess->setProcessChannelMode(QProcess::MergedChannels);
 
     connect(m_syncProcess, &QProcess::readyRead, this, [this]() {
@@ -1769,7 +1510,21 @@ void TripPropertiesDialog::onSyncFinished(int exitCode, QProcess::ExitStatus) {
         } catch (...) {}
     }
 
+    // refreshSyncTab tears down and rebuilds the widget, destroying m_syncOutput.
+    // Preserve the script output so it survives the rebuild.
+    QString savedLog = m_syncOutput ? m_syncOutput->toPlainText() : QString();
+
     refreshSyncTab();
+
+    if (m_syncOutput && !savedLog.isEmpty()) {
+        m_syncOutput->setPlainText(savedLog);
+        m_syncOutput->setVisible(true);
+        // Scroll to bottom so the summary / write confirmation is in view.
+        m_syncOutput->verticalScrollBar()->setValue(
+            m_syncOutput->verticalScrollBar()->maximum());
+    }
+
+    emit syncAnalyzed();   // notify TripTile to repaint SYNC indicator
 }
 
 // ---------------------------------------------------------------------------
@@ -1847,18 +1602,14 @@ void TripPropertiesDialog::appendVideoToManifest(const QString& path,
 
     // Update in-memory trip, refresh the list widget, and update tab icon.
     tripVec.push_back(p);
-    if (key == "mapVideos") {
-        populateVideoList(m_mapFileList, m_trip.mapVideos);
-        if (m_botTabBar) m_botTabBar->setTabIcon(kBotTabMap,  makeStatusIcon(true));
-    } else if (key == "hudVideos") {
-        populateVideoList(m_hudFileList, m_trip.hudVideos);
-        if (m_botTabBar) m_botTabBar->setTabIcon(kBotTabHud,  makeStatusIcon(true));
-    } else {
+    if (key == "mapVideos")
+        populateVideoList(m_mapFileList,  m_trip.mapVideos);
+    else if (key == "hudVideos")
+        populateVideoList(m_hudFileList,  m_trip.hudVideos);
+    else
         populateVideoList(m_dashFileList, m_trip.dashVideos);
-        if (m_botTabBar) m_botTabBar->setTabIcon(kBotTabDash, makeStatusIcon(true));
-    }
     emit videosChanged();
 }
 
 #include "TripPropertiesDialog.moc"
-// SN: 00111
+// SN: 00117

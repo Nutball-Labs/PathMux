@@ -14,7 +14,7 @@
 #include <QMenu>
 #include <algorithm>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // ManifestItemDelegate — two-line list item: nickname + trip count

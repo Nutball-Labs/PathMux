@@ -5,7 +5,7 @@
 
 #include "config_manager.hpp"
 
-using namespace Pathmux;
+using namespace CamClops;
 
 class KmlPrefsEditor {
 public:

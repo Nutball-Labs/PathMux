@@ -22,7 +22,7 @@
 #include "json.hpp"
 using json = nlohmann::json;
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // BuildAllWorker — runs each script consecutively on a background QThread.
@@ -113,7 +113,7 @@ private:
             return false;
         }
 
-        bool ok = Pathmux::extractGps(root, tripIdx, s.manifestFile.toStdString(),
+        bool ok = CamClops::extractGps(root, tripIdx, s.manifestFile.toStdString(),
                                       s.exiftoolPath,
                                       /*verbose=*/false,
                                       [this, idx](int done, int total) {

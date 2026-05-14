@@ -6,9 +6,9 @@
 #   ./scripts/package-linux.sh
 #
 # Output: packages/ at project root
-#   pathmux-X.Y.Z-1.x86_64.rpm
-#   pathmux_X.Y.Z_amd64.deb
-#   pathmux-X.Y.Z-Linux.tar.gz
+#   camclops-X.Y.Z-1.x86_64.rpm
+#   camclops_X.Y.Z_amd64.deb
+#   camclops-X.Y.Z-Linux.tar.gz
 #
 # Requires: cmake, rpm-build (for RPM), dpkg-deb (for DEB)
 #   sudo dnf install rpm-build
@@ -17,14 +17,42 @@ set -euo pipefail
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$PROJ/build-linux"
 
+VHP="$PROJ/lib/version.hpp"
+MAJOR=$(grep -m1 '#define VERSION_MAJOR'  "$VHP" | awk '{print $3}' | tr -d '\r')
+MINOR=$(grep -m1 '#define VERSION_MINOR'  "$VHP" | awk '{print $3}' | tr -d '\r')
+PATCH=$(grep -m1 '#define VERSION_PATCH'  "$VHP" | awk '{print $3}' | tr -d '\r')
+SUFFIX=$(grep -m1 '#define VERSION_SUFFIX' "$VHP" | grep -oP '(?<=")[^"]*' | tr -d '\r' || true)
+VERSION="${MAJOR}.${MINOR}.${PATCH}${SUFFIX}"
+INNER="  Packaging CamClops version ${VERSION}  —  Linux  "
+BORDER=$(printf '%*s' $(( ${#INNER} + 2 )) | tr ' ' '*')
+echo "$BORDER"
+echo "*${INNER}*"
+echo "$BORDER"
+echo ""
+
+if [[ -f "$BUILD/CMakeCache.txt" ]]; then
+    CACHED=$(grep -s 'CAMCLOPS_VERSION:STRING=' "$BUILD/CMakeCache.txt" | cut -d= -f2 | tr -d '\r' || true)
+    if [[ "$CACHED" != "$VERSION" ]]; then
+        echo "--- Version changed ($CACHED → $VERSION), reconfiguring ---"
+        cmake -S "$PROJ" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release
+        echo ""
+    fi
+fi
+
 echo "=== Packaging (RPM, DEB, TGZ) ==="
-(cd "$BUILD" && cpack)
+echo "    Started: $(date '+%H:%M:%S')"
+echo "    Build dir: $BUILD"
+echo "    (RPM build can take several minutes — rpmbuild output appears below)"
+echo ""
+(cd "$BUILD" && cpack -V)
+echo ""
+echo "    Finished: $(date '+%H:%M:%S')"
 
 echo ""
 echo "Packages:"
-ls -lh "$PROJ/packages"/pathmux-*.rpm \
-        "$PROJ/packages"/pathmux_*.deb \
-        "$PROJ/packages"/pathmux-*-Linux.tar.gz 2>/dev/null \
+ls -lh "$PROJ/packages"/camclops-*.rpm \
+        "$PROJ/packages"/camclops_*.deb \
+        "$PROJ/packages"/camclops-*-Linux.tar.gz 2>/dev/null \
     | awk '{print "  "$NF, "("$5")"}'
 
-# SN: 00095
+# SN: 00117

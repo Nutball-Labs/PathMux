@@ -12,7 +12,7 @@ body:
         ## How to fill this out
 
         **Option A — automated (easiest):** Use the Camera Profile Collection scripts
-        in the [`Cam_Profile_Detection/`](https://github.com/Nutball-Labs/PathMux/tree/main/Cam_Profile_Detection)
+        in the [`Cam_Profile_Detection/`](https://github.com/Nutball-Labs/CamClops/tree/main/Cam_Profile_Detection)
         folder. They walk you through each step, run all the commands automatically,
         and save everything to a single text file you can attach below.
         - **Linux / macOS:** run `collect_cam_profile.sh`
@@ -33,7 +33,7 @@ body:
         Redact GPS coordinates if you prefer (replace lat/lon numbers with `XX.XXXXX`),
         but keep all field names and structure intact.
 
-        **Privacy note:** PathMux is GPL v3 open-source software. Information
+        **Privacy note:** CamClops is GPL v3 open-source software. Information
         submitted here becomes part of the public issue tracker.
 
   # ── Section 1 — Camera basics ───────────────────────────────────────────────
@@ -277,7 +277,7 @@ body:
         - Does the camera use loop recording (fixed-length segments)?
         - What is the segment length in minutes?
         - Any known quirks: dropped files, irregular naming, missing cameras in some modes?
-        - Have you already tried PathMux with this camera? What happened?
+        - Have you already tried CamClops with this camera? What happened?
     validations:
       required: false
 

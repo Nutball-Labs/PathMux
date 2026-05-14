@@ -3,7 +3,8 @@
 #include "MainWindow.h"
 #include "ManifestPanel.h"
 #include "TripGridPanel.h"
-#include "ScanProgressDialog.h"
+#include "JobQueue.h"
+#include "JobQueuePanel.h"
 #include "AboutDialog.h"
 #include "SettingsDialog.h"
 #include "ManifestManagerDialog.h"
@@ -11,13 +12,17 @@
 #include "HelpDialog.h"
 #include "CameraProfilesDialog.h"
 #include "profile_detector.hpp"
+#include <QDockWidget>
+#include <QEvent>
+#include <QFrame>
 #include <QSplitter>
+#include <QVBoxLayout>
 #include <QFileDialog>
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
 #include <QKeySequence>
-#include <QSizeGrip>
+
 #include <QProcess>
 #include <QCoreApplication>
 #include <QMessageBox>
@@ -29,27 +34,98 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("PathMux Dashcam Explorer");
+    setWindowTitle("CamClops Dashcam Explorer");
     resize(1200, 700);
 
-    m_splitter      = new QSplitter(Qt::Horizontal, this);
-    m_manifestPanel = new ManifestPanel(m_splitter);
-    m_tripGridPanel = new TripGridPanel(m_splitter);
+    m_splitter = new QSplitter(Qt::Horizontal, this);
 
-    m_splitter->addWidget(m_manifestPanel);
-    m_splitter->addWidget(m_tripGridPanel);
+    // Wrap each panel in a named QFrame so the paneFrame stylesheet border renders.
+    auto* manifestFrame = new QFrame(m_splitter);
+    manifestFrame->setObjectName("paneFrame");
+    {
+        auto* lay = new QVBoxLayout(manifestFrame);
+        lay->setContentsMargins(0, 0, 0, 0);
+        m_manifestPanel = new ManifestPanel(manifestFrame);
+        lay->addWidget(m_manifestPanel);
+    }
+
+    auto* tripFrame = new QFrame(m_splitter);
+    tripFrame->setObjectName("paneFrame");
+    {
+        auto* lay = new QVBoxLayout(tripFrame);
+        lay->setContentsMargins(0, 0, 0, 0);
+        m_tripGridPanel = new TripGridPanel(tripFrame);
+        lay->addWidget(m_tripGridPanel);
+    }
+
+    m_splitter->addWidget(manifestFrame);
+    m_splitter->addWidget(tripFrame);
     m_splitter->setStretchFactor(0, 0);   // left pane: fixed
     m_splitter->setStretchFactor(1, 1);   // right pane: expands
     m_splitter->setSizes({280, 920});
 
     setCentralWidget(m_splitter);
-    buildMenuBar();
 
-    // Add a visible size grip so the bottom-right corner is easy to grab on
-    // HiDPI displays where the WM resize border is physically tiny.
-    // QSizeGrip auto-positions itself at the bottom-right corner of its parent
-    // top-level window and tracks resizes — no manual placement needed.
-    new QSizeGrip(this);
+    // --- Job Queue dock ---
+    m_jobPanel = new JobQueuePanel(this);
+    m_jobDock  = new QDockWidget("Job Queue", this);
+    m_jobDock->setWidget(m_jobPanel);
+    m_jobDock->setAllowedAreas(Qt::BottomDockWidgetArea);
+    m_jobDock->setMinimumHeight(120);
+    addDockWidget(Qt::BottomDockWidgetArea, m_jobDock);
+    m_jobDock->hide();
+
+    // Apply initial placement from settings
+    {
+        CamClops::ConfigManager cfg;
+        cfg.loadSettings();
+        if (cfg.getSettings().jobQueueMode == "window")
+            m_jobDock->setFloating(true);
+    }
+
+    // Auto-show when a job is submitted — but only if not currently detached.
+    connect(&JobQueue::instance(), &JobQueue::jobAdded,
+            this, [this](Job*) {
+        if (!m_jobFloatWin) {
+            m_jobDock->show();
+            m_jobDock->raise();
+        }
+    });
+
+    // Keep Detach button in sync when dock is dragged to float/re-dock.
+    connect(m_jobDock, &QDockWidget::topLevelChanged,
+            m_jobPanel, &JobQueuePanel::onDockStateChanged);
+
+    // Detach button: create a real Qt::Window widget so the OS always provides
+    // full window decorations (title bar, min/max/close).  QDockWidget::setFloating
+    // uses Qt::Tool which some WMs don't decorate fully.
+    connect(m_jobPanel, &JobQueuePanel::detachRequested, this, [this]() {
+        if (m_jobFloatWin) { m_jobFloatWin->raise(); m_jobFloatWin->activateWindow(); return; }
+
+        m_jobFloatWin = new QWidget(nullptr, Qt::Window);
+        m_jobFloatWin->setObjectName("jobFloatWin");
+        m_jobFloatWin->setWindowTitle("Job Queue");
+        m_jobFloatWin->setMinimumSize(500, 160);
+        m_jobFloatWin->resize(800, 240);
+        m_jobFloatWin->installEventFilter(this);
+
+        auto* lay = new QVBoxLayout(m_jobFloatWin);
+        lay->setContentsMargins(0, 0, 0, 0);
+        m_jobDock->setWidget(nullptr);   // clear dock ref before reparenting
+        m_jobPanel->setParent(m_jobFloatWin);
+        lay->addWidget(m_jobPanel);
+        m_jobPanel->show();              // setParent() + setWidget(nullptr) both hide; re-show
+        m_jobPanel->onDockStateChanged(true);   // hide Detach button, mark detached
+
+        m_jobDock->hide();
+        m_jobFloatWin->show();
+    });
+
+    // When docked, Ctrl+scroll over the job panel participates in the shared zoom.
+    connect(m_jobPanel, &JobQueuePanel::zoomChanged,
+            this, &MainWindow::onZoomChanged);
+
+    buildMenuBar();
 
     connect(m_manifestPanel, &ManifestPanel::manifestSelected,
             m_tripGridPanel, &TripGridPanel::loadManifest);
@@ -66,6 +142,20 @@ MainWindow::MainWindow(QWidget* parent)
             this,            &MainWindow::onZoomChanged);
     connect(m_manifestPanel, &ManifestPanel::zoomChanged,
             this,            &MainWindow::onZoomChanged);
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_jobFloatWin && event->type() == QEvent::Close) {
+        // Rescue the panel before the window destroys its children,
+        // return it to the dock (hidden). Don't show the dock — just go away.
+        m_jobPanel->setParent(nullptr);
+        m_jobDock->setWidget(m_jobPanel);
+        m_jobPanel->onDockStateChanged(false);  // restore Detach button, mark docked
+        m_jobFloatWin = nullptr;
+        // Let default close handling delete the window.
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::buildMenuBar()
@@ -91,6 +181,19 @@ void MainWindow::buildMenuBar()
     QAction* zoomResetAct = viewMenu->addAction("&Reset Zoom");
     zoomResetAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
     zoomResetAct->setEnabled(false);
+
+    viewMenu->addSeparator();
+
+    QAction* queueAct = viewMenu->addAction("&Job Queue");
+    queueAct->setCheckable(true);
+    queueAct->setChecked(false);
+    queueAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_J));
+    connect(queueAct, &QAction::triggered, this, [this](bool checked) {
+        if (checked) { m_jobDock->show(); m_jobDock->raise(); }
+        else           m_jobDock->hide();
+    });
+    connect(m_jobDock, &QDockWidget::visibilityChanged,
+            queueAct,  &QAction::setChecked);
 
     // ---- Manifests ----
     QMenu* manifestsMenu = menuBar()->addMenu("&Manifests");
@@ -136,23 +239,23 @@ void MainWindow::buildMenuBar()
     toolsMenu->addSeparator();
 
     QAction* tlAct = toolsMenu->addAction("&Timelapse Editor\u2026");
-    tlAct->setStatusTip("Open pm_tl \u2014 create timelapse sections from a collage MP4");
+    tlAct->setStatusTip("Open camclops-tl \u2014 create timelapse sections from a collage MP4");
     connect(tlAct, &QAction::triggered, this, [this]{
         QString appDir = QCoreApplication::applicationDirPath();
-        // pm_tl lives alongside pathmux-gui in the same bin directory.
+        // camclops-tl lives alongside camclops-gui in the same bin directory.
         QStringList candidates = {
-            appDir + "/pathmux-tl",
-            appDir + "/../bin/pathmux-tl",
-            appDir + "/pathmux-tl.exe",     // Windows
+            appDir + "/camclops-tl",
+            appDir + "/../bin/camclops-tl",
+            appDir + "/camclops-tl.exe",     // Windows
         };
         QString exe;
         for (const QString& c : candidates) {
             if (QFile::exists(c)) { exe = c; break; }
         }
         if (exe.isEmpty()) {
-            QMessageBox::warning(this, "pm_tl not found",
-                "Could not find pm_tl alongside pathmux-gui.\n"
-                "Build it with: cmake --build build-linux --target pm_tl");
+            QMessageBox::warning(this, "camclops-tl not found",
+                "Could not find camclops-tl alongside camclops-gui.\n"
+                "Build it with: cmake --build build-linux --target camclops-tl");
             return;
         }
         QProcess::startDetached(exe, {});
@@ -167,7 +270,7 @@ void MainWindow::buildMenuBar()
 
     helpMenu->addSeparator();
 
-    QAction* aboutAct = helpMenu->addAction("&About PathMux");
+    QAction* aboutAct = helpMenu->addAction("&About CamClops");
     connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
 }
 
@@ -222,9 +325,9 @@ void MainWindow::onSetupWizard()
     // Pre-populate wizard with current settings so existing users see their
     // configuration and can update specific parts (e.g. swap encoder preset
     // after adding a better GPU) without having to hunt for each setting.
-    Pathmux::ConfigManager config;
+    CamClops::ConfigManager config;
     config.loadSettings();
-    const Pathmux::AppSettings& s = config.getSettings();
+    const CamClops::AppSettings& s = config.getSettings();
 
     SetupWizard wiz(this);
     wiz.setField("ffmpegPath",    QString::fromStdString(s.ffmpegPath));
@@ -244,7 +347,7 @@ void MainWindow::onSetupWizard()
 // Returns the chosen profile_id, or "" to cancel.
 static QString resolveProfileForScan(const QString& dir, QWidget* parent)
 {
-    Pathmux::ConfigManager config;
+    CamClops::ConfigManager config;
     config.loadSettings();
 
     // If this directory already has a manifest with a recorded profile, use it silently.
@@ -254,7 +357,7 @@ static QString resolveProfileForScan(const QString& dir, QWidget* parent)
 
     // Auto-detect from the directory contents.
     auto allProfiles = config.loadAllProfiles();
-    auto match = Pathmux::detectProfile(dir.toStdString(), allProfiles);
+    auto match = CamClops::detectProfile(dir.toStdString(), allProfiles);
 
     // Mixed-content warning: multiple camera profiles found in the same path.
     if (match.isMixedContent) {
@@ -349,35 +452,38 @@ void MainWindow::onScanRequested()
     QString profileId = resolveProfileForScan(dir, this);
     if (profileId.isNull()) return;   // user cancelled
 
-    ScanProgressDialog dlg(this);
-    connect(&dlg, &ScanProgressDialog::scanComplete,
-            this, &MainWindow::onScanComplete);
-    dlg.startScan(dir, profileId);
-    dlg.exec();
+    auto* job = new ManifestScanJob(dir, profileId);
+    connect(job, &Job::finished, this, [this, job](bool ok) {
+        if (ok) onScanComplete(job->completedEntry());
+    });
+    JobQueue::instance().enqueue(job);
 }
 
 void MainWindow::onZoomChanged(double factor)
 {
     m_tripGridPanel->setZoom(factor);
     m_manifestPanel->setZoom(factor);
+    if (!m_jobFloatWin)          // only sync when docked; float window zooms independently
+        m_jobPanel->setZoom(factor);
 }
 
-void MainWindow::onRebuildRequested(const Pathmux::ManifestEntry& entry)
+void MainWindow::onRebuildRequested(const CamClops::ManifestEntry& entry)
 {
     // Rescan using the profile stored in the existing manifest — no prompt needed.
-    Pathmux::ConfigManager config;
+    CamClops::ConfigManager config;
     config.loadSettings();
     QString profileId = QString::fromStdString(
         config.getManifestProfileId(entry.path));
 
-    ScanProgressDialog dlg(this);
-    connect(&dlg, &ScanProgressDialog::scanComplete,
-            this, &MainWindow::onScanComplete);
-    dlg.startScan(QString::fromStdString(entry.path), profileId);
-    dlg.exec();
+    auto* job = new ManifestScanJob(
+        QString::fromStdString(entry.path), profileId);
+    connect(job, &Job::finished, this, [this, job](bool ok) {
+        if (ok) onScanComplete(job->completedEntry());
+    });
+    JobQueue::instance().enqueue(job);
 }
 
-void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
+void MainWindow::onScanComplete(const CamClops::ManifestEntry& entry)
 {
     m_manifestPanel->refresh();
     m_tripGridPanel->refreshPageState();
@@ -385,4 +491,4 @@ void MainWindow::onScanComplete(const Pathmux::ManifestEntry& entry)
     m_tripGridPanel->loadManifest(entry);
     m_manifestPanel->selectEntry(entry);
 }
-// SN: 00109
+// SN: 00113

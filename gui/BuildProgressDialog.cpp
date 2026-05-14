@@ -22,7 +22,7 @@
 #  include <unistd.h>
 #endif
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // Friendly display name for stage labels emitted by VideoBuilder.
@@ -51,6 +51,27 @@ static QString stageDisplayName(const QString& label)
         QString cam = label.mid(6);
         if (!cam.isEmpty()) cam[0] = cam[0].toUpper();
         return cam + " \u2014 audio extract";
+    }
+    // syncpad:cam:N:M  \u2192  "Front \u2014 pad  3/9"
+    if (label.startsWith("syncpad:")) {
+        QStringList parts = label.split(':');
+        if (parts.size() == 4) {
+            QString cam = parts[1];
+            if (!cam.isEmpty()) cam[0] = cam[0].toUpper();
+            return cam + " \u2014 pad \u2009" + parts[2] + "/" + parts[3];
+        }
+        // Group header label "syncpad:cam" (no chunk numbers)
+        if (parts.size() == 2) {
+            QString cam = parts[1];
+            if (!cam.isEmpty()) cam[0] = cam[0].toUpper();
+            return cam + " \u2014 sync pad";
+        }
+    }
+    // syncjoin:cam  \u2192  "Front \u2014 join"
+    if (label.startsWith("syncjoin:")) {
+        QString cam = label.mid(9);
+        if (!cam.isEmpty()) cam[0] = cam[0].toUpper();
+        return cam + " \u2014 join";
     }
     // Unknown label: return as-is with first char uppercased
     if (label.isEmpty()) return label;
@@ -369,58 +390,209 @@ BuildProgressDialog::BuildProgressDialog(const Trip& trip,
 
 // ---------------------------------------------------------------------------
 // Add a stage row to the stack.  Skips silently if label already present.
+// parentLayout: if non-null, inserts into that layout (child rows); otherwise
+//               inserts into m_stageLayout (top-level rows).
+// indented: if true, adds left-margin to indicate it is a child row.
 // ---------------------------------------------------------------------------
-void BuildProgressDialog::addStageRow(const QString& label)
+void BuildProgressDialog::addStageRow(const QString& label,
+                                       QVBoxLayout* parentLayout,
+                                       bool indented)
 {
     if (m_rowIndex.contains(label)) return;
 
     StageRow row;
     row.label = label;
 
-    // Each row lives in a QFrame so we can draw a visible border around it.
     auto* rowFrame = new QFrame;
     rowFrame->setObjectName("stageRow");
     rowFrame->setStyleSheet(
         "QFrame#stageRow {"
-        "  border: 1px solid #888888;"   /* visible on both light and dark themes */
+        "  border: 1px solid #888888;"
         "  border-radius: 3px;"
         "}"
         "QFrame#stageRow QLabel { border: none; background: transparent; }"
     );
 
     auto* hbox = new QHBoxLayout(rowFrame);
-    hbox->setContentsMargins(6, 3, 6, 3);
+    hbox->setContentsMargins(indented ? 22 : 6, 3, 6, 3);
     hbox->setSpacing(8);
 
     auto* nameLabel = new QLabel(stageDisplayName(label), rowFrame);
-    nameLabel->setMinimumWidth(180);
-    nameLabel->setMaximumWidth(180);
+    nameLabel->setMinimumWidth(indented ? 160 : 180);
+    nameLabel->setMaximumWidth(indented ? 160 : 180);
+    if (indented)
+        nameLabel->setStyleSheet("font-size: 8pt; color: #666666;");
 
     row.bar = new QProgressBar(rowFrame);
     row.bar->setRange(0, 100);
     row.bar->setValue(0);
     row.bar->setTextVisible(false);
-    row.bar->setFixedHeight(16);
+    row.bar->setFixedHeight(indented ? 12 : 16);
 
     row.status = new QLabel(rowFrame);
     row.status->setMinimumWidth(90);
     row.status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    row.status->setStyleSheet("font-size: 8pt;");   /* no color — inherits palette */
+    row.status->setStyleSheet(indented ? "font-size: 7pt;" : "font-size: 8pt;");
 
     hbox->addWidget(nameLabel);
     hbox->addWidget(row.bar, 1);
     hbox->addWidget(row.status);
 
-    // Insert before the trailing stretch (always at last position)
-    m_stageLayout->insertWidget(m_stageLayout->count() - 1, rowFrame);
+    QVBoxLayout* target = parentLayout ? parentLayout : m_stageLayout;
+    if (parentLayout)
+        target->addWidget(rowFrame);
+    else
+        target->insertWidget(target->count() - 1, rowFrame);
 
     int idx = m_rows.size();
     m_rows.append(row);
     m_rowIndex[label] = idx;
 
-    // Scroll to bottom so the newest stage is visible
+    if (!parentLayout) {
+        QScrollBar* sb = m_scrollArea->verticalScrollBar();
+        sb->setValue(sb->maximum());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// addGroupRow — add a collapsible group row for one sync-pad camera stage.
+// The group header shows aggregate progress; child rows are visible by default
+// so chunk bars accumulate as they start.  The ▼ toggle collapses for a
+// compact view.
+// ---------------------------------------------------------------------------
+void BuildProgressDialog::addGroupRow(const QString& camera, int nChunks)
+{
+    QString groupLabel = "syncpad:" + camera;
+    if (m_rowIndex.contains(groupLabel)) return;
+
+    StageRow row;
+    row.label       = groupLabel;
+    row.isGroup     = true;
+    row.totalChunks = nChunks;
+
+    // Outer frame (same look as a normal stage row)
+    auto* outerFrame = new QFrame;
+    outerFrame->setObjectName("stageRow");
+    outerFrame->setStyleSheet(
+        "QFrame#stageRow {"
+        "  border: 1px solid #888888;"
+        "  border-radius: 3px;"
+        "}"
+        "QFrame#stageRow QLabel { border: none; background: transparent; }"
+    );
+    auto* outerVBox = new QVBoxLayout(outerFrame);
+    outerVBox->setContentsMargins(0, 0, 0, 0);
+    outerVBox->setSpacing(0);
+
+    // Header row
+    auto* headerWidget = new QWidget(outerFrame);
+    auto* hbox = new QHBoxLayout(headerWidget);
+    hbox->setContentsMargins(4, 3, 6, 3);
+    hbox->setSpacing(6);
+
+    // Toggle button ▶/▼
+    row.toggleBtn = new QPushButton("▶", headerWidget);
+    row.toggleBtn->setFixedSize(18, 18);
+    row.toggleBtn->setFlat(true);
+    row.toggleBtn->setStyleSheet("font-size: 8pt; padding: 0;");
+    row.toggleBtn->setToolTip("Expand/collapse chunk detail");
+
+    auto* nameLabel = new QLabel(stageDisplayName(groupLabel)
+                                 + QString("  (%1 chunks)").arg(nChunks),
+                                 headerWidget);
+    nameLabel->setMinimumWidth(200);
+    nameLabel->setMaximumWidth(200);
+
+    row.bar = new QProgressBar(headerWidget);
+    row.bar->setRange(0, 100);
+    row.bar->setValue(0);
+    row.bar->setTextVisible(false);
+    row.bar->setFixedHeight(16);
+
+    row.status = new QLabel(headerWidget);
+    row.status->setMinimumWidth(90);
+    row.status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    row.status->setStyleSheet("font-size: 8pt;");
+
+    hbox->addWidget(row.toggleBtn);
+    hbox->addWidget(nameLabel);
+    hbox->addWidget(row.bar, 1);
+    hbox->addWidget(row.status);
+    outerVBox->addWidget(headerWidget);
+
+    // Child area (hidden by default)
+    row.childArea   = new QWidget(outerFrame);
+    row.childLayout = new QVBoxLayout(row.childArea);
+    row.childLayout->setContentsMargins(0, 2, 0, 2);
+    row.childLayout->setSpacing(3);
+    row.childArea->setVisible(false);
+    outerVBox->addWidget(row.childArea);
+
+    // Wire toggle button
+    // Capture index by value after appending to m_rows below.
+    // Use a raw pointer to the childArea/toggleBtn since they outlive the lambda.
+    QWidget*     ca  = row.childArea;
+    QPushButton* btn = row.toggleBtn;
+    connect(btn, &QPushButton::clicked, [ca, btn]() {
+        bool show = !ca->isVisible();
+        ca->setVisible(show);
+        btn->setText(show ? "▼" : "▶");
+    });
+
+    m_stageLayout->insertWidget(m_stageLayout->count() - 1, outerFrame);
+
+    int idx = m_rows.size();
+    m_rows.append(row);
+    m_rowIndex[groupLabel] = idx;
+    m_groupIndex[camera]   = idx;
+
     QScrollBar* sb = m_scrollArea->verticalScrollBar();
     sb->setValue(sb->maximum());
+}
+
+// ---------------------------------------------------------------------------
+// addChildRow — add a chunk detail row inside a group's child area.
+// ---------------------------------------------------------------------------
+void BuildProgressDialog::addChildRow(const QString& groupCamera,
+                                       const QString& label)
+{
+    auto it = m_groupIndex.find(groupCamera);
+    if (it == m_groupIndex.end()) return;
+    StageRow& grp = m_rows[it.value()];
+    if (!grp.childLayout) return;
+
+    m_childToGroup[label] = groupCamera;
+    addStageRow(label, grp.childLayout, /*indented=*/true);
+}
+
+// ---------------------------------------------------------------------------
+// updateGroupAggregate — refresh the group header bar/status from doneChunks.
+// ---------------------------------------------------------------------------
+void BuildProgressDialog::updateGroupAggregate(const QString& groupCamera)
+{
+    auto it = m_groupIndex.find(groupCamera);
+    if (it == m_groupIndex.end()) return;
+    StageRow& grp = m_rows[it.value()];
+    if (grp.totalChunks <= 0) return;
+
+    int pct = (grp.doneChunks * 100) / grp.totalChunks;
+    if (!grp.started) {
+        grp.started = true;
+        grp.bar->setRange(0, 100);
+        grp.status->setText("Running…");
+        grp.status->setStyleSheet("color: #4499ff; font-style: italic; font-size: 8pt;");
+    }
+    grp.bar->setRange(0, 100);
+    grp.bar->setValue(pct);
+
+    if (grp.doneChunks >= grp.totalChunks) {
+        grp.bar->setValue(100);
+        grp.status->setText("✓");
+        grp.status->setStyleSheet("color: #228b22; font-weight: bold;");
+    } else {
+        grp.status->setText(QString("%1/%2").arg(grp.doneChunks).arg(grp.totalChunks));
+        grp.status->setStyleSheet("font-size: 8pt;");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -445,7 +617,35 @@ void BuildProgressDialog::populateExpectedRows()
     addConcat(m_opts.buildLeft,   "left",  "Left");
     addConcat(m_opts.buildRight,  "right", "Right");
 
+#ifdef _WIN32
+    // On Windows, sync-pad collage uses chunked per-camera processing.
+    // Show group rows (collapsible chunk detail) instead of a single stage.
+    {
+        bool useChunked = m_opts.buildCollage4K
+                       && m_trip.cameraSync.valid
+                       && !m_trip.cameraSync.segmentTrims.empty()
+                       && m_opts.blankSlots.empty()
+                       && m_opts.externalSlots.empty();
+
+        if (useChunked) {
+            int nSegs   = (int)m_trip.segments.size();
+            int nChunks = (nSegs + WIN_SYNC_CHUNK_SIZE - 1) / WIN_SYNC_CHUNK_SIZE;
+
+            // Camera order matches buildCollage4KChunked: front, rear, right, left
+            for (const char* cam : {"front", "rear", "right", "left"}) {
+                if (!present.count(cam)) continue;
+                addGroupRow(QString(cam), nChunks);
+                if (nChunks > 1)
+                    addStageRow(QString("syncjoin:") + cam);
+            }
+            addStageRow("collage:4K");
+        } else {
+            if (m_opts.buildCollage4K)   addStageRow("collage:4K");
+        }
+    }
+#else
     if (m_opts.buildCollage4K)   addStageRow("collage:4K");
+#endif
     if (m_opts.buildCollage1080) addStageRow("collage:1080p");
 
     if (m_opts.buildAudio && !m_opts.audioExtractCamera.empty()) {
@@ -513,6 +713,25 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
         return;
     }
 
+    // syncpad:cam:N:M — child row of a group.  Add dynamically on first signal.
+    if (label.startsWith("syncpad:") && label.count(':') == 3) {
+        QString groupCam = label.section(':', 1, 1);
+        if (!m_rowIndex.contains(label)) {
+            // Auto-expand the group when its first child starts running
+            auto git = m_groupIndex.find(groupCam);
+            if (git != m_groupIndex.end()) {
+                StageRow& grp = m_rows[git.value()];
+                if (grp.childArea && !grp.childArea->isVisible()) {
+                    grp.childArea->setVisible(true);
+                    if (grp.toggleBtn) grp.toggleBtn->setText("▼");
+                }
+            }
+            addChildRow(groupCam, label);
+        }
+        // After updating the child row below, also refresh the group aggregate.
+        // Fall through to normal row update.
+    }
+
     // Add row on-the-fly for stages that weren't pre-populated (e.g. norm:N).
     if (!m_rowIndex.contains(label))
         addStageRow(label);
@@ -560,6 +779,15 @@ void BuildProgressDialog::onProgress(const QString& label, int pct, int etaSecs,
         row.bar->setValue(100);
         row.status->setText("\u2713");
         row.status->setStyleSheet("color: #228b22; font-weight: bold;");
+        // If this is a chunk child row, bump the group's done count.
+        if (label.startsWith("syncpad:") && label.count(':') == 3) {
+            QString groupCam = label.section(':', 1, 1);
+            auto git = m_groupIndex.find(groupCam);
+            if (git != m_groupIndex.end()) {
+                m_rows[git.value()].doneChunks++;
+                updateGroupAggregate(groupCam);
+            }
+        }
     } else if (pct > 0) {
         // Switch from indeterminate to determinate now that we have real data.
         if (row.bar->maximum() == 0)
@@ -645,4 +873,4 @@ void BuildProgressDialog::closeEvent(QCloseEvent* event)
 }
 
 #include "BuildProgressDialog.moc"
-// SN: 00106
+// SN: 00116  (chunked sync-pad + group rows)

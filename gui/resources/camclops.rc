@@ -1,0 +1,6 @@
+// CamClops Windows application icon resource.
+// The MSVC resource compiler resolves the path relative to this file,
+// so ../../images/camclops.ico points to the project-root images/ directory.
+#include <windows.h>
+IDI_APPICON ICON "..\\..\\images\\camclops.ico"
+// SN: 00092

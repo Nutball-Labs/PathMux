@@ -1,12 +1,12 @@
 #Requires -Version 5.1
 # =============================================================================
-# PathMux Camera Profile Collection Script v1.0  (Windows / PowerShell)
+# CamClops Camera Profile Collection Script v1.0  (Windows / PowerShell)
 #
 # Walks you through gathering the diagnostic information needed to add
-# detection support for a new dashcam model in PathMux.
+# detection support for a new dashcam model in CamClops.
 #
 # Saves everything to a single text file — attach it to a GitHub issue at:
-# https://github.com/Nutball-Labs/PathMux/issues/new/choose
+# https://github.com/Nutball-Labs/CamClops/issues/new/choose
 #
 # Requires:  ffprobe (part of ffmpeg)  +  exiftool
 #   Download ffmpeg:   https://ffmpeg.org/download.html
@@ -62,14 +62,14 @@ function Show-Banner {
     Clear-Host
     Write-Host
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "   PathMux Camera Profile Collection  v$ScriptVersion" -ForegroundColor Cyan
+    Write-Host "   CamClops Camera Profile Collection  v$ScriptVersion" -ForegroundColor Cyan
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host
     Write-Host "  This script collects diagnostic info about your dashcam"
     Write-Host "  and saves it to a single text file you can attach to a"
     Write-Host "  GitHub issue so we can add support for your camera."
     Write-Host
-    Write-Host "  https://github.com/Nutball-Labs/PathMux/issues/new/choose" -ForegroundColor Cyan
+    Write-Host "  https://github.com/Nutball-Labs/CamClops/issues/new/choose" -ForegroundColor Cyan
     Write-Host
     Read-Host "  Press Enter to continue"
 }
@@ -378,7 +378,7 @@ function Collect-UserNotes {
     $script:SegMinutes = Ask "Segment length in minutes (check camera settings)" "unknown"
 
     Write-Step "Additional notes"
-    Write-Info "Anything else: known quirks, irregular naming, PathMux errors seen, etc."
+    Write-Info "Anything else: known quirks, irregular naming, CamClops errors seen, etc."
     Write-Info "Press Enter on a blank line when done."
     $lines = @()
     while ($true) {
@@ -395,7 +395,7 @@ function Write-Report {
 
     $safeModel  = $script:CamModel -replace '[\\/:*?"<>| ]','_'
     $datestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
-    $outputFile = "pathmux_cam_profile_${safeModel}_${datestamp}.txt"
+    $outputFile = "camclops_cam_profile_${safeModel}_${datestamp}.txt"
     $outputPath = Join-Path (Get-Location) $outputFile
 
     $divider = "------------------------------------------------------------"
@@ -403,7 +403,7 @@ function Write-Report {
 
     $report = @"
 ============================================================
-  PathMux Camera Fingerprint Report
+  CamClops Camera Fingerprint Report
   Script:    collect_cam_profile.ps1 v$ScriptVersion
   Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
   Host:      $osInfo
@@ -453,7 +453,7 @@ $($script:ExtraNotes)
 
 ============================================================
   Attach this file to a GitHub issue:
-  https://github.com/Nutball-Labs/PathMux/issues/new/choose
+  https://github.com/Nutball-Labs/CamClops/issues/new/choose
 ============================================================
 "@
 
@@ -464,7 +464,7 @@ $($script:ExtraNotes)
     Write-Host "  Report saved:  $outputFile" -ForegroundColor White
     Write-Host "============================================================" -ForegroundColor Green
     Write-Host
-    Write-Host "  1. Open: https://github.com/Nutball-Labs/PathMux/issues/new/choose"
+    Write-Host "  1. Open: https://github.com/Nutball-Labs/CamClops/issues/new/choose"
     Write-Host "  2. Choose 'Camera Fingerprint — New Dashcam Support'"
     Write-Host "  3. Fill in the short text fields, then attach this file"
     Write-Host
@@ -484,5 +484,5 @@ Run-Exiftool
 Collect-UserNotes
 Write-Report
 
-# SN: 00106
+# SN: 00112
 

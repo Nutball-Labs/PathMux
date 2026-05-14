@@ -23,7 +23,7 @@ if(NOT VER_BUILD)
     set(VER_BUILD 0)
 endif()
 
-set(PATHMUX_VERSION "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}${VER_SUFFIX}")
+set(CAMCLOPS_VERSION "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}${VER_SUFFIX}")
 
 # macOS: set minimum deployment target before project() so all compiler tests
 # and find_package() calls see the correct SDK constraints.
@@ -32,20 +32,11 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version (Monterey)")
 endif()
 
-project(pathmux
+project(camclops
     VERSION "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}"
     DESCRIPTION "Multi-camera dashcam footage manager, trip organizer, and video builder"
     LANGUAGES CXX
 )
-
-# ---------------------------------------------------------------------------
-# Build banner
-# ---------------------------------------------------------------------------
-message(STATUS "********************************************")
-message(STATUS "*                                          *")
-message(STATUS "* Building PathMux version ${PATHMUX_VERSION}        *")
-message(STATUS "*                                          *")
-message(STATUS "********************************************")
 
 # ---------------------------------------------------------------------------
 # ccache — speeds up incremental and clean rebuilds by caching compiled objects.
@@ -102,7 +93,7 @@ endif()
 # ---------------------------------------------------------------------------
 # Shared library — core logic shared by CLI and future Qt6 GUI
 # ---------------------------------------------------------------------------
-add_library(pathmuxlib SHARED
+add_library(camclopslib SHARED
     lib/camera_profile.cpp
     lib/trip_detection.cpp
     lib/config_manager.cpp
@@ -111,31 +102,31 @@ add_library(pathmuxlib SHARED
     lib/profile_detector.cpp
 )
 
-set_target_properties(pathmuxlib PROPERTIES
-    OUTPUT_NAME "pathmux"
+set_target_properties(camclopslib PROPERTIES
+    OUTPUT_NAME "camclops"
     SOVERSION   1
     VERSION     "${VER_MAJOR}.${VER_MINOR}.${VER_PATCH}"
 )
 
-# lib/ headers are PUBLIC so all targets linking pathmuxlib get them.
+# lib/ headers are PUBLIC so all targets linking camclopslib get them.
 # Root is included for json.hpp (vendored, not in lib/).
-target_include_directories(pathmuxlib PUBLIC
+target_include_directories(camclopslib PUBLIC
     lib/
     ${CMAKE_SOURCE_DIR}
 )
 
 if(UNIX AND NOT APPLE)
-    target_link_libraries(pathmuxlib PUBLIC stdc++fs)
+    target_link_libraries(camclopslib PUBLIC stdc++fs)
 endif()
 
 # Precompiled header for json.hpp — compiled once, reused by all lib sources.
 # Eliminates the per-file GCC 14 template analysis cost on every rebuild.
-target_precompile_headers(pathmuxlib PRIVATE "${CMAKE_SOURCE_DIR}/json.hpp")
+target_precompile_headers(camclopslib PRIVATE "${CMAKE_SOURCE_DIR}/json.hpp")
 
 # ---------------------------------------------------------------------------
 # CLI executable
 # ---------------------------------------------------------------------------
-add_executable(pathmux
+add_executable(camclops
     cli/main.cpp
     cli/find_trips.cpp
     cli/gpx_export.cpp
@@ -146,85 +137,85 @@ add_executable(pathmux
     cli/video_build.cpp
 )
 
-set_target_properties(pathmux PROPERTIES OUTPUT_NAME pathmux)
+set_target_properties(camclops PROPERTIES OUTPUT_NAME camclops)
 
 # cli/ headers (ui_helpers.hpp etc.) are PRIVATE to the CLI target.
-target_include_directories(pathmux PRIVATE cli/)
+target_include_directories(camclops PRIVATE cli/)
 
-target_link_libraries(pathmux PRIVATE pathmuxlib)
-
-# ---------------------------------------------------------------------------
-# pm_gpsinfo — standalone GPS inspection tool
-# ---------------------------------------------------------------------------
-add_executable(pm_gpsinfo tools/pm_gpsinfo.cpp)
-target_compile_features(pm_gpsinfo PRIVATE cxx_std_17)
-target_include_directories(pm_gpsinfo PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pm_gpsinfo PRIVATE pathmuxlib)
+target_link_libraries(camclops PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
-# pm_audit — footage integrity checker
+# clops_gpsinfo — standalone GPS inspection tool
 # ---------------------------------------------------------------------------
-add_executable(pm_audit tools/pm_audit.cpp)
-target_compile_features(pm_audit PRIVATE cxx_std_17)
-target_include_directories(pm_audit PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pm_audit PRIVATE pathmuxlib)
+add_executable(clops_gpsinfo tools/clops_gpsinfo.cpp)
+target_compile_features(clops_gpsinfo PRIVATE cxx_std_17)
+target_include_directories(clops_gpsinfo PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(clops_gpsinfo PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
-# pm_ls — non-interactive trip lister
+# clops_audit — footage integrity checker
 # ---------------------------------------------------------------------------
-add_executable(pm_ls tools/pm_ls.cpp)
-target_compile_features(pm_ls PRIVATE cxx_std_17)
-target_include_directories(pm_ls PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pm_ls PRIVATE pathmuxlib)
+add_executable(clops_audit tools/clops_audit.cpp)
+target_compile_features(clops_audit PRIVATE cxx_std_17)
+target_include_directories(clops_audit PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(clops_audit PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
-# pm_gpsexport — non-interactive GPS track exporter
+# clops_ls — non-interactive trip lister
 # ---------------------------------------------------------------------------
-add_executable(pm_gpsexport tools/pm_gpsexport.cpp)
-target_compile_features(pm_gpsexport PRIVATE cxx_std_17)
-target_include_directories(pm_gpsexport PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pm_gpsexport PRIVATE pathmuxlib)
+add_executable(clops_ls tools/clops_ls.cpp)
+target_compile_features(clops_ls PRIVATE cxx_std_17)
+target_include_directories(clops_ls PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(clops_ls PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
-# pm_findgpslock — GPS lock diagnostic scanner
+# clops_gpsexport — non-interactive GPS track exporter
 # ---------------------------------------------------------------------------
-add_executable(pm_findgpslock tools/pm_findgpslock.cpp)
-target_compile_features(pm_findgpslock PRIVATE cxx_std_17)
-target_include_directories(pm_findgpslock PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pm_findgpslock PRIVATE pathmuxlib)
+add_executable(clops_gpsexport tools/clops_gpsexport.cpp)
+target_compile_features(clops_gpsexport PRIVATE cxx_std_17)
+target_include_directories(clops_gpsexport PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(clops_gpsexport PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
-# pm_probe — camera compatibility profiler
+# clops_findgpslock — GPS lock diagnostic scanner
 # ---------------------------------------------------------------------------
-add_executable(pm_probe tools/pm_probe.cpp)
-target_compile_features(pm_probe PRIVATE cxx_std_17)
-target_include_directories(pm_probe PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pm_probe PRIVATE pathmuxlib)
+add_executable(clops_findgpslock tools/clops_findgpslock.cpp)
+target_compile_features(clops_findgpslock PRIVATE cxx_std_17)
+target_include_directories(clops_findgpslock PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(clops_findgpslock PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
-# pm_tripdebug — standalone debug tool (not installed by default)
-# Build with: cmake --build build --target pm_tripdebug
+# clops_probe — camera compatibility profiler
 # ---------------------------------------------------------------------------
-add_executable(pm_tripdebug tools/pm_tripdebug.cpp)
-target_link_libraries(pm_tripdebug PRIVATE pathmuxlib)
+add_executable(clops_probe tools/clops_probe.cpp)
+target_compile_features(clops_probe PRIVATE cxx_std_17)
+target_include_directories(clops_probe PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(clops_probe PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
-# pm_videos — batch map/dashboard/HUD video generator
+# clops_tripdebug — standalone debug tool (not installed by default)
+# Build with: cmake --build build --target clops_tripdebug
 # ---------------------------------------------------------------------------
-add_executable(pm_videos tools/pm_videos.cpp)
-target_compile_features(pm_videos PRIVATE cxx_std_17)
-target_include_directories(pm_videos PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pm_videos PRIVATE pathmuxlib)
+add_executable(clops_tripdebug tools/clops_tripdebug.cpp)
+target_link_libraries(clops_tripdebug PRIVATE camclopslib)
+
+# ---------------------------------------------------------------------------
+# clops_videos — batch map/dashboard/HUD video generator
+# ---------------------------------------------------------------------------
+add_executable(clops_videos tools/clops_videos.cpp)
+target_compile_features(clops_videos PRIVATE cxx_std_17)
+target_include_directories(clops_videos PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(clops_videos PRIVATE camclopslib)
 
 # ---------------------------------------------------------------------------
 # Install targets — platform-specific layouts
 # ---------------------------------------------------------------------------
 if(WIN32)
     # Windows: all binaries + DLL at the package root; README and LICENSE alongside
-    install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug pm_videos
+    install(TARGETS camclops clops_gpsinfo clops_gpsexport clops_ls clops_audit clops_findgpslock clops_probe clops_tripdebug clops_videos
         RUNTIME DESTINATION "."
     )
-    install(TARGETS pathmuxlib RUNTIME DESTINATION ".")
+    install(TARGETS camclopslib RUNTIME DESTINATION ".")
     install(FILES
             "${CMAKE_SOURCE_DIR}/LICENSE"
             "${CMAKE_SOURCE_DIR}/README.md"
@@ -232,21 +223,22 @@ if(WIN32)
     )
     # Python overlay scripts — installed into scripts\ so the GUI can find them
     install(FILES
-            "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
-            "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
-            "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
-            "${CMAKE_SOURCE_DIR}/scripts/pm_sync_analyze.py"
+            "${CMAKE_SOURCE_DIR}/scripts/clops_maprender.py"
+            "${CMAKE_SOURCE_DIR}/scripts/clops_dashboard.py"
+            "${CMAKE_SOURCE_DIR}/scripts/clops_hud.py"
+            "${CMAKE_SOURCE_DIR}/scripts/clops_sync_analyze.py"
+            "${CMAKE_SOURCE_DIR}/scripts/clops_monitor.py"
         DESTINATION "scripts"
     )
 else()
-    install(TARGETS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug pm_videos
+    install(TARGETS camclops clops_gpsinfo clops_gpsexport clops_ls clops_audit clops_findgpslock clops_probe clops_tripdebug clops_videos
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
-    install(TARGETS pathmuxlib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(TARGETS camclopslib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
     # Compress man pages — both RPM and DEB ecosystems expect .gz man pages.
     # Generate .1.gz files in the build dir at build time; install those.
-    set(MANPAGE_NAMES pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_probe pm_tripdebug pm_findgpslock)
+    set(MANPAGE_NAMES camclops clops_gpsinfo clops_gpsexport clops_ls clops_audit clops_probe clops_tripdebug clops_findgpslock)
     set(COMPRESSED_MANPAGES "")
     foreach(MP ${MANPAGE_NAMES})
         set(SRC "${CMAKE_SOURCE_DIR}/man1/${MP}.1")
@@ -267,7 +259,7 @@ else()
     )
 
     install(FILES "${CMAKE_SOURCE_DIR}/LICENSE"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pathmux"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/camclops"
     )
 endif()
 
@@ -300,24 +292,24 @@ add_custom_target(archive
 )
 
 # ---------------------------------------------------------------------------
-# pathmux-gui — Qt6 Widgets front-end
+# camclops-gui — Qt6 Widgets front-end
 # Skipped silently if Qt6 is not installed; CLI builds are unaffected.
 # Linux install:   sudo dnf install qt6-qtbase-devel
 # macOS install:   brew install qt6
 # Windows install: Qt Online Installer from qt.io
 # ---------------------------------------------------------------------------
-find_package(Qt6 QUIET COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS Widgets OPTIONAL_COMPONENTS DBus)
 if(Qt6_FOUND)
-    add_executable(pathmux-gui
+    add_executable(camclops-gui
         gui/main.cpp
         gui/MainWindow.cpp
         gui/ManifestPanel.cpp
         gui/TripGridPanel.cpp
         gui/TripTile.cpp
         gui/EmptyManifestWidget.cpp
-        gui/ScanProgressDialog.cpp
         gui/TripPropertiesDialog.cpp
         gui/DangerousDialog.cpp
+        gui/ExtrasDialog.cpp
         gui/TripBuildDialog.cpp
         gui/BuildProgressDialog.cpp
         gui/MapProgressDialog.cpp
@@ -329,33 +321,46 @@ if(Qt6_FOUND)
         gui/SetupWizard.cpp
         gui/HelpDialog.cpp
         gui/LogoMorphWidget.cpp
+        gui/JobQueue.cpp
+        gui/JobQueuePanel.cpp
+        gui/JobQueueMonitor.cpp
         cli/video_build.cpp
-        gui/resources/pathmux.qrc
+        gui/resources/camclops.qrc
     )
-    set_target_properties(pathmux-gui PROPERTIES
+    set_target_properties(camclops-gui PROPERTIES
         AUTOMOC ON
         AUTOUIC ON
         AUTORCC ON
     )
     if(WIN32)
         # WIN32_EXECUTABLE suppresses the console window on Windows.
-        # pathmux.rc embeds pathmux.ico into the executable for taskbar/Explorer.
-        set_target_properties(pathmux-gui PROPERTIES WIN32_EXECUTABLE TRUE)
-        target_sources(pathmux-gui PRIVATE gui/resources/pathmux.rc)
+        # camclops.rc embeds camclops.ico into the executable for taskbar/Explorer.
+        set_target_properties(camclops-gui PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_sources(camclops-gui PRIVATE gui/resources/camclops.rc)
     elseif(APPLE)
-        set_target_properties(pathmux-gui PROPERTIES
+        set_target_properties(camclops-gui PROPERTIES
             MACOSX_BUNDLE                    TRUE
-            MACOSX_BUNDLE_BUNDLE_NAME        "PathMux"
-            MACOSX_BUNDLE_GUI_IDENTIFIER     "com.nutballlabs.pathmux"
-            MACOSX_BUNDLE_BUNDLE_VERSION     "${PATHMUX_VERSION}"
-            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PATHMUX_VERSION}"
+            MACOSX_BUNDLE_BUNDLE_NAME        "CamClops"
+            MACOSX_BUNDLE_GUI_IDENTIFIER     "com.nutballlabs.camclops"
+            MACOSX_BUNDLE_BUNDLE_VERSION     "${CAMCLOPS_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${CAMCLOPS_VERSION}"
             MACOSX_BUNDLE_INFO_PLIST         "${CMAKE_SOURCE_DIR}/gui/Info.plist.in"
         )
     endif()
-    target_include_directories(pathmux-gui PRIVATE gui/ cli/ ${CMAKE_SOURCE_DIR})
-    target_link_libraries(pathmux-gui PRIVATE pathmuxlib Qt6::Widgets)
+    target_include_directories(camclops-gui PRIVATE gui/ cli/ ${CMAKE_SOURCE_DIR})
+    target_link_libraries(camclops-gui PRIVATE camclopslib Qt6::Widgets)
+    if(UNIX AND NOT APPLE AND TARGET Qt6::DBus)
+        target_link_libraries(camclops-gui PRIVATE Qt6::DBus)
+        target_compile_definitions(camclops-gui PRIVATE CAMCLOPS_HAVE_DBUS)
+        message(STATUS "Qt6::DBus found — sleep inhibitor enabled (Linux)")
+    elseif(UNIX AND NOT APPLE)
+        message(STATUS "Qt6::DBus not found — sleep inhibitor disabled on Linux")
+    endif()
+    if(APPLE)
+        target_link_libraries(camclops-gui PRIVATE "-framework IOKit")
+    endif()
     if(WIN32)
-        install(TARGETS pathmux-gui RUNTIME DESTINATION ".")
+        install(TARGETS camclops-gui RUNTIME DESTINATION ".")
         # Run windeployqt at install time so CPack ZIP captures Qt DLLs and
         # plugin directories.  We locate windeployqt relative to the Qt6 bin dir
         # so this works regardless of Qt version or install path.
@@ -366,11 +371,11 @@ if(Qt6_FOUND)
         )
         if(WINDEPLOYQT_EXECUTABLE)
             install(CODE "
-                message(STATUS \"Running windeployqt on installed pathmux-gui.exe ...\")
+                message(STATUS \"Running windeployqt on installed camclops-gui.exe ...\")
                 execute_process(
                     COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
                         --release --no-translations
-                        \"\${CMAKE_INSTALL_PREFIX}/pathmux-gui.exe\"
+                        \"\${CMAKE_INSTALL_PREFIX}/camclops-gui.exe\"
                     RESULT_VARIABLE _wdqt_result
                 )
                 if(NOT _wdqt_result EQUAL 0)
@@ -387,43 +392,65 @@ if(Qt6_FOUND)
         # SKIP_*_RPATH: macdeployqt (POST_BUILD) rewrites Qt load paths before
         # cmake --install runs, so CMake's rpath fixup would fail trying to delete
         # a path macdeployqt already removed. Both flags suppress that step.
-        set_target_properties(pathmux-gui PROPERTIES
+        set_target_properties(camclops-gui PROPERTIES
             SKIP_BUILD_RPATH    TRUE
             SKIP_INSTALL_RPATH  TRUE
         )
-        install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        install(TARGETS camclops-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
         # Python overlay scripts — installed into the bundle's Contents/scripts/
         # so findScript() can locate them via applicationDirPath()/../scripts/
         install(FILES
-                "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
-                "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
-                "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
-                "${CMAKE_SOURCE_DIR}/scripts/pm_sync_analyze.py"
-            DESTINATION "pathmux-gui.app/Contents/scripts"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_maprender.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_dashboard.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_hud.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_sync_analyze.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_monitor.py"
+            DESTINATION "camclops-gui.app/Contents/scripts"
         )
     else()
-        install(TARGETS pathmux-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        install(TARGETS camclops-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
-        # Python overlay scripts — installed into share/pathmux/scripts/ so
-        # findScript() can locate them via applicationDirPath()/../share/pathmux/scripts/
+        # Python overlay scripts — installed into share/camclops/scripts/ so
+        # findScript() can locate them via applicationDirPath()/../share/camclops/scripts/
         install(FILES
-                "${CMAKE_SOURCE_DIR}/scripts/pm_maprender.py"
-                "${CMAKE_SOURCE_DIR}/scripts/pm_dashboard.py"
-                "${CMAKE_SOURCE_DIR}/scripts/pm_hud.py"
-                "${CMAKE_SOURCE_DIR}/scripts/pm_sync_analyze.py"
-            DESTINATION "${CMAKE_INSTALL_DATADIR}/pathmux/scripts"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_maprender.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_dashboard.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_hud.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_sync_analyze.py"
+                "${CMAKE_SOURCE_DIR}/scripts/clops_monitor.py"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/camclops/scripts"
         )
         # XDG icon hierarchy for Linux desktop environments
         foreach(sz 16 32 48 64 128 256 512)
-            install(FILES "gui/resources/pathmux_${sz}.png"
+            install(FILES "gui/resources/camclops_${sz}.png"
                     DESTINATION "share/icons/hicolor/${sz}x${sz}/apps"
-                    RENAME "pathmux.png")
+                    RENAME "camclops.png")
         endforeach()
         # .desktop file — appears in GNOME/KDE application menus
-        install(FILES "gui/pathmux.desktop"
+        install(FILES "gui/camclops.desktop"
                 DESTINATION "share/applications")
     endif()
+    # Windows: copy Python overlay scripts into scripts\ next to the exe at
+    # build time so findScript() works when running from the build directory.
+    # (install() rules only run during cmake --install / cpack.)
+    # build-windows.ps1 copies all subdirectories from the build dir to
+    # build-win\, so the scripts\ folder flows through automatically.
+    if(WIN32)
+        add_custom_command(TARGET camclops-gui POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory
+                    "$<TARGET_FILE_DIR:camclops-gui>/scripts"
+            COMMAND "${CMAKE_COMMAND}" -E copy
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_maprender.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_dashboard.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_hud.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_sync_analyze.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_monitor.py"
+                    "$<TARGET_FILE_DIR:camclops-gui>/scripts/"
+            COMMENT "Copying Python overlay scripts into build directory"
+        )
+    endif()
+
     # macOS: run macdeployqt after each build to rewrite Qt load paths from
     # the Homebrew absolute paths to @executable_path/../Frameworks/.
     # Without this, both the bundled Qt and the system Homebrew Qt get loaded,
@@ -433,9 +460,26 @@ if(Qt6_FOUND)
             HINTS "${Qt6_DIR}/../../../bin"
             REQUIRED
         )
-        add_custom_command(TARGET pathmux-gui POST_BUILD
-            COMMAND "${MACDEPLOYQT_EXECUTABLE}" "$<TARGET_BUNDLE_DIR:pathmux-gui>"
-            COMMENT "Running macdeployqt to fix Qt framework load paths"
+        add_custom_command(TARGET camclops-gui POST_BUILD
+            COMMAND "${MACDEPLOYQT_EXECUTABLE}" "$<TARGET_BUNDLE_DIR:camclops-gui>" -codesign=-
+            COMMAND find "$<TARGET_BUNDLE_DIR:camclops-gui>" -name "._*" -delete
+            VERBATIM
+            COMMENT "Running macdeployqt and ad-hoc signing camclops-gui.app"
+        )
+        # Copy Python overlay scripts into the build-time bundle so findScript()
+        # works when running directly from the build directory during development.
+        # (install() rules only run during cmake --install / cpack.)
+        add_custom_command(TARGET camclops-gui POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory
+                    "$<TARGET_BUNDLE_DIR:camclops-gui>/Contents/scripts"
+            COMMAND "${CMAKE_COMMAND}" -E copy
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_maprender.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_dashboard.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_hud.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_sync_analyze.py"
+                    "${CMAKE_SOURCE_DIR}/scripts/clops_monitor.py"
+                    "$<TARGET_BUNDLE_DIR:camclops-gui>/Contents/scripts/"
+            COMMENT "Copying Python overlay scripts into macOS app bundle"
         )
     endif()
 
@@ -454,15 +498,15 @@ if(Qt6_FOUND)
                     "${CMAKE_SOURCE_DIR}/scripts/gen_logo_morph.py"
                     "${FFMPEG_BUILD_TOOL}"
                     "${LOGO_MORPH_MP4}"
-                    "${CMAKE_SOURCE_DIR}/gui/resources/pathmux_256.png"
+                    "${CMAKE_SOURCE_DIR}/gui/resources/camclops_256.png"
                     "${CMAKE_SOURCE_DIR}/gui/resources/Nutball-Labs_logo.png"
             DEPENDS "${CMAKE_SOURCE_DIR}/scripts/gen_logo_morph.py"
-                    "${CMAKE_SOURCE_DIR}/gui/resources/pathmux_256.png"
+                    "${CMAKE_SOURCE_DIR}/gui/resources/camclops_256.png"
                     "${CMAKE_SOURCE_DIR}/gui/resources/Nutball-Labs_logo.png"
-            COMMENT "Generating logo_morph.mp4 (PathMux ↔ Nutball-Labs cross-fade)"
+            COMMENT "Generating logo_morph.mp4 (CamClops ↔ Nutball-Labs cross-fade)"
         )
         add_custom_target(gen_logo_morph DEPENDS "${LOGO_MORPH_MP4}")
-        add_dependencies(pathmux-gui gen_logo_morph)
+        add_dependencies(camclops-gui gen_logo_morph)
         message(STATUS "Logo morph: Python3 + ffmpeg found — logo_morph.mp4 generated at build time")
     else()
         if(NOT EXISTS "${LOGO_MORPH_MP4}")
@@ -472,82 +516,82 @@ if(Qt6_FOUND)
         endif()
     endif()
 
-    message(STATUS "Qt6 found (${Qt6_VERSION}) — pathmux-gui target enabled")
+    message(STATUS "Qt6 found (${Qt6_VERSION}) — camclops-gui target enabled")
 else()
-    message(STATUS "Qt6 not found — pathmux-gui skipped (install qt6-qtbase-devel)")
+    message(STATUS "Qt6 not found — camclops-gui skipped (install qt6-qtbase-devel)")
 endif()
 
 # ---------------------------------------------------------------------------
-# pathmux-tl — PathMux Timelapse Editor (standalone Qt6 GUI app)
+# camclops-tl — CamClops Timelapse Editor (standalone Qt6 GUI app)
 # Requires Qt6::Multimedia and Qt6::MultimediaWidgets in addition to Widgets.
 # On Alma Linux: dnf install qt6-qtmultimedia-devel gstreamer1-plugins-good
 # ---------------------------------------------------------------------------
 find_package(Qt6 QUIET COMPONENTS Widgets Multimedia MultimediaWidgets)
 if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
-    add_executable(pathmux-tl
-        pathmux-tl/main.cpp
-        pathmux-tl/MainWindow.cpp
-        pathmux-tl/TimelineWidget.cpp
-        pathmux-tl/MarkDialog.cpp
-        pathmux-tl/FrameStrip.cpp
-        pathmux-tl/pathmux_tl.qrc
+    add_executable(camclops-tl
+        camclops-tl/main.cpp
+        camclops-tl/MainWindow.cpp
+        camclops-tl/TimelineWidget.cpp
+        camclops-tl/MarkDialog.cpp
+        camclops-tl/FrameStrip.cpp
+        camclops-tl/camclops_tl.qrc
     )
-    set_target_properties(pathmux-tl PROPERTIES
+    set_target_properties(camclops-tl PROPERTIES
         AUTOMOC ON
         AUTOUIC ON
         AUTORCC ON
     )
-    target_include_directories(pathmux-tl PRIVATE pathmux-tl)
-    target_link_libraries(pathmux-tl
+    target_include_directories(camclops-tl PRIVATE camclops-tl ${CMAKE_SOURCE_DIR}/lib)
+    target_link_libraries(camclops-tl
         Qt6::Widgets
         Qt6::Multimedia
         Qt6::MultimediaWidgets
     )
     if(WIN32)
-        install(TARGETS pathmux-tl RUNTIME DESTINATION ".")
+        install(TARGETS camclops-tl RUNTIME DESTINATION ".")
         if(WINDEPLOYQT_EXECUTABLE)
             install(CODE "
-                message(STATUS \"Running windeployqt on pathmux-tl.exe ...\")
+                message(STATUS \"Running windeployqt on camclops-tl.exe ...\")
                 execute_process(
                     COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
                         --release --no-translations
-                        \"\${CMAKE_INSTALL_PREFIX}/pathmux-tl.exe\"
+                        \"\${CMAKE_INSTALL_PREFIX}/camclops-tl.exe\"
                     RESULT_VARIABLE _wdqt_result
                 )
                 if(NOT _wdqt_result EQUAL 0)
-                    message(WARNING \"windeployqt (pathmux-tl) exited with \${_wdqt_result}\")
+                    message(WARNING \"windeployqt (camclops-tl) exited with \${_wdqt_result}\")
                 endif()
             ")
         endif()
     elseif(APPLE)
-        set_target_properties(pathmux-tl PROPERTIES
+        set_target_properties(camclops-tl PROPERTIES
             SKIP_BUILD_RPATH   TRUE
             SKIP_INSTALL_RPATH TRUE
             MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_BUNDLE_NAME "pathmux-tl"
+            MACOSX_BUNDLE_BUNDLE_NAME "camclops-tl"
             MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         )
-        install(TARGETS pathmux-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        install(TARGETS camclops-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
     else()
-        install(TARGETS pathmux-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-        install(FILES "pathmux-tl/pathmux-tl.desktop"
+        install(TARGETS camclops-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        install(FILES "camclops-tl/camclops-tl.desktop"
                 DESTINATION "share/applications"
                 OPTIONAL)
     endif()
-    message(STATUS "Qt6 Multimedia found — pathmux-tl target enabled")
+    message(STATUS "Qt6 Multimedia found — camclops-tl target enabled")
 else()
-    message(STATUS "Qt6 Multimedia not found — pathmux-tl skipped "
+    message(STATUS "Qt6 Multimedia not found — camclops-tl skipped "
                    "(install qt6-qtmultimedia-devel + gstreamer1-plugins-good)")
 endif()
 
 # ---------------------------------------------------------------------------
 # MSI installer — Windows only, requires WiX 6 (wix.exe in PATH)
 # Run: cmake --build build-win --target msi
-# Output: packages/pathmux-<version>-win64.msi
+# Output: packages/camclops-<version>-win64.msi
 # Install WiX 6: https://wixtoolset.org/releases/
-# NOTE: Run windeployqt on pathmux-gui.exe before this target — the WiX
+# NOTE: Run windeployqt on camclops-gui.exe before this target — the WiX
 #   template references Qt DLLs that windeployqt copies into the build dir.
 # ---------------------------------------------------------------------------
 if(WIN32)
@@ -558,20 +602,20 @@ if(WIN32)
     endif()
     if(WIX_EXECUTABLE)
         configure_file(
-            "${CMAKE_SOURCE_DIR}/wix/pathmux.wxs.in"
-            "${CMAKE_BINARY_DIR}/pathmux.wxs"
+            "${CMAKE_SOURCE_DIR}/wix/camclops.wxs.in"
+            "${CMAKE_BINARY_DIR}/camclops.wxs"
             @ONLY
         )
         # Build dependency list — include GUI only if Qt6 was found
-        set(_MSI_DEPS pathmux pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_tripdebug pm_videos)
+        set(_MSI_DEPS camclops clops_gpsinfo clops_gpsexport clops_ls clops_audit clops_findgpslock clops_probe clops_tripdebug clops_videos)
         if(Qt6_FOUND)
-            list(APPEND _MSI_DEPS pathmux-gui)
+            list(APPEND _MSI_DEPS camclops-gui)
         endif()
         add_custom_target(msi
             COMMAND "${WIX_EXECUTABLE}" build
                 -arch x64
-                -o "${CMAKE_SOURCE_DIR}/packages/pathmux-${PATHMUX_VERSION}-win64.msi"
-                "${CMAKE_BINARY_DIR}/pathmux.wxs"
+                -o "${CMAKE_SOURCE_DIR}/packages/camclops-${CAMCLOPS_VERSION}-win64.msi"
+                "${CMAKE_BINARY_DIR}/camclops.wxs"
                 -d BinDir="${CMAKE_BINARY_DIR}"
                 -d SrcDir="${CMAKE_SOURCE_DIR}"
             DEPENDS ${_MSI_DEPS}
@@ -586,17 +630,17 @@ endif()
 # ---------------------------------------------------------------------------
 # macOS .pkg installer — macOS only, requires pkgbuild (Xcode Command Line Tools)
 # Run: cmake --build build-mac --target pkg
-# Output: packages/pathmux-<version>-macOS.pkg
+# Output: packages/camclops-<version>-macOS.pkg
 # ---------------------------------------------------------------------------
 if(APPLE)
     find_program(PKGBUILD_EXECUTABLE pkgbuild)
     if(PKGBUILD_EXECUTABLE)
         set(_PKG_STAGING "${CMAKE_BINARY_DIR}/pkg-staging")
-        set(_PKG_OUTPUT  "${CMAKE_SOURCE_DIR}/packages/pathmux-${PATHMUX_VERSION}-macOS.pkg")
+        set(_PKG_OUTPUT  "${CMAKE_SOURCE_DIR}/packages/camclops-${CAMCLOPS_VERSION}-macOS.pkg")
 
-        set(_PKG_DEPS pathmux pathmuxlib pm_gpsinfo pm_gpsexport pm_ls pm_audit pm_findgpslock pm_probe pm_videos)
+        set(_PKG_DEPS camclops camclopslib clops_gpsinfo clops_gpsexport clops_ls clops_audit clops_findgpslock clops_probe clops_videos)
         if(Qt6_FOUND)
-            list(APPEND _PKG_DEPS pathmux-gui)
+            list(APPEND _PKG_DEPS camclops-gui)
         endif()
 
         set(_PKG_SCRIPTS "${CMAKE_SOURCE_DIR}/packaging/macos-scripts")
@@ -605,7 +649,7 @@ if(APPLE)
             # Clear and re-populate staging root.
             # cmake --install stages everything under /usr/local (safe for
             # unsigned pkgs). The postinstall script (packaging/macos-scripts/)
-            # moves pathmux-gui.app from /usr/local to /Applications at install
+            # moves camclops-gui.app from /usr/local to /Applications at install
             # time using the elevated privileges the macOS installer already holds.
             COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_PKG_STAGING}"
             COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}"
@@ -614,12 +658,12 @@ if(APPLE)
             COMMAND "${PKGBUILD_EXECUTABLE}"
                     --root            "${_PKG_STAGING}/payload"
                     --scripts         "${_PKG_SCRIPTS}"
-                    --identifier      "com.nutballlabs.pathmux"
-                    --version         "${PATHMUX_VERSION}"
+                    --identifier      "com.nutballlabs.camclops"
+                    --version         "${CAMCLOPS_VERSION}"
                     --install-location "/usr/local"
                     "${_PKG_OUTPUT}"
             DEPENDS ${_PKG_DEPS}
-            COMMENT "Building macOS .pkg installer -> packages/pathmux-${PATHMUX_VERSION}-macOS.pkg"
+            COMMENT "Building macOS .pkg installer -> packages/camclops-${CAMCLOPS_VERSION}-macOS.pkg"
         )
         message(STATUS "pkgbuild found: ${PKGBUILD_EXECUTABLE} — 'pkg' target enabled")
     else()
@@ -635,12 +679,12 @@ endif()
 # Windows: cmake --build build-win   --target package  -> ZIP
 # Output lands in packages/ at the project root.
 # ---------------------------------------------------------------------------
-set(CPACK_PACKAGE_NAME "pathmux")
-set(CPACK_PACKAGE_VERSION "${PATHMUX_VERSION}")
+set(CPACK_PACKAGE_NAME "camclops")
+set(CPACK_PACKAGE_VERSION "${CAMCLOPS_VERSION}")
 set(CPACK_PACKAGE_VENDOR "Nutball Labs")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
-set(CPACK_PACKAGE_CONTACT "Stephen Berg <pathmux@iceberg.email>")
-set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Nutball-Labs/PathMux")
+set(CPACK_PACKAGE_CONTACT "Stephen Berg <camclops@iceberg.email>")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Nutball-Labs/CamClops")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 
 # Direct all package output to packages/ at the project root.
@@ -648,12 +692,12 @@ set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_SOURCE_DIR}/packages")
 
 if(WIN32)
     set(CPACK_GENERATOR "ZIP")
-    set(CPACK_PACKAGE_FILE_NAME "pathmux-${PATHMUX_VERSION}-win64")
+    set(CPACK_PACKAGE_FILE_NAME "camclops-${CAMCLOPS_VERSION}-win64")
 elseif(APPLE)
     # macOS: TGZ + ZIP (generic binary tarballs for manual install)
     set(CPACK_GENERATOR "TGZ;ZIP")
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
-    set(CPACK_PACKAGE_FILE_NAME "pathmux-${PATHMUX_VERSION}-macOS")
+    set(CPACK_PACKAGE_FILE_NAME "camclops-${CAMCLOPS_VERSION}-macOS")
 else()
     # Linux: RPM (Alma/RHEL), DEB (Ubuntu/Debian), TGZ (generic binary tarball)
     set(CPACK_GENERATOR "RPM;DEB;TGZ")
@@ -662,26 +706,26 @@ else()
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 
     # Use ecosystem-standard arch-suffixed filenames:
-    #   pathmux-1.0.1-1.x86_64.rpm  /  pathmux_1.0.1_amd64.deb
+    #   camclops-1.0.1-1.x86_64.rpm  /  camclops_1.0.1_amd64.deb
     set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
     set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 
     # RPM specific
     set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
     set(CPACK_RPM_PACKAGE_LICENSE "GPL-3.0-or-later")
-    set(CPACK_RPM_PACKAGE_URL "https://github.com/Nutball-Labs/PathMux")
+    set(CPACK_RPM_PACKAGE_URL "https://github.com/Nutball-Labs/CamClops")
     set(CPACK_RPM_PACKAGE_RELEASE "1")
     set(CPACK_RPM_PACKAGE_DESCRIPTION
-"PathMux scans multi-camera dashcam storage, groups video segments into trips,
+"CamClops scans multi-camera dashcam storage, groups video segments into trips,
 caches results as JSON manifests, and builds per-camera MP4 files or
-synchronized 4K collages. The pm_probe --wizard command profiles any dashcam
+synchronized 4K collages. The clops_probe --wizard command profiles any dashcam
 layout automatically. Requires ffmpeg (RPM Fusion) and ExifTool for full
 functionality.")
 
     # DEB specific
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Stephen Berg <pathmux@iceberg.email>")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Stephen Berg <camclops@iceberg.email>")
     set(CPACK_DEBIAN_PACKAGE_SECTION "video")
-    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/Nutball-Labs/PathMux")
+    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/Nutball-Labs/CamClops")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libstdc++6")
 
     # ldconfig scriptlets — update the linker cache after install/remove
@@ -690,11 +734,11 @@ functionality.")
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${CMAKE_BINARY_DIR}/postinst"
         "${CMAKE_BINARY_DIR}/postrm")
-    file(WRITE "${CMAKE_BINARY_DIR}/rpm_ldconfig.sh" "#!/bin/sh\n/sbin/ldconfig\n")
-    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE   "${CMAKE_BINARY_DIR}/rpm_ldconfig.sh")
-    set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_BINARY_DIR}/rpm_ldconfig.sh")
+    file(WRITE "${CMAKE_BINARY_DIR}/rclops_ldconfig.sh" "#!/bin/sh\n/sbin/ldconfig\n")
+    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE   "${CMAKE_BINARY_DIR}/rclops_ldconfig.sh")
+    set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_BINARY_DIR}/rclops_ldconfig.sh")
 endif()
 
 include(CPack)
 
-# SN: 00111
+# SN: 00115

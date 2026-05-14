@@ -11,7 +11,7 @@
 
 #include <string>
 
-namespace Pathmux {
+namespace CamClops {
 namespace Platform {
 
 // Returns the user's home directory path (no trailing slash).
@@ -20,10 +20,10 @@ namespace Platform {
 // Exits with a fatal error if the value cannot be determined.
 std::string getHomePath();
 
-// Returns the pathmux configuration directory path (with trailing slash).
-// Linux: ~/.config/pathmux/
-// macOS: ~/Library/Application Support/pathmux/
-// Windows: %APPDATA%/pathmux/
+// Returns the camclops configuration directory path (with trailing slash).
+// Linux: ~/.config/camclops/
+// macOS: ~/Library/Application Support/camclops/
+// Windows: %APPDATA%/camclops/
 // Creates the directory if it does not exist.
 std::string getConfigDir();
 
@@ -34,7 +34,7 @@ std::string getConfigDir();
 int getTerminalWidth();
 
 } // namespace Platform
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
 // SN: 00089

@@ -1,6 +1,6 @@
-# PathMux Dashcam Explorer — Development Roadmap
+# CamClops Dashcam Explorer — Development Roadmap
 
-This document outlines planned features and future development direction for PathMux. Items are organized by development phase and priority.
+This document outlines planned features and future development direction for CamClops. Items are organized by development phase and priority.
 
 ---
 
@@ -49,7 +49,7 @@ unaffected — their ICQ mode has no equivalent cap.
 ### Trip Detection & Caching
 - [x] Filesystem scan of Front/Rear/Left/Right camera directories
 - [x] Timestamp-based trip grouping with configurable gap threshold
-- [x] JSON manifest caching in ~~`~/.config/quadeye/`~~ `~/.config/pathmux/`
+- [x] JSON manifest caching in ~~`~/.config/quadeye/`~~ `~/.config/camclops/`
 - [x] **ffprobe integration for accurate trip duration calculation**
   - `probeSegmentDuration()` called on last Front segment in `closeTrip()`
   - `probeVideoProfile()` called on first Front segment
@@ -65,14 +65,14 @@ unaffected — their ICQ mode has no equivalent cap.
   - `last*` fields always from segments.back()
   - All 8 trip-level + 4×N per-segment fields serialized to manifest JSON
 
-### pm_gpsinfo Standalone Utility
+### clops_gpsinfo Standalone Utility
 **Status:** Active development alongside main CLI
 
-- [x] Single-file GPS inspection: `pm_gpsinfo [options] <file.ts>`
+- [x] Single-file GPS inspection: `clops_gpsinfo [options] <file.ts>`
   - JSON, CSV, XML, text output formats
   - `--first-lock` (default) and `--all` record modes
 - [x] **`--scan-all-trips` batch mode** (v0.9.3): Reads all manifests from
-  `~/.config/pathmux/manifests.json`, scans first Front segment of every trip,
+  `~/.config/camclops/manifests.json`, scans first Front segment of every trip,
   reports seconds-to-GPS-lock in a labeled column table (MID, TID, SegDur, LockAt,
   First Segment). Handles inaccessible footage gracefully (`!file`).
 - [x] **`MID:TID` addressing convention** established (v0.9.3) — colon-separated
@@ -80,7 +80,7 @@ unaffected — their ICQ mode has no equivalent cap.
 - [x] **`gpsLockSeconds` write-back** (post-0.9.4): `--scan-all-trips` now stores
   seconds-to-first-lock in the manifest (`Trip::gpsLockSeconds`); `saveTripCache`
   path maintains MD5 integrity automatically
-- [x] **`pm_gpsinfo MID:TID` direct addressing** (post-0.9.4): invoke single-file
+- [x] **`clops_gpsinfo MID:TID` direct addressing** (post-0.9.4): invoke single-file
   GPS inspection by manifest:trip ID — no need to specify the segment file path
 
 ---
@@ -88,7 +88,7 @@ unaffected — their ICQ mode has no equivalent cap.
 ### GPS Data Extraction
 
 **ExifTool status:** Phil Harvey fixed LIGOGPSINFO coordinate decode in response to GitHub issue.
-ExifTool 13.51+ released and working. PathMux does not validate the ExifTool version at
+ExifTool 13.51+ released and working. CamClops does not validate the ExifTool version at
 runtime — if GPS extraction returns no data, the user contacts the ExifTool maintainer directly.
 
 **One GPS record per second** from LIGOGPSINFO binary stream:
@@ -97,7 +97,7 @@ values on D90) — stored but ignored. Speed in km/h.
 
 **Scan-time GPS (during trip detection):**
 - [x] `startLat/Lon` and `endLat/Lon` extracted during trip scan and stored in manifest
-- [x] `gpsLockSeconds` — seconds to first valid fix, populated by `pm_gpsinfo --scan-all-trips`
+- [x] `gpsLockSeconds` — seconds to first valid fix, populated by `clops_gpsinfo --scan-all-trips`
 - [x] `firstLockLat/Lon/Timestamp/Record` — first fix with non-zero coordinates
 
 **Full track extraction (user-initiated):**
@@ -116,8 +116,8 @@ values on D90) — stored but ignored. Speed in km/h.
 
 ### Completed Infrastructure
 
-- [x] **Library restructure** (v0.9.4) — `libpathmuxlib` (static) + `pathmux` CLI + `tools/`
-- [x] **Manifest ID-based filenames** (v0.9.7a) — `pm_manifest_<id>.json`; transparent migration
+- [x] **Library restructure** (v0.9.4) — `libcamclopslib` (static) + `camclops` CLI + `tools/`
+- [x] **Manifest ID-based filenames** (v0.9.7a) — `clops_manifest_<id>.json`; transparent migration
 - [x] **Stale manifest archive** (v0.9.8) — `manifests_stale.json`; `--show-stale` / `--clear-stale`
 - [x] **Manifest management UX** (v0.9.8) — `Manifest management:` help section; `--force` order-independent
 - [x] **Per-camera thumbnails** (v0.9.9) — `TripSegment` + `Trip` thumb fields; cold-start skip logic
@@ -133,14 +133,14 @@ values on D90) — stored but ignored. Speed in km/h.
 - [ ] **Publish v1.0.1 GitHub Release — NEXT ACTION** — packages built, need to go live:
   - Install `gh` CLI: `winget install GitHub.cli`, then `gh auth login`
   - Create release + upload Windows assets from this machine:
-    `gh release create v1.0.1 --title "PathMux v1.0.1" --generate-notes packages/pathmux-1.0.1-win64.zip packages/pathmux-1.0.1-win64.msi`
+    `gh release create v1.0.1 --title "CamClops v1.0.1" --generate-notes packages/camclops-1.0.1-win64.zip packages/camclops-1.0.1-win64.msi`
   - Build Linux packages on Alma box: `cmake --build build-linux --target package`
   - Upload Linux assets from Alma box:
-    `gh release upload v1.0.1 packages/pathmux-1.0.1-1.x86_64.rpm packages/pathmux_1.0.1_amd64.deb packages/pathmux-1.0.1-Linux.tar.gz`
+    `gh release upload v1.0.1 packages/camclops-1.0.1-1.x86_64.rpm packages/camclops_1.0.1_amd64.deb packages/camclops-1.0.1-Linux.tar.gz`
   - Script the release upload into `run-build.ps1` (-Publish flag) for future releases
 - [x] **Distribution packaging** — pre-compiled packages for users who cannot or will not build from source:
-  - [x] `.zip` — Windows portable package (`pathmux-1.0.1-win64.zip`) — v1.0.1
-  - [x] `.msi` — Windows installer (`pathmux-1.0.1-win64.msi`) — v1.0.1
+  - [x] `.zip` — Windows portable package (`camclops-1.0.1-win64.zip`) — v1.0.1
+  - [x] `.msi` — Windows installer (`camclops-1.0.1-win64.msi`) — v1.0.1
   - [x] `.rpm` — RHEL/Alma/Fedora/CentOS — v1.0.1
   - [x] `.deb` — Debian/Ubuntu — v1.0.1
   - [x] `.tgz` — generic Linux binary tarball — v1.0.1
@@ -156,25 +156,25 @@ values on D90) — stored but ignored. Speed in km/h.
   trip detection. See "Multi-Brand Dashcam Support" section for full spec.
 - [x] Strip Pruveeo D90-specific hardcoding from `trip_detection.cpp`; replace
   with sane hardware-agnostic defaults; load active profile from
-  `~/.config/pathmux/profiles/` at scan time
+  `~/.config/camclops/profiles/` at scan time
 - [x] Wire CameraProfile into `--prefs` (select default profile from profiles dir)
 
 **Man page:**
-- [x] Updated `pathmux.1` to v0.9.9 — `-s` scan prompt, GeoJSON in `-G` flow,
+- [x] Updated `camclops.1` to v0.9.9 — `-s` scan prompt, GeoJSON in `-G` flow,
   `Manifest Management` subsection, `--show-stale` / `--clear-stale`, ExifTool
   format string corrected (7 fields), `manifests_stale.json` in FILES
 
-**pm_* utility suite** (see PROPOSED_UTILS.md for full specs):
-- [x] `pm_gpsexport` — export GPS track to GPX/KML; `--gpx` / `--kml` runtime flags
-- [x] `pm_ls` — quick manifest listing; `pm_audit` — integrity check across all manifests
-- [x] `pm_probe` — camera fingerprinting tool; single-file mode + `--card` SD card report
-- [x] Rename `trip_debug` → `pm_tripdebug` (binary, CMakeLists target, source, man page)
-- [x] `pm_probe --wizard` — interactive camera profile builder; confirmed on D90, Cobra CCDC4500, Cobra GPS, and Prilotte
-- [x] `pm_videos` — batch map/dashboard/HUD video generator; `--mid`/`--tid` trip addressing; `--map`/`--dash`/`--hud`/`--all` flags; updates manifest on completion (v1.9.9a)
+**clops_* utility suite** (see PROPOSED_UTILS.md for full specs):
+- [x] `clops_gpsexport` — export GPS track to GPX/KML; `--gpx` / `--kml` runtime flags
+- [x] `clops_ls` — quick manifest listing; `clops_audit` — integrity check across all manifests
+- [x] `clops_probe` — camera fingerprinting tool; single-file mode + `--card` SD card report
+- [x] Rename `trip_debug` → `clops_tripdebug` (binary, CMakeLists target, source, man page)
+- [x] `clops_probe --wizard` — interactive camera profile builder; confirmed on D90, Cobra CCDC4500, Cobra GPS, and Prilotte
+- [x] `clops_videos` — batch map/dashboard/HUD video generator; `--mid`/`--tid` trip addressing; `--map`/`--dash`/`--hud`/`--all` flags; updates manifest on completion (v1.9.9a)
 
 **CLI polish:**
 - [x] **`--format=[json,csv,xml]` + `--fields`** (v0.9.11) — structured trip output;
-  `--format` is a modifier to `-T` in `pathmux`; standalone in `pm_ls`. Shared
+  `--format` is a modifier to `-T` in `camclops`; standalone in `clops_ls`. Shared
   implementation in `lib/trip_format.hpp`. Supported fields: manifest_id, trip_id,
   address, date, start_time, start_epoch, duration, duration_seconds, segment_count,
   note, start_lat, start_lon, end_lat, end_lon, distance_km, distance_mi,
@@ -193,25 +193,28 @@ values on D90) — stored but ignored. Speed in km/h.
 
 ## Phase 2: Qt6 GUI Development
 
-**Current status (v1.9.9a):** The Qt6 GUI is feature-rich and actively shipping.
-All core workflows are implemented: manifest scanning, trip tile grid, GPS extraction
-and export, moving map generation, instrument dashboard (with Open-Meteo weather),
-HUD overlay (VP9 transparent WebM), and full collage build with per-slot camera
-remapping, transparent overlay support, and preview frame. Camera sync is complete
-through both Tier 1 (explicit segment durations) and Tier 2 (audio cross-correlation).
-The `pathmux-tl` timelapse editor ships as a companion Qt6 tool.
+**Current status (v2.0.0 — 2026-05-14):** The Qt6 GUI is the primary interface and
+is feature-complete for the core dashcam workflow. All core workflows ship: manifest
+scanning, trip tile grid, GPS extraction/export, moving map, instrument dashboard
+(Open-Meteo weather), HUD overlay (VP9/alpha WebM), and full collage build with
+per-slot camera remapping, transparent overlay, and preview frame. Camera sync ships
+through Tier 1 (explicit segment durations) and Tier 2 (audio cross-correlation).
+`camclops-tl` timelapse editor ships as a companion Qt6 tool. All generated video
+files carry provenance metadata tags (vendor, product, version/HWM, hostname,
+content_type).
 
 **Implemented components:** MainWindow, ManifestPanel, TripGridPanel, TripTile,
-TripPropertiesDialog (two-row tab bar: General/cameras + GPS/Map/Dashboard/HUD),
-TripBuildDialog (quadrant grid with logo-morph placeholder, overlay position picker,
-HUD full-screen row), BuildProgressDialog, MapProgressDialog (cancel-safe),
+TripPropertiesDialog, TripBuildDialog, BuildProgressDialog, MapProgressDialog,
 ScanProgressDialog, ManifestManagerDialog, SettingsDialog, SetupWizard, AboutDialog,
-EmptyManifestWidget, LogoMorphWidget.
+EmptyManifestWidget, LogoMorphWidget, ExtrasDialog, JobQueue, JobQueuePanel,
+JobQueueMonitor.
 
-**v2.0.0 gating items** (see end of this section):
-- GPS extraction auto-triggers camera sync analysis
-- Unified Job Queue Panel (replaces per-op progress dialogs)
-- `cameraSync.segments` keyed by front camera timestamp (not positional index)
+**v2.0.0 gating items — all DONE:**
+- [x] GPS extraction auto-triggers camera sync analysis
+- [x] Unified Job Queue Panel with per-step progress bars and expand/collapse
+- [x] `cameraSync.segments` keyed by front camera timestamp (not positional index)
+- [x] MP4/WebM output branding (vendor/product/version/HWM/hostname/content_type)
+- [x] Output filenames include MID (`clops_trip_XP-6Z_hud.webm`)
 
 ---
 
@@ -238,7 +241,7 @@ EmptyManifestWidget, LogoMorphWidget.
     - **Separator merge:** Transition sequence between trips
       - Last frame of Trip A holds as still (all cameras)
       - Fade to black (synchronized across cameras)
-      - PathMux logo animation/spin (all cameras)
+      - CamClops logo animation/spin (all cameras)
       - Fade to first frame of Trip B
       - Resume playback
       - **Camera sync handling:** Cameras with fewer frames start fade early, show logo during buffer period to keep all outputs same length
@@ -287,7 +290,7 @@ If segments are naively concatenated without compensation, sync drift accumulate
 **Status: Tier 1 + Tier 2 both complete as of v1.9.9a.**
 
 Tier 1 (explicit segment durations) ships in all three build paths. Tier 2 (audio
-cross-correlation via `pm_sync_analyze.py`) measures per-trip start-time offsets and stores
+cross-correlation via `clops_sync_analyze.py`) measures per-trip start-time offsets and stores
 them in the manifest `cameraSync` block. The collage builder reads per-segment delay/hold
 values and pads the shorter stream with a subdued first-frame ghost — zero frames discarded,
 four streams remain lockstep. Falls back to Tier 1 when no sync data is present.
@@ -394,7 +397,7 @@ required_speed          = timelapse_source_time / timelapse_budget
 - Display the calculated speed to the user before rendering so they can adjust
 
 This makes the workflow: *"I have a 90-minute trip, I want a 5-minute highlight reel,
-here are the 3 incidents I care about"* → PathMux does the math, renders the result.
+here are the 3 incidents I care about"* → CamClops does the math, renders the result.
 
 **Speed map preview (Shower Thought 2026-03-05 addendum):**
 
@@ -516,8 +519,8 @@ Keeps the CLI orthogonal: what-to-dump is separate from how-to-serialize-it.
 - For integration with older enterprise tooling and ELD/fleet compliance systems
 - Schema designed to be human-readable, not namespace-heavy
 
-**Priority:** Medium — implement after libpathmux.a restructure so export logic
-lives in `libpathmux` and all three formats share the same data pipeline.
+**Priority:** Medium — implement after libcamclops.a restructure so export logic
+lives in `libcamclops` and all three formats share the same data pipeline.
 
 ### Video Analysis
 - Automatic event detection (hard braking, sharp turns, impacts)
@@ -580,7 +583,7 @@ lives in `libpathmux` and all three formats share the same data pipeline.
 
 ## Community & Contributions
 
-PathMux is a solo project by a Linux sysadmin building with AI-assisted C++ development.
+CamClops is a solo project by a Linux sysadmin building with AI-assisted C++ development.
 The project is publicly released — bug reports, camera profile submissions, and feature
 requests are welcome via GitHub Issues.
 
@@ -590,7 +593,7 @@ requests are welcome via GitHub Issues.
 - Drivers wanting organized trip records, GPS tracks, and incident clips
 
 **Contributing camera profiles:**
-Run `pm_probe --card <path>` and attach the output to a GitHub issue with your camera
+Run `clops_probe --card <path>` and attach the output to a GitHub issue with your camera
 make and model. That gives everything needed to build a profile without requiring the
 hardware. See the "Multi-Brand Dashcam Support" section for the full contribution model.
 
@@ -598,7 +601,7 @@ hardware. See the "Multi-Brand Dashcam Support" section for the full contributio
 
 ## License & Legal
 
-- PathMux source code: **GPL-3.0-or-later** — see `LICENSE` file
+- CamClops source code: **GPL-3.0-or-later** — see `LICENSE` file
 - ExifTool: Perl Artistic License / GPL (called as external process, no linking)
 - Qt6: LGPL (open source usage)
 - ffmpeg: LGPL or GPL depending on build configuration
@@ -613,17 +616,21 @@ These three items together represent the architectural milestone that justifies 
 major version bump. All other v2.0.0 work is blocked on or complementary to these.
 
 ### GPS Extraction Auto-Triggers Camera Sync
-When GPS extraction completes for a trip, immediately run `pm_sync_analyze.py
+When GPS extraction completes for a trip, immediately run `clops_sync_analyze.py
 --all-segments --write` for the same trip as a single combined operation. Single
 progress flow in GUI, single command in CLI. Sync failure is a warning, not an error.
 See `memory/shower_gps_sync_combined.md`.
 
 ### Unified Job Queue Panel
-Replace the per-operation progress dialogs (`BuildProgressDialog`, `MapProgressDialog`)
-with a persistent dockable queue panel. All jobs flow through it: GPS extraction, sync
-analysis, map/dash/HUD renders, collage stages, manifest scans. Sequential by default;
-within-trip concats remain concurrent. `QDockWidget` + abstract `Job` base class.
-See `memory/shower_job_queue_panel.md`.
+**Status: SHIPPED (2026-05-09)**
+
+Dockable/detachable job queue panel with GPS extract, sync analysis, map/dash/HUD
+render, and collage jobs. Sequential queue; within-trip concats remain concurrent.
+`ExtrasDialog` provides per-tile one-click job submission. Remote monitor
+(`clops_monitor.py`) serves live status over the LAN.
+
+Remaining before this gate item is fully closed: `ManifestScanJob` (scan should
+also flow through the queue rather than using `ScanProgressDialog` directly).
 
 ### cameraSync Segment Schema Fix
 The current `cameraSync.segments` array is positional — matched by index to
@@ -634,9 +641,9 @@ to Tier 1 concat for missing keys. Migrate existing manifests on read.
 
 ---
 
-*Last updated: 2026-05-07*
+*Last updated: 2026-05-09*
 *Project status: Phase 2 (Qt6 GUI — actively shipping; v2.0.0 in progress)*
-*Current version: 1.9.10a (SN 00112)*
+*Current version: 1.9.10a (SN 00113, unreleased session work)*
 
 **Audio sync reference:**
 - Audio track always sourced from **Left camera** (driver position)
@@ -689,11 +696,11 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 
 ---
 
-### PathMux Archive Format (.pathmux)
+### CamClops Archive Format (.camclops)
 
 **Long-term goal:** Package entire trips into a single portable archive file for sharing or backup.
 
-**Contents of `.pathmux` archive:**
+**Contents of `.camclops` archive:**
 - All `.ts` video segments (Front/Rear/Left/Right)
 - All `.jpg` thumbnail sidecar files
 - Trip manifest JSON (includes GPS track, sync data, metadata)
@@ -709,19 +716,19 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 - **Sneakernet:** Share entire trip on USB drive without cloud upload
 - **Backup:** Single file to archive to NAS or external storage
 - **Collaboration:** Send trip to friend/family/insurance for review
-- **Portability:** Open `.pathmux` file on any machine with PathMux installed
+- **Portability:** Open `.camclops` file on any machine with CamClops installed
 
 **Format considerations:**
 - **Compression:** Use standard container (ZIP, TAR.GZ, or custom)
   - Video already compressed (H.264), so focus on metadata/thumbnail compression
   - Optional: Offer multiple compression levels (fast/balanced/maximum)
 - **Integrity:** Include checksums (SHA256) for all files
-- **Metadata:** Embed manifest version, PathMux version, creation timestamp
+- **Metadata:** Embed manifest version, CamClops version, creation timestamp
 - **Privacy:** Option to strip GPS data before creating archive
-- **Compatibility:** Design for forward compatibility — newer PathMux versions can read older archives
+- **Compatibility:** Design for forward compatibility — newer CamClops versions can read older archives
 
 **Import workflow:**
-1. User drags `.pathmux` file into PathMux GUI
+1. User drags `.camclops` file into CamClops GUI
 2. App extracts to temporary directory
 3. Validates manifest and checksums
 4. Imports trip into local cache
@@ -730,13 +737,13 @@ Once LIGOGPSINFO stream is correctly decoded, each segment will have:
 **Export workflow:**
 1. User selects trip(s) to export
 2. Choose compression level and privacy options
-3. PathMux bundles all segments + manifest + thumbnails
-4. Writes `.pathmux` file to user-selected location
+3. CamClops bundles all segments + manifest + thumbnails
+4. Writes `.camclops` file to user-selected location
 5. Optional: Generate QR code linking to file for easy sharing
 
 **File extension registration:**
-- `.pathmux` files associated with PathMux application
-- Double-click to open in PathMux GUI
+- `.camclops` files associated with CamClops application
+- Double-click to open in CamClops GUI
 - Icon shows thumbnail preview (if OS supports)
 
 **Priority:** Medium — implement after core trip detection and collage generation are solid
@@ -756,18 +763,18 @@ package for the Debian/Ubuntu equivalent (likely Debian backports or Ubuntu PPA)
 ### Packaging Checklist (audit before v1.0)
 
 **CMake install targets:**
-- [x] `pathmux` binary → `/usr/bin/` — `install(TARGETS pathmux ...)` in CMakeLists.txt
-- [x] `pm_gpsinfo` binary → `/usr/bin/` — same install target
-- [x] `pm_tripdebug` binary → `/usr/bin/`
-- [x] `pathmux.1` man page → `/usr/share/man/man1/` — `install(FILES ...)` in CMakeLists.txt
-- [x] `LICENSE` file → `/usr/share/licenses/pathmux/` — `install(FILES LICENSE DESTINATION ...)` in CMakeLists.txt
-- [x] `libpathmuxlib.a` not installed — internal static lib only; correct
+- [x] `camclops` binary → `/usr/bin/` — `install(TARGETS camclops ...)` in CMakeLists.txt
+- [x] `clops_gpsinfo` binary → `/usr/bin/` — same install target
+- [x] `clops_tripdebug` binary → `/usr/bin/`
+- [x] `camclops.1` man page → `/usr/share/man/man1/` — `install(FILES ...)` in CMakeLists.txt
+- [x] `LICENSE` file → `/usr/share/licenses/camclops/` — `install(FILES LICENSE DESTINATION ...)` in CMakeLists.txt
+- [x] `libcamclopslib.a` not installed — internal static lib only; correct
 
 **FHS compliance — verified by architecture:**
 - [x] No hardcoded developer paths — all paths resolved at runtime
 - [x] Config dir via `Platform::getConfigDir()` — correct for packaged installs
 - [x] External tools discovered via `$PATH` — no hardcoded `/usr/bin/ffprobe` etc.
-- [x] No runtime writes to `/usr/` — only `~/.config/pathmux/` and footage dirs
+- [x] No runtime writes to `/usr/` — only `~/.config/camclops/` and footage dirs
 
 **Runtime dependencies:**
 - `ffmpeg` / `ffprobe` — RPM Fusion on RHEL; `ffmpeg` on Debian/Ubuntu (soft dep)
@@ -780,7 +787,7 @@ package for the Debian/Ubuntu equivalent (likely Debian backports or Ubuntu PPA)
 **CPack:**
 - [x] CPack configured in CMakeLists.txt — RPM and DEB generators, package metadata,
   description. `include(CPack)` active.
-- [ ] `rpm/pathmux.spec` — hand-crafted spec for EPEL submission (CPack-generated
+- [ ] `rpm/camclops.spec` — hand-crafted spec for EPEL submission (CPack-generated
   spec may need customization for `%post` man page registration and dep handling)
 - [ ] `debian/` directory — `control`, `rules`, `changelog`, `copyright` files
 
@@ -807,9 +814,9 @@ code paths are stubbed and documented in `lib/platform.cpp` — not yet tested.
 
 ### Platform Abstraction Layer ✓ Done (v0.9.4)
 
-`lib/platform.cpp/.hpp` (`namespace Pathmux::Platform`):
+`lib/platform.cpp/.hpp` (`namespace CamClops::Platform`):
 - `getHomePath()` — Linux/macOS: `$HOME`; Windows: `%USERPROFILE%`
-- `getConfigDir()` — Linux: `~/.config/pathmux/`; macOS: `~/Library/Application Support/pathmux/`; Windows: `%APPDATA%/pathmux/`
+- `getConfigDir()` — Linux: `~/.config/camclops/`; macOS: `~/Library/Application Support/camclops/`; Windows: `%APPDATA%/camclops/`
 - `getTerminalWidth()` — POSIX: `ioctl(TIOCGWINSZ)`; Windows: `GetConsoleScreenBufferInfo`; fallback: 65
 - `lib/format_helpers.hpp` — pure math/format helpers; no POSIX deps; safe for Qt6 GUI on any platform
 
@@ -817,7 +824,7 @@ Remaining: implement and test Windows/macOS paths when cross-compile CI is set u
 
 ### Build System ✓ Done (CMake, v0.8.21)
 
-CMake 3.16+ in use. `pathmuxlib STATIC` target with PUBLIC include propagation.
+CMake 3.16+ in use. `camclopslib STATIC` target with PUBLIC include propagation.
 CLI and tools link against it. `sn-audit` and `archive` custom targets preserved.
 CPack configured for RPM/DEB. Integrates with Qt6 for GUI phase.
 
@@ -829,7 +836,7 @@ CPack configured for RPM/DEB. Integrates with Qt6 for GUI phase.
   - Linux: Package manager (dnf, apt, pacman)
   - Windows: Manual download or Chocolatey/Scoop package managers
   - macOS: Homebrew (`brew install ffmpeg exiftool`)
-- PathMux should:
+- CamClops should:
   - Check for tools at startup, warn if missing
   - Provide clear error messages with install instructions per platform
   - Allow user to specify custom paths in config file
@@ -878,7 +885,7 @@ CPack configured for RPM/DEB. Integrates with Qt6 for GUI phase.
 
 ## Multi-Brand Dashcam Support
 
-**Current status:** PathMux is built and tested exclusively on Pruveeo D90 360° dashcam format. Architecture assumes specific directory structure, filename conventions, and GPS metadata format.
+**Current status:** CamClops is built and tested exclusively on Pruveeo D90 360° dashcam format. Architecture assumes specific directory structure, filename conventions, and GPS metadata format.
 
 **Goal:** Abstract hardware-specific logic into a "camera profile" system that supports multiple dashcam brands and models with minimal code changes per new device.
 
@@ -1070,8 +1077,8 @@ throughout. No code changes needed until this is confirmed on real hardware.
 
 **Auto-detection workflow:**
 1. User specifies root directory (e.g., `/media/dashcam/`)
-2. PathMux scans subdirectories and filenames
-3. Matches against known profiles in `~/.config/pathmux/profiles/` directory
+2. CamClops scans subdirectories and filenames
+3. Matches against known profiles in `~/.config/camclops/profiles/` directory
 4. If match found, loads that profile and proceeds with scan
 5. If no match, prompts user to:
    - Select from list of bundled profiles
@@ -1079,7 +1086,7 @@ throughout. No code changes needed until this is confirmed on real hardware.
    - Submit directory structure to GitHub for new profile development
 
 **Custom profile support:**
-- User can create/edit profiles manually in `~/.config/pathmux/profiles/custom/`
+- User can create/edit profiles manually in `~/.config/camclops/profiles/custom/`
 - JSON format is human-readable and well-documented
 - Community can share profiles via GitHub wiki or discussions
 
@@ -1089,7 +1096,7 @@ throughout. No code changes needed until this is confirmed on real hardware.
 
 *(Shower Thought 2026-03-07)*
 
-PathMux ships with a bundled `factory_default` profile containing sane best-guess
+CamClops ships with a bundled `factory_default` profile containing sane best-guess
 settings — a reasonable approximation of common dashcam conventions, not tuned to
 any specific model. The factory default is the active profile out of the box so the
 app functions immediately without a wizard run.
@@ -1098,7 +1105,7 @@ On every startup — CLI and GUI — if the active profile is still `factory_def
 display a visible warning:
 
 > Camera profile is set to factory defaults. Trip detection results may be
-> inaccurate for your hardware. Run `pm_probe --wizard <card-path>` to build
+> inaccurate for your hardware. Run `clops_probe --wizard <card-path>` to build
 > a profile for your camera, then select it in `--prefs`.
 
 This is better than shipping with no profile (which would require blocking the user
@@ -1117,9 +1124,9 @@ wired in would silently do nothing — held until Phase 1 refactor is complete.
 - Add "Default camera profile" item to `--prefs` (select from profiles dir)
 - Add first-run / no-profile warning to CLI startup and GUI launch
 
-**Phase 1.5: `pm_probe --wizard` — interactive profile builder** *(implemented v0.9.10g; live test pending)*
+**Phase 1.5: `clops_probe --wizard` — interactive profile builder** *(implemented v0.9.10g; live test pending)*
 
-`pm_probe --card` already collects the raw fingerprint (directory layout, file
+`clops_probe --card` already collects the raw fingerprint (directory layout, file
 extensions, sample filenames, segment durations, video profile, GPS method).
 The wizard layer adds interactive Q&A on top of that scan to produce a
 saveable `CameraProfile` JSON.
@@ -1140,13 +1147,13 @@ saveable `CameraProfile` JSON.
    constant / variable) is derived from all dirs, no assumed convention
 3. Thumbnail handling — auto-filled if basename match confirmed; if jpgs exist
    but can't be matched, warn user to set `thumbnails.pattern` manually or
-   run `pm_probe --card <path>` and file a GitHub issue
+   run `clops_probe --card <path>` and file a GitHub issue
 4. Timezone — ask explicitly (local vs UTC); cannot auto-detect
 5. GPS lock offset — approximate cold-start seconds; default 0
 6. Profile name — free text, sanitized to filename
 
 **Output:**
-- Write finished profile JSON to `~/.config/pathmux/profiles/<sanitized_name>.json`
+- Write finished profile JSON to `~/.config/camclops/profiles/<sanitized_name>.json`
 - Trial scan against card path deferred — requires CameraProfile C++ layer
 
 **Why this matters before going public:** We only have verified ground truth
@@ -1160,7 +1167,7 @@ for their own hardware and submit it back to the community.
 - Fall back to manual profile selection if no match
 
 **Phase 3: Community expansion**
-- Bundle 3-5 common dashcam profiles with PathMux
+- Bundle 3-5 common dashcam profiles with CamClops
 - Create GitHub wiki page for user-submitted profiles
 - Add "Submit new profile" workflow to GUI (collects directory structure, sample filenames, submits to GitHub issue)
 
@@ -1192,12 +1199,12 @@ absent. Exercises both detection and collage code paths for a 3-camera configura
 ### User Support Model for Unknown Layouts
 
 When a user reports an unsupported camera:
-1. User runs: `pm_probe --card <path>` and `ls -alR <path>`
+1. User runs: `clops_probe --card <path>` and `ls -alR <path>`
 2. Pastes both into a GitHub issue using the camera support issue template
 3. That output gives everything needed to reverse-engineer the layout and write a
    camera profile — no hardware required
 
-`pm_probe --card` output is specifically formatted for this use case.
+`clops_probe --card` output is specifically formatted for this use case.
 
 ### Testing Strategy
 
@@ -1233,18 +1240,18 @@ When a user reports an unsupported camera:
 **Value proposition to users:**
 - "Your dashcam not supported? Send us 2 sample trips and we'll add it within a week"
 - Low barrier to entry for community support
-- Leverages existing PathMux architecture — most profiles are just JSON config, minimal code changes
+- Leverages existing CamClops architecture — most profiles are just JSON config, minimal code changes
 
 ### Long-term Vision
 
 **Become the VLC of dashcam software:**
-- Just like VLC plays every video format, PathMux handles every dashcam
+- Just like VLC plays every video format, CamClops handles every dashcam
 - Community-driven profile library
 - "It just works" reputation across brands
-- Manufacturers start testing against PathMux during product development
+- Manufacturers start testing against CamClops during product development
 
 ### Under Consideration
-- 💡 PathMux Viewer (mobile companion app) — video playback, incident/segment
+- 💡 CamClops Viewer (mobile companion app) — video playback, incident/segment
   marking, and GPS track review for iOS/Android; reads and writes a sidecar
   project file synced via cloud storage; marked segments and edits picked up
   by desktop on next render; no rendering or ffmpeg dependency

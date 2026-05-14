@@ -16,15 +16,15 @@ class QThread;
 class MapProgressDialog : public QDialog {
     Q_OBJECT
 public:
-    // scriptName: filename of the Python script to invoke (e.g. "pm_dashboard.py").
+    // scriptName: filename of the Python script to invoke (e.g. "clops_dashboard.py").
     // extraArgs:  additional arguments appended after the standard --manifest/--trip/…
-    MapProgressDialog(const Pathmux::Trip& trip,
+    MapProgressDialog(const CamClops::Trip& trip,
                       const QString&       manifestFile,
                       const QString&       outputPath,
                       int                  width,
                       int                  height,
                       QWidget*             parent     = nullptr,
-                      const QString&       scriptName = "pm_maprender.py",
+                      const QString&       scriptName = "clops_maprender.py",
                       const QString&       title      = "Generating Map",
                       const QStringList&   extraArgs  = {});
 
@@ -47,7 +47,7 @@ private slots:
 private:
     QString findScript() const;   // locate m_scriptName next to the binary
 
-    Pathmux::Trip m_trip;
+    CamClops::Trip m_trip;
     QString       m_manifestFile;
     QString       m_outputPath;
     int           m_width;

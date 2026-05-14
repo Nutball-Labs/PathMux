@@ -19,13 +19,13 @@ public:
     explicit ManifestPanel(QWidget* parent = nullptr);
 
     void refresh();
-    void selectEntry(const Pathmux::ManifestEntry& entry);
+    void selectEntry(const CamClops::ManifestEntry& entry);
     void setZoom(double factor);
 
 signals:
-    void manifestSelected(const Pathmux::ManifestEntry& entry);
+    void manifestSelected(const CamClops::ManifestEntry& entry);
     void scanRequested();
-    void rebuildRequested(const Pathmux::ManifestEntry& entry);
+    void rebuildRequested(const CamClops::ManifestEntry& entry);
     void zoomChanged(double factor);
 
 protected:
@@ -46,7 +46,7 @@ private:
     QPushButton*           m_addBtn;
     ManifestItemDelegate*  m_delegate;
 
-    std::vector<Pathmux::ManifestEntry> m_entries;
+    std::vector<CamClops::ManifestEntry> m_entries;
     double m_baseFontPt  = 9.0;
     double m_zoomFactor  = 1.0;
 

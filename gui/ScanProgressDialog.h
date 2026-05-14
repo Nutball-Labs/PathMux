@@ -18,7 +18,7 @@ public:
     void startScan(const QString& sourcePath, const QString& profileId = {});
 
 signals:
-    void scanComplete(const Pathmux::ManifestEntry& entry);
+    void scanComplete(const CamClops::ManifestEntry& entry);
 
 private slots:
     void onScanFinished(bool ok, const QString& error);

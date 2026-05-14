@@ -109,7 +109,7 @@ public:
     explicit SetupWizard(QWidget* parent = nullptr);
 
     // Call after accept() to persist the wizard's choices.
-    void applyToConfig(Pathmux::ConfigManager& config);
+    void applyToConfig(CamClops::ConfigManager& config);
 
 protected:
     void accept() override;

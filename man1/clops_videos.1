@@ -1,0 +1,227 @@
+.TH PM_VIDEOS 1 "May 2026" "v1.9.10a" "CamClops - Batch Video Generator"
+.SH NAME
+clops_videos \- batch moving-map, dashboard, and HUD video generator for CamClops trips
+.SH SYNOPSIS
+.B clops_videos
+.I SELECTION
+.I TYPE
+.RB [ \-\-force ]
+.RB [ \-\-dry\-run ]
+.PP
+.B "Selection (one or more required):"
+.RS
+.BI \-\-mid= XX
+.RI [ \-\-mid= YY " ...]"
+.br
+.BI \-\-tid= MM : TT
+.RI [ \-\-tid= MM : UU " ...]"
+.RE
+.PP
+.B "Type (one or more required):"
+.RS
+.B \-\-map
+|
+.B \-\-dash
+|
+.B \-\-hud
+|
+.B \-\-all
+.RE
+.SH DESCRIPTION
+.B clops_videos
+generates moving-map, instrument dashboard, and HUD overlay videos for one or
+more CamClops trips, invoking the appropriate Python rendering scripts and
+updating the trip manifest with the output paths on completion.
+.PP
+It is the command-line equivalent of the
+.B Map
+/
+.B Dashboard
+/
+.B HUD
+generation available in the GUI's Trip Properties dialog, suitable for
+unattended batch runs or scripted pipelines.
+.PP
+Trips are selected by manifest ID
+.RB ( \-\-mid ),
+trip address
+.RB ( \-\-tid ),
+or a combination of both.  Multiple flags of each type may be given in one
+invocation; the resulting set of (manifest, trip) pairs is deduplicated before
+processing.
+.PP
+For moving-map and HUD generation, GPS track data must be present in the
+manifest.
+.B clops_videos
+attempts GPS extraction automatically if the track is missing; extraction
+failure is treated as a warning and the trip is skipped for that video type.
+.PP
+Output files are written to the footage source directory alongside the
+manifest.  Existing output files are skipped unless
+.B \-\-force
+is given.
+.SH "SELECTION OPTIONS"
+.TP
+.BI \-\-mid= XX
+Select all trips in manifest
+.IR XX .
+.I XX
+is a two-character manifest ID (case-insensitive; ambiguous characters
+normalised:
+.BR O\(→0 ,
+.BR I\(→1 ,
+.BR L\(→1 ).
+.TP
+.BI \-\-tid= MM : TT
+Select the single trip
+.I MM:TT
+where
+.I MM
+is the manifest ID and
+.I TT
+is the trip ID.  Both are case-insensitive.
+.SH "TYPE OPTIONS"
+.TP
+.B \-\-map
+Generate a moving-map MP4 via
+.IR clops_maprender.py .
+GPS track data must be present in the manifest.  Requires Python 3 with
+.B Pillow
+and
+.B requests
+installed (for OSM tile fetching).
+.TP
+.B \-\-dash
+Generate an instrument dashboard MP4 via
+.IR clops_dashboard.py .
+Shows speed, heading, trip odometer, and weather conditions (Open-Meteo
+archive API, no API key required).  Requires Python 3 with
+.B Pillow
+and
+.B requests
+installed.
+.TP
+.B \-\-hud
+Generate a full-screen HUD overlay WebM via
+.IR clops_hud.py .
+Output is a VP9/yuva420p transparent WebM suitable for compositing over
+collage footage.  Contains left/right speed tapes (KPH/MPH) and a circular
+compass rose.  GPS track data must be present.  Requires Python 3 with
+.B Pillow
+installed.
+.TP
+.B \-\-all
+Equivalent to
+.BR "\-\-map \-\-dash \-\-hud" .
+.SH "OTHER OPTIONS"
+.TP
+.B \-\-force
+Regenerate output files even if they already exist.  Without this flag,
+existing files are silently skipped.
+.TP
+.B \-\-dry\-run
+Print the planned operations without executing any scripts or modifying
+any manifests.  Useful for previewing which trips will be processed and
+what output paths would be written.
+.TP
+.B \-h ", " \-\-help
+Print a usage summary and exit.
+.SH OUTPUT
+Progress is reported to
+.B stdout
+as each trip is processed.  Each generated file is listed with its output
+path.  Skipped files (already exist, no GPS, or script not found) are noted
+with a bracketed reason.
+.PP
+.nf
+[CY:7E]  /z/srcdash/ex10/clops_manifest_CY.json
+  map:  /z/srcdash/ex10/clops_trip_7E_map.mp4
+  dash: /z/srcdash/ex10/clops_trip_7E_dashboard.mp4
+  hud:  /z/srcdash/ex10/clops_trip_7E_hud.webm
+
+[CY:0Y]  /z/srcdash/ex10/clops_manifest_CY.json
+  map:  [skip]  /z/srcdash/ex10/clops_trip_0Y_map.mp4
+  dash: /z/srcdash/ex10/clops_trip_0Y_dashboard.mp4
+  hud:  [no gps]
+.fi
+.PP
+After each trip completes, the manifest is updated with the output paths
+.RB ( mapVideos ,
+.BR dashVideos ,
+.BR hudVideos )
+so subsequent tools and the GUI can locate the files without rescanning.
+.SH EXAMPLES
+.TP
+Generate all three video types for every trip in manifest CY:
+.B clops_videos \-\-mid=CY \-\-all
+.TP
+Generate a map only for one specific trip:
+.B clops_videos \-\-tid=CY:7E \-\-map
+.TP
+Generate maps for two manifests, forcing regeneration:
+.B clops_videos \-\-mid=CY \-\-mid=X1 \-\-map \-\-force
+.TP
+Preview what would run without generating anything:
+.B clops_videos \-\-mid=CY \-\-all \-\-dry\-run
+.TP
+Mix manifest-wide and per-trip selection:
+.B clops_videos \-\-mid=CY \-\-tid=X1:3Z \-\-dash \-\-hud
+.SH SCRIPTS
+.B clops_videos
+delegates to the following Python scripts, which must be installed alongside
+the binary (or in the system scripts directory):
+.TP
+.I clops_maprender.py
+GPS-synced moving map; fetches OSM tiles; writes MP4.
+.TP
+.I clops_dashboard.py
+Animated instrument panel; fetches weather from Open-Meteo; writes MP4.
+.TP
+.I clops_hud.py
+Transparent HUD overlay; speed tapes and compass rose; writes VP9 WebM.
+.PP
+Script paths are resolved relative to the
+.B clops_videos
+binary location, then from the system scripts directory
+.RI ( share/camclops/scripts/ ).
+If a script is not found, the corresponding video type is skipped for all
+trips with a warning to stderr.
+.SH "EXIT STATUS"
+.TP
+.B 0
+All requested videos generated (or skipped as already existing) with no errors.
+.TP
+.B 1
+One or more trips encountered an error (GPS extraction failure, script not
+found, or Python error).  Successfully generated files are not rolled back.
+.SH FILES
+.TP
+.I ~/.config/camclops/manifests.json
+Manifest index used to resolve
+.I \-\-mid
+and
+.I \-\-tid
+arguments.
+.TP
+.I <footage_path>/clops_manifest_<id>.json
+Trip manifest.  Updated in-place with output video paths on completion.
+.TP
+.I <footage_path>/clops_trip_<tid>_map.mp4
+Moving-map output (written by
+.IR clops_maprender.py ).
+.TP
+.I <footage_path>/clops_trip_<tid>_dashboard.mp4
+Dashboard output (written by
+.IR clops_dashboard.py ).
+.TP
+.I <footage_path>/clops_trip_<tid>_hud.webm
+HUD overlay output (written by
+.IR clops_hud.py ).
+.SH "SEE ALSO"
+.BR camclops (1),
+.BR clops_gpsinfo (1),
+.BR clops_gpsexport (1),
+.BR clops_ls (1)
+.SH AUTHOR
+Developed by Stephen Berg, 2026.
+." SN: 00112

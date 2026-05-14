@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=PathMux Timelapse Editor
-Comment=Create timelapse sections from PathMux collage MP4 files
-Exec=pathmux-tl %f
-Icon=pathmux
-Categories=AudioVideo;Video;
-MimeType=video/mp4;
-Terminal=false

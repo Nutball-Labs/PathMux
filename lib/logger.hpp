@@ -11,7 +11,7 @@
 #include <ctime>
 #include "compat.hpp"
 
-namespace Pathmux {
+namespace CamClops {
 
 // ---------------------------------------------------------------------------
 // LogLevel — controls what gets written to the log file.
@@ -28,8 +28,8 @@ enum class LogLevel { OFF, NORMAL, DEBUG };
 // Call open() once at startup after config is loaded.
 // Call log() / logCommand() throughout the codebase.
 //
-// Log file location: ~/.config/pathmux/pathmux.log
-// On each open(), previous log is rotated to pathmux.log.1 (1 backup kept).
+// Log file location: ~/.config/camclops/camclops.log
+// On each open(), previous log is rotated to camclops.log.1 (1 backup kept).
 // ---------------------------------------------------------------------------
 class Logger {
 public:
@@ -44,8 +44,8 @@ public:
         level_    = level;
         if (level_ == LogLevel::OFF) return;
 
-        logPath_  = configDir + "/pathmux.log";
-        std::string bakPath = configDir + "/pathmux.log.1";
+        logPath_  = configDir + "/camclops.log";
+        std::string bakPath = configDir + "/camclops.log.1";
 
         // Rotate: .log -> .log.1 (overwrite previous .1)
         std::rename(logPath_.c_str(), bakPath.c_str());
@@ -55,7 +55,7 @@ public:
             level_ = LogLevel::OFF;  // can't open log — silently disable
             return;
         }
-        write("=== PathMux log opened ===");
+        write("=== CamClops log opened ===");
         write("Log level: " + levelName(level_));
     }
 
@@ -92,7 +92,7 @@ public:
 
 private:
     Logger() = default;
-    ~Logger() { if (ofs_.is_open()) { write("=== PathMux log closed ==="); } }
+    ~Logger() { if (ofs_.is_open()) { write("=== CamClops log closed ==="); } }
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
@@ -125,15 +125,15 @@ private:
     std::ofstream ofs_;
 };
 
-} // namespace Pathmux
+} // namespace CamClops
 
 // ---------------------------------------------------------------------------
 // Convenience macros — use these throughout the codebase.
-// Fully qualified so they work both inside and outside namespace Pathmux.
+// Fully qualified so they work both inside and outside namespace CamClops.
 // ---------------------------------------------------------------------------
-#define LOG_NORMAL(msg) Pathmux::Logger::instance().normal(msg)
-#define LOG_DEBUG(msg)  Pathmux::Logger::instance().debug(msg)
-#define LOG_CMD(cmd, exit, out) Pathmux::Logger::instance().logCommand(cmd, exit, out)
+#define LOG_NORMAL(msg) CamClops::Logger::instance().normal(msg)
+#define LOG_DEBUG(msg)  CamClops::Logger::instance().debug(msg)
+#define LOG_CMD(cmd, exit, out) CamClops::Logger::instance().logCommand(cmd, exit, out)
 
 #endif
 // SN: 00089

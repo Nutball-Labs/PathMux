@@ -20,7 +20,7 @@
 #include <ctime>
 
 namespace fs = std::filesystem;
-using namespace Pathmux;
+using namespace CamClops;
 
 // Parse a segment timestamp string "YYYYMMDD_HHMMSS" to time_t (local time).
 // Returns 0 on parse failure.

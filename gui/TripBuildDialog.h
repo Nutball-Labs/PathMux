@@ -23,8 +23,8 @@ class QWidget;
 class TripBuildDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit TripBuildDialog(const Pathmux::ManifestEntry& manifest,
-                             const Pathmux::Trip&          trip,
+    explicit TripBuildDialog(const CamClops::ManifestEntry& manifest,
+                             const CamClops::Trip&          trip,
                              QWidget*                      parent = nullptr);
 
     VideoOptions buildOptions() const;
@@ -54,10 +54,10 @@ private:
     std::array<std::string, 4> m_kSlot = {};  // backend slot name (e.g. "front")
     std::array<QString,     4> m_kCam  = {};  // display name      (e.g. "Front")
 
-    Pathmux::ManifestEntry  m_manifest;
-    Pathmux::Trip           m_trip;
+    CamClops::ManifestEntry  m_manifest;
+    CamClops::Trip           m_trip;
     std::string             m_ffmpegPath;
-    Pathmux::EncodeSettings m_encode;
+    CamClops::EncodeSettings m_encode;
 
     // ── Collage tab ──────────────────────────────────────────────────────────
     QCheckBox*      m_quadEnabled[4]  = {};   // enable/disable each quadrant
@@ -97,8 +97,6 @@ private:
     QLineEdit*   m_basename  = nullptr;
 
     // ── Action row ───────────────────────────────────────────────────────────
-    QPushButton* m_btnNow     = nullptr;
-    QPushButton* m_btnQueue   = nullptr;
     QCheckBox*   m_chkVerbose = nullptr;
 };
-// SN: 00111
+// SN: 00112

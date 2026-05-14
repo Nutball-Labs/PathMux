@@ -11,7 +11,7 @@
 
 using json = nlohmann::json;
 
-namespace Pathmux {
+namespace CamClops {
 
 // Run ExifTool on all Front camera segments of the trip at tripIdx.
 // Populates gpsTrack, gpsTrackStatus, startLat/Lon, endLat/Lon in
@@ -62,7 +62,7 @@ bool measureCameraOffsets(const std::map<std::string, std::string>& camPaths,
                           const std::string& exiftoolPath,
                           CameraProfile& profile);
 
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
 // SN: 00109

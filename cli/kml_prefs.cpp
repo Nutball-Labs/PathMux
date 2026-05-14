@@ -6,14 +6,14 @@
 #include <iostream>
 #include <string>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 bool KmlPrefsEditor::run(ConfigManager& config) {
     KmlSettings working = config.getKmlSettings();
     bool changed = false;
 
     while (true) {
-        std::string title = std::string("PathMux v") + APP_VERSION + " KML Preferences";
+        std::string title = std::string("CamClops v") + APP_VERSION + " KML Preferences";
         std::string unsaved = changed ? "  * unsaved changes" : "";
 
         std::cout << "\n";

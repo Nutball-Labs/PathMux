@@ -16,7 +16,7 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-namespace Pathmux {
+namespace CamClops {
 
 // ===========================================================================
 // Internal helpers
@@ -355,14 +355,14 @@ std::string writeGpx(const json& root, int tripIdx, const std::string& outPath)
 
     ofs << R"(<?xml version="1.0" encoding="UTF-8"?>)" "\n"
         << R"(<gpx version="1.1")" "\n"
-        << R"(     creator="PathMux Dashcam Explorer")" "\n"
+        << R"(     creator="CamClops Dashcam Explorer")" "\n"
         << R"(     xmlns="http://www.topografix.com/GPX/1/1")" "\n"
         << R"(     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance")" "\n"
         << R"(     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 )"
         <<                             R"(http://www.topografix.com/GPX/1/1/gpx.xsd">)" "\n";
 
     ofs << "  <metadata>\n"
-        << "    <name>" << xmlEscape("PathMux Trip " + date + " " + startTime) << "</name>\n";
+        << "    <name>" << xmlEscape("CamClops Trip " + date + " " + startTime) << "</name>\n";
     if (!duration.empty())
         ofs << "    <desc>Duration: " << xmlEscape(duration) << "</desc>\n";
     ofs << "    <time>" << buildIso(date, startTime) << "</time>\n"
@@ -437,7 +437,7 @@ std::string writeKml(const json& root, int tripIdx, const std::string& outPath)
         return "";
     }
 
-    std::string tripName = "PathMux Trip " + date + " " + startTime;
+    std::string tripName = "CamClops Trip " + date + " " + startTime;
 
     ofs << R"(<?xml version="1.0" encoding="UTF-8"?>)" "\n"
         << R"(<kml xmlns="http://www.opengis.net/kml/2.2")" "\n"
@@ -580,7 +580,7 @@ std::string writeGeoJson(const json& root, int tripIdx, const std::string& outPa
                 {"coordinates", coords}
             }},
             {"properties", {
-                {"creator",       "PathMux Dashcam Explorer"},
+                {"creator",       "CamClops Dashcam Explorer"},
                 {"trip_id",       tripId},
                 {"date",          date},
                 {"start_time",    startTime},
@@ -683,5 +683,5 @@ bool measureCameraOffsets(const std::map<std::string, std::string>& camPaths,
     return anyMeasured;
 }
 
-} // namespace Pathmux
+} // namespace CamClops
 // SN: 00109

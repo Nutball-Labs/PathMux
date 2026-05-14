@@ -29,7 +29,7 @@
 #include <thread>
 
 namespace fs = std::filesystem;
-using namespace Pathmux;
+using namespace CamClops;
 using json = nlohmann::json;
 
 // ---------------------------------------------------------------------------
@@ -48,10 +48,10 @@ static int elapsedSecs(std::chrono::steady_clock::time_point t0) {
 }
 
 // ---------------------------------------------------------------------------
-// appendBuildLog — append one entry to pm_buildlog.json in sourcePath.
+// appendBuildLog — append one entry to clops_buildlog.json in sourcePath.
 // Records the build configuration, output location, trip duration, and the
 // full segment manifest for provenance.  New entries are appended; the file
-// grows over time and is never truncated by PathMux.
+// grows over time and is never truncated by CamClops.
 // ---------------------------------------------------------------------------
 static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outputDuration,
                            const BuildTimings& timings) {
@@ -59,15 +59,15 @@ static void appendBuildLog(const Trip& trip, const VideoOptions& opts, int outpu
 
     // Resolve log file path: prefer source path, fall back to config dir if
     // the source path is not writable.
-    std::string primaryLog  = opts.sourcePath + "/pm_buildlog.json";
-    std::string fallbackLog = Platform::getConfigDir() + "pm_buildlog.json";
+    std::string primaryLog  = opts.sourcePath + "/clops_buildlog.json";
+    std::string fallbackLog = Platform::getConfigDir() + "clops_buildlog.json";
 
     // Determine write target by probing writability of the source directory.
     // Use a temp sentinel file (matching manifest writability check pattern)
-    // to avoid creating an empty pm_buildlog.json as a probe side effect.
+    // to avoid creating an empty clops_buildlog.json as a probe side effect.
     bool usesFallback = false;
     {
-        std::string testFile = opts.sourcePath + "/.pm_write_test";
+        std::string testFile = opts.sourcePath + "/.clops_write_test";
         std::ofstream probe(testFile);
         if (probe.is_open()) {
             probe.close();
@@ -289,7 +289,7 @@ static void drawProgressLine(const std::string& label,
         if (etaD >= 0.0 && etaD < 86400.0) etaSecs = (int)etaD;
     }
 
-    const int W = std::max(20, Pathmux::Platform::getTerminalWidth() - 42);
+    const int W = std::max(20, CamClops::Platform::getTerminalWidth() - 42);
     int filled = (int)(pct * W);
     std::string bar;
     bar.reserve(W);
@@ -330,7 +330,7 @@ static void drawFinalizingLine(const std::string& label,
     double pct    = (totalUs > 0) ? std::min(1.0, (double)doneUs / (double)totalUs) : 0.0;
     int    pctInt = (int)(pct * 100);
 
-    const int W = std::max(20, Pathmux::Platform::getTerminalWidth() - 42);
+    const int W = std::max(20, CamClops::Platform::getTerminalWidth() - 42);
     int filled = (int)(pct * W);
     std::string bar;
     bar.reserve(W);
@@ -383,7 +383,7 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
     char tempDir[MAX_PATH] = {};
     GetTempPathA(MAX_PATH, tempDir);
     std::string progressPath = std::string(tempDir)
-        + "pm_progress_" + std::to_string(GetCurrentProcessId()) + ".txt";
+        + "clops_progress_" + std::to_string(GetCurrentProcessId()) + ".txt";
 
     // Build command: quiet log level, direct -progress to temp file.
     std::string fullCmd = cmd;
@@ -492,7 +492,7 @@ bool VideoBuilder::runFfmpegWithProgress(const std::string& cmd,
 
     // Create a temporary named pipe for ffmpeg's -progress output
     char pipePath[64];
-    std::snprintf(pipePath, sizeof(pipePath), "/tmp/pm_progress_XXXXXX");
+    std::snprintf(pipePath, sizeof(pipePath), "/tmp/clops_progress_XXXXXX");
     {
         int fd = mkstemp(pipePath);
         if (fd < 0) return runFfmpeg(cmd);
@@ -727,7 +727,8 @@ int VideoBuilder::getFrameCount(const std::string& file,
 std::vector<double> VideoBuilder::probeSegmentDurations(
         const std::vector<std::string>& files,
         const std::string& ffprobePath,
-        const std::string& frameRate) {
+        const std::string& frameRate,
+        std::function<void(int done, int total)> onProgress) {
 
     // Parse "num/den" or bare "num" from frameRate string.
     double fps = 0.0;
@@ -744,17 +745,51 @@ std::vector<double> VideoBuilder::probeSegmentDurations(
 
     std::vector<double> result;
     result.reserve(files.size());
-    for (const auto& f : files) {
+    int total = (int)files.size();
+    for (int i = 0; i < total; ++i) {
         double dur = 0.0;
         if (fps > 0.0) {
-            int frames = getFrameCount(f, ffprobePath);
+            int frames = getFrameCount(files[i], ffprobePath);
             if (frames > 0) dur = frames / fps;
         }
         if (dur <= 0.0)
-            dur = getFileDuration(f, ffprobePath);  // bitrate-estimate fallback
+            dur = getFileDuration(files[i], ffprobePath);  // bitrate-estimate fallback
         result.push_back(dur);
+        if (onProgress) onProgress(i + 1, total);
     }
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// brandOutputFile — post-build metadata stamp.
+// Re-muxes with -c copy + -metadata flags; silent, fast (stream copy only).
+// Failure is non-fatal: the video file is still intact and usable.
+// ---------------------------------------------------------------------------
+static void brandOutputFile(const std::string& path, const std::string& contentType,
+                             const std::string& ffmpegPath)
+{
+    // Preserve extension so ffmpeg selects the correct muxer (critical for .webm).
+    auto dot = path.rfind('.');
+    std::string tmp = (dot != std::string::npos)
+        ? path.substr(0, dot) + ".clops_brand" + path.substr(dot)
+        : path + ".clops_brand";
+    std::ostringstream cmd;
+    cmd << "\"" << ffmpegPath << "\" -v quiet -y"
+        << " -i \"" << path << "\""
+        << " -map 0 -c copy"
+        << " -metadata vendor=\"Nutball Labs\""
+        << " -metadata product=\"CamClops\""
+        << " -metadata version=\"" APP_VERSION ", HWM " VERSION_HWM "\""
+        << " -metadata created_on=\"" << getShortHostname() << "\""
+        << " -metadata content_type=\"" << contentType << "\""
+        << " \"" << tmp << "\" " << NULL_REDIRECT;
+    FILE* p = popen(cmd.str().c_str(), "r");
+    if (!p) return;
+    char buf[256]; while (fgets(buf, sizeof(buf), p)) {} // drain → waits on all platforms
+    pclose(p);
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) std::filesystem::remove(tmp, ec); // keep original on failure
 }
 
 // ---------------------------------------------------------------------------
@@ -780,11 +815,24 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
         std::lock_guard<std::mutex> lk(m_renamedMutex);
         renamedFiles.push_back({proposed, outFile});
     }
-    std::string listFile = (fs::path(outDir) / ("pm_tmp_concat_" + camera + ".txt")).string();
+    std::string listFile = (fs::path(outDir) / ("clops_tmp_concat_" + camera + ".txt")).string();
 
     {
+        // Emit pct=0 immediately so the step row appears as soon as probing starts.
+        // Probe drives the bar 0→24%; the ffmpeg concat phase drives 25→100%.
+        const std::string concatLabel = "concat:" + camera;
+        if (progressCallback) progressCallback(concatLabel, 0, 0);
+
+        int total = (int)segments.size();
+        auto probeProgress = (progressCallback && total > 0)
+            ? std::function<void(int,int)>([&](int done, int tot) {
+                progressCallback(concatLabel, done * 24 / tot, 0);
+              })
+            : std::function<void(int,int)>{};
+
         std::vector<double> segDurations = probeSegmentDurations(
-            segments, ffprobeFromFfmpeg(opts.ffmpegPath), trip.videoProfile.frameRate);
+            segments, ffprobeFromFfmpeg(opts.ffmpegPath), trip.videoProfile.frameRate,
+            probeProgress);
         if (writeConcatList(segments, listFile, segDurations).empty()) return false;
     }
 
@@ -834,6 +882,11 @@ bool VideoBuilder::buildCameraFile(const Trip& trip,
         std::cout << "\r  concat:" << camera << "  FAILED\n";
         std::cout << "\033[" << (up - 1) << "B" << std::flush;
     }
+    if (ok) {
+        std::string ct = "cam_";
+        for (char c : camera) ct += (char)std::tolower((unsigned char)c);
+        brandOutputFile(outFile, ct, opts.ffmpegPath);
+    }
 
     // Clean up temp file
     fs::remove(listFile);
@@ -857,7 +910,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     }
 
     std::string outDir    = opts.outputDir.empty() ? "." : opts.outputDir;
-    std::string tmpDir    = opts.tmpDir.empty() ? (outDir + "/pm_tmp") : opts.tmpDir;
+    std::string tmpDir    = opts.tmpDir.empty() ? (outDir + "/clops_tmp") : opts.tmpDir;
     std::string proposed  = (fs::path(outDir) /
                              makeOutputName(trip, "Collage_4K", "mp4",
                                             opts.basenameOverride)).string();
@@ -913,7 +966,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         std::error_code ec;
         fs::create_directories(tmpDir, ec);
         if (ec) {
-            tmpDir = (fs::path(Pathmux::Platform::getConfigDir()) / "pm_tmp").string();
+            tmpDir = (fs::path(CamClops::Platform::getConfigDir()) / "clops_tmp").string();
             ec.clear();
             fs::create_directories(tmpDir, ec);
             if (ec) {
@@ -959,6 +1012,9 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
                    && extSlotPath("right").empty();
 
     if (canSyncPad) {
+#ifdef _WIN32
+        return buildCollage4KChunked(trip, opts);
+#endif
         const auto& syncTrims = trip.cameraSync.segmentTrims;
 
         // Parse source fps for frame-exact sync padding.
@@ -1044,7 +1100,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
             const auto& ovSegs = effectiveSegs(opts.overlayCamera);
             if (!ovSegs.empty()) {
                 std::string ovList = writeConcatList(ovSegs,
-                    (fs::path(tmpDir) / "pm_tmp_col_ov.txt").string(), refDurations);
+                    (fs::path(tmpDir) / "clops_tmp_col_ov.txt").string(), refDurations);
                 cmd4K << " -f concat -safe 0 -i \"" << ovList << "\"";
             } else { hasOverlay4K = false; }
         } else if (!opts.mapOverlayPath.empty()) {
@@ -1172,6 +1228,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         bool ok4K = runFfmpegWithProgress(cmd4K.str(), "collage:4K", totalSecs4K);
         if (!ok4K)
             std::cerr << "  ffmpeg failed building 4K collage (sync-pad).\n";
+        if (ok4K) brandOutputFile(outFile, "collage_4k", opts.ffmpegPath);
         return ok4K;
     }
 
@@ -1180,7 +1237,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
                         const std::string& name) -> std::string {
         if (segs.empty()) return "";
         return writeConcatList(segs,
-            (fs::path(tmpDir) / ("pm_tmp_col_" + name + ".txt")).string(),
+            (fs::path(tmpDir) / ("clops_tmp_col_" + name + ".txt")).string(),
             refDurations);
     };
 
@@ -1247,7 +1304,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         const auto& ovSegs = effectiveSegs(opts.overlayCamera);
         if (!ovSegs.empty()) {
             std::string ovList = writeConcatList(ovSegs,
-                (fs::path(tmpDir) / "pm_tmp_col_overlay.txt").string());
+                (fs::path(tmpDir) / "clops_tmp_col_overlay.txt").string());
             cmd << " -f concat -safe 0 -i \"" << ovList << "\"";
         } else {
             hasOverlay = false;
@@ -1353,6 +1410,7 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
                                                  : trip.segDetectedDuration;
     bool ok = runFfmpegWithProgress(cmd.str(), "collage:4K", totalSecs);
+    if (ok) brandOutputFile(outFile, "collage_4k", opts.ffmpegPath);
 
     if (ok) {
         // Clean up concat lists
@@ -1372,6 +1430,313 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     }
     return ok;
 }
+
+// ---------------------------------------------------------------------------
+// buildCollage4KChunked — Windows sync-pad collage via chunked per-camera
+// encoding.  Replaces the single monolithic sync-pad command (which exceeds
+// cmd.exe's 8191-char limit for long trips) with:
+//   1. Per-camera, per-chunk: encode WIN_SYNC_CHUNK_SIZE segments with
+//      sync-pad filters → temp MKV chunk file.
+//   2. Per-camera join: concat chunks with -c copy → per-camera MKV.
+//   3. Xstack: composite four per-camera files → final collage MP4.
+// Stage labels emitted: "syncpad:<cam>:<n>:<total>", "syncjoin:<cam>",
+// "collage:4K".
+// ---------------------------------------------------------------------------
+#ifdef _WIN32
+bool VideoBuilder::buildCollage4KChunked(const Trip& trip,
+                                          const VideoOptions& opts)
+{
+    // ── Output / tmp paths ────────────────────────────────────────────────────
+    std::string outDir  = resolveOutputDir(opts);
+    std::string tmpDir  = opts.tmpDir.empty() ? (outDir + "/clops_tmp") : opts.tmpDir;
+    std::string proposed = (fs::path(outDir) /
+                            makeOutputName(trip, "Collage_4K", "mp4",
+                                           opts.basenameOverride)).string();
+    std::string outFile = UI::confirmOutputPath(proposed);
+    if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
+
+    {
+        std::error_code ec;
+        fs::create_directories(tmpDir, ec);
+        if (ec) {
+            tmpDir = (fs::path(CamClops::Platform::getConfigDir()) / "clops_tmp").string();
+            ec.clear();
+            fs::create_directories(tmpDir, ec);
+            if (ec) {
+                std::cerr << "Error: cannot create tmp dir: " << tmpDir << "\n";
+                return false;
+            }
+        }
+    }
+
+    // ── Source segment vectors ────────────────────────────────────────────────
+    std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
+    for (const auto& seg : trip.segments) {
+        auto cp = [&](const std::string& n) -> std::string {
+            auto it = seg.cameras.find(n);
+            return (it != seg.cameras.end() && !it->second.empty()) ? it->second : "-";
+        };
+        if (cp("front") != "-") srcFront.push_back(cp("front"));
+        if (cp("rear")  != "-") srcRear.push_back(cp("rear"));
+        if (cp("left")  != "-") srcLeft.push_back(cp("left"));
+        if (cp("right") != "-") srcRight.push_back(cp("right"));
+    }
+
+    auto effectiveSegs = [&](const std::string& pos) -> const std::vector<std::string>& {
+        auto it = opts.cameraRemap.find(pos);
+        const std::string& cam = (it != opts.cameraRemap.end()) ? it->second : pos;
+        if (cam == "rear")  return srcRear;
+        if (cam == "left")  return srcLeft;
+        if (cam == "right") return srcRight;
+        return srcFront;
+    };
+
+    // ── Sync-pad data ─────────────────────────────────────────────────────────
+    double syncFps = 25.0;
+    if (!trip.videoProfile.frameRate.empty())
+        try { syncFps = std::stod(trip.videoProfile.frameRate); } catch (...) {}
+
+    const auto& syncTrims = trip.cameraSync.segmentTrims;
+    const auto& frontSegs = effectiveSegs("front");
+    size_t nSegs = frontSegs.size();
+
+    auto frontTsKey = [](const std::string& path) -> std::string {
+        std::string bn = fs::path(path).filename().string();
+        return (bn.size() >= 15) ? bn.substr(0, 15) : bn;
+    };
+
+    std::vector<std::map<std::string, int>> segDelayF(nSegs), segHoldF(nSegs);
+    for (size_t si = 0; si < nSegs; ++si) {
+        if (si >= frontSegs.size()) continue;
+        auto it = syncTrims.find(frontTsKey(frontSegs[si]));
+        if (it == syncTrims.end()) continue;
+        int maxTrimF = 0;
+        for (const auto& [cam, t] : it->second)
+            maxTrimF = std::max(maxTrimF, (int)std::round(double(t) * syncFps));
+        for (const auto& [cam, t] : it->second) {
+            int trimF = (int)std::round(double(t) * syncFps);
+            segDelayF[si][cam] = maxTrimF - trimF;
+            segHoldF[si][cam]  = trimF;
+        }
+    }
+
+    const std::string fpsStr = trip.videoProfile.frameRate.empty()
+                               ? "25" : trip.videoProfile.frameRate;
+    const std::string sf = "scale=1920:1080,format=" + opts.encode.pixFmt;
+
+    // ── Encoder quality args (same settings as final collage) ─────────────────
+    std::ostringstream encQOss;
+    if (opts.encode.collageEncoder.find("nvenc") != std::string::npos)
+        ;  // quality via extraCollageArgs
+    else if (opts.encode.collageEncoder.find("videotoolbox") != std::string::npos)
+        encQOss << " -b:v " << opts.encode.collageQuality << "M";
+    else
+        encQOss << " -q " << opts.encode.collageQuality;
+    if (!opts.encode.extraCollageArgs.empty())
+        encQOss << " " << opts.encode.extraCollageArgs;
+    std::string encQ = encQOss.str();
+
+    // ── Camera order for xstack: front=0, rear=1, right=2, left=3 ────────────
+    // Layout: TL=front, TR=rear, BL=right, BR=left  (matches existing collage)
+    const std::array<std::string, 4> camNames = {"front", "rear", "right", "left"};
+    const std::array<const std::vector<std::string>*, 4> camSegs = {
+        &effectiveSegs("front"), &effectiveSegs("rear"),
+        &effectiveSegs("right"), &effectiveSegs("left")
+    };
+
+    int audioCI = 3;  // default audio source: left = index 3
+    {
+        const std::string& as = opts.audioSource;
+        if      (as == "front") audioCI = 0;
+        else if (as == "rear")  audioCI = 1;
+        else if (as == "right") audioCI = 2;
+    }
+
+    std::array<std::string, 4> camFinalFiles;
+    std::vector<std::string>   tempFiles;
+
+    // Per-segment duration estimate for ETA (rough: total / nSegs)
+    int secsPerSeg = 60;
+    if (nSegs > 0) {
+        int tot = (trip.durationFFProbed > 0) ? trip.durationFFProbed
+                                              : trip.segDetectedDuration;
+        if (tot > 0) secsPerSeg = std::max(1, tot / (int)nSegs);
+    }
+
+    // ── Per-camera processing ─────────────────────────────────────────────────
+    for (int ci = 0; ci < 4; ++ci) {
+        const std::string& cam  = camNames[ci];
+        const auto& segs        = *camSegs[ci];
+        bool isAudioCam         = (ci == audioCI);
+
+        if (segs.empty()) { camFinalFiles[ci] = ""; continue; }
+
+        int nSegsForCam = (int)segs.size();
+        int nChunks     = (nSegsForCam + WIN_SYNC_CHUNK_SIZE - 1) / WIN_SYNC_CHUNK_SIZE;
+
+        std::vector<std::string> chunkFiles;
+
+        for (int chunk = 0; chunk < nChunks; ++chunk) {
+            int start  = chunk * WIN_SYNC_CHUNK_SIZE;
+            int end    = std::min(start + WIN_SYNC_CHUNK_SIZE, nSegsForCam);
+            int nIn    = end - start;
+
+            std::string chunkFile = (fs::path(tmpDir) /
+                ("clops_sc_" + cam + "_" + std::to_string(chunk) + ".mkv")).string();
+            tempFiles.push_back(chunkFile);
+
+            std::string stageLabel = "syncpad:" + cam + ":"
+                + std::to_string(chunk + 1) + ":" + std::to_string(nChunks);
+
+            std::ostringstream cmd;
+            cmd << opts.ffmpegPath << " -y";
+            if (!opts.encode.hwDevice.empty())
+                cmd << " -init_hw_device " << opts.encode.hwDeviceType
+                    << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
+
+            for (int i = 0; i < nIn; ++i)
+                cmd << " -i \"" << segs[start + i] << "\"";
+
+            std::ostringstream fc;
+            for (int i = 0; i < nIn; ++i) {
+                size_t gsi  = (size_t)(start + i);
+                int DF = (gsi < segDelayF.size() && segDelayF[gsi].count(cam))
+                         ? segDelayF[gsi].at(cam) : 0;
+                int HF = (gsi < segHoldF.size()  && segHoldF[gsi].count(cam))
+                         ? segHoldF[gsi].at(cam)  : 0;
+                std::string tag = std::to_string(i);
+                std::string qL  = "q" + tag;
+
+                if (DF > 0) {
+                    fc << "[" << i << ":v]split=2[sfi" << tag << "][mn" << tag << "];"
+                       << "[sfi" << tag << "]trim=end_frame=1,setpts=PTS-STARTPTS,"
+                       << "loop=loop=-1:size=1:start=0,"
+                       << "trim=end_frame=" << DF << ",setpts=PTS-STARTPTS,"
+                       << "eq=brightness=-0.25:saturation=0.1[sfp" << tag << "];"
+                       << "[sfp" << tag << "][mn" << tag << "]concat=n=2:v=1:a=0";
+                    if (HF > 0) fc << ",tpad=stop_mode=clone:stop=" << HF;
+                    fc << "," << sf << "[" << qL << "];";
+                } else if (HF > 0) {
+                    fc << "[" << i << ":v]tpad=stop_mode=clone:stop=" << HF
+                       << "," << sf << "[" << qL << "];";
+                } else {
+                    fc << "[" << i << ":v]" << sf << "[" << qL << "];";
+                }
+            }
+
+            // Video concat
+            for (int i = 0; i < nIn; ++i) fc << "[q" << i << "]";
+            fc << "concat=n=" << nIn << ":v=1:a=0[vout]";
+
+            // Audio concat (audio-source camera only)
+            if (isAudioCam) {
+                fc << ";";
+                for (int i = 0; i < nIn; ++i) fc << "[" << i << ":a]";
+                fc << "concat=n=" << nIn << ":v=0:a=1[aout]";
+            }
+
+            cmd << " -filter_complex \"" << fc.str() << "\""
+                << " -map \"[vout]\"";
+            if (isAudioCam)
+                cmd << " -map \"[aout]\" -c:a aac -b:a 96k";
+            else
+                cmd << " -an";
+            cmd << " -c:v " << opts.encode.collageEncoder << encQ
+                << " -r " << fpsStr
+                << " \"" << chunkFile << "\"";
+
+            if (!runFfmpegWithProgress(cmd.str(), stageLabel, nIn * secsPerSeg))
+                return false;
+
+            chunkFiles.push_back(chunkFile);
+        }
+
+        // ── Per-camera join (concat chunks) ───────────────────────────────────
+        if (nChunks == 1) {
+            camFinalFiles[ci] = chunkFiles[0];
+        } else {
+            std::string listPath = (fs::path(tmpDir) /
+                ("clops_sc_" + cam + "_list.txt")).string();
+            {
+                std::ofstream lf(listPath);
+                for (const auto& cf : chunkFiles)
+                    lf << "file '" << cf << "'\n";
+            }
+            std::string joinFile = (fs::path(tmpDir) /
+                ("clops_sc_" + cam + "_join.mkv")).string();
+            tempFiles.push_back(joinFile);
+
+            int camSecs = nSegsForCam * secsPerSeg;
+
+            std::ostringstream joinCmd;
+            joinCmd << opts.ffmpegPath << " -y"
+                    << " -f concat -safe 0 -i \"" << listPath << "\""
+                    << " -c copy"
+                    << " \"" << joinFile << "\"";
+
+            if (!runFfmpegWithProgress(joinCmd.str(), "syncjoin:" + cam, camSecs))
+                return false;
+
+            camFinalFiles[ci] = joinFile;
+        }
+    }
+
+    // ── Xstack collage ────────────────────────────────────────────────────────
+    {
+        std::ostringstream cmd;
+        cmd << opts.ffmpegPath << " -y";
+        if (!opts.encode.hwDevice.empty())
+            cmd << " -init_hw_device " << opts.encode.hwDeviceType
+                << "=" << opts.encode.hwDeviceType << ":" << opts.encode.hwDevice;
+
+        // 4 per-camera inputs (lavfi black for missing cameras)
+        for (int ci = 0; ci < 4; ++ci) {
+            if (!camFinalFiles[ci].empty())
+                cmd << " -i \"" << camFinalFiles[ci] << "\"";
+            else
+                cmd << " -f lavfi -i \"color=c=black:s=1920x1080:r=" << fpsStr
+                    << ",format=" << opts.encode.pixFmt << "\"";
+        }
+
+        bool hasHud = !opts.hudOverlayPath.empty();
+        if (hasHud) {
+            if (opts.hudOverlayLoop) cmd << " -stream_loop -1";
+            cmd << " -c:v libvpx-vp9 -i \"" << opts.hudOverlayPath << "\"";
+        }
+        int hudInput = 4;
+
+        std::ostringstream fc;
+        fc << "[0:v][1:v][2:v][3:v]xstack=inputs=4"
+           << ":layout=0_0|w0_0|0_h0|w0_h0,fps=" << fpsStr
+           << (hasHud ? "[base]" : "[vout]");
+        if (hasHud) {
+            fc << ";[" << hudInput << ":v]format=yuva420p[hudc]"
+               << ";[base][hudc]overlay=0:0:eof_action=pass[vout]";
+        }
+
+        cmd << " -filter_complex \"" << fc.str() << "\""
+            << " -map \"[vout]\""
+            << " -map " << audioCI << ":a:0"
+            << " -shortest"
+            << " -c:v " << opts.encode.collageEncoder << encQ
+            << " -c:a aac -b:a 96k -movflags +faststart"
+            << " \"" << outFile << "\"";
+
+        int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
+                                                    : trip.segDetectedDuration;
+
+        bool ok = runFfmpegWithProgress(cmd.str(), "collage:4K", totalSecs);
+        if (ok) brandOutputFile(outFile, "collage_4k", opts.ffmpegPath);
+
+        std::error_code ec;
+        for (const auto& f : tempFiles) fs::remove(f, ec);
+
+        if (!ok)
+            std::cerr << "  ffmpeg failed building 4K collage (chunked).\n";
+        return ok;
+    }
+}
+#endif  // _WIN32
 
 // ---------------------------------------------------------------------------
 // buildCollage1080 — transcode 4K master to 1080p.
@@ -1428,7 +1793,7 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
     }
 
     std::string outDir   = opts.outputDir.empty() ? "." : opts.outputDir;
-    std::string tmpDir   = opts.tmpDir.empty() ? (outDir + "/pm_tmp") : opts.tmpDir;
+    std::string tmpDir   = opts.tmpDir.empty() ? (outDir + "/clops_tmp") : opts.tmpDir;
     std::string proposed = (fs::path(outDir) /
                             makeOutputName(trip, "Collage_1080p", "mp4",
                                            opts.basenameOverride)).string();
@@ -1453,7 +1818,7 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         std::error_code ec;
         fs::create_directories(tmpDir, ec);
         if (ec) {
-            tmpDir = (fs::path(Pathmux::Platform::getConfigDir()) / "pm_tmp").string();
+            tmpDir = (fs::path(CamClops::Platform::getConfigDir()) / "clops_tmp").string();
             ec.clear();
             fs::create_directories(tmpDir, ec);
             if (ec) {
@@ -1628,6 +1993,7 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         bool ok1080 = runFfmpegWithProgress(cmd1080.str(), "collage:1080p", totalSecs1080);
         if (!ok1080)
             std::cerr << "  ffmpeg failed building 1080p collage (sync-pad).\n";
+        if (ok1080) brandOutputFile(outFile, "collage_1080p", opts.ffmpegPath);
         return ok1080;
     }
 
@@ -1636,7 +2002,7 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
                         const std::string& name) -> std::string {
         if (segs.empty()) return "";
         return writeConcatList(segs,
-            (fs::path(tmpDir) / ("pm_tmp_col1080_" + name + ".txt")).string(),
+            (fs::path(tmpDir) / ("clops_tmp_col1080_" + name + ".txt")).string(),
             refDurations);
     };
 
@@ -1710,6 +2076,7 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
     int totalSecs = (trip.durationFFProbed > 0) ? trip.durationFFProbed
                                                  : trip.segDetectedDuration;
     bool ok = runFfmpegWithProgress(cmd.str(), "collage:1080p", totalSecs);
+    if (ok) brandOutputFile(outFile, "collage_1080p", opts.ffmpegPath);
 
     if (ok) {
         if (!listF.empty()) fs::remove(listF);
@@ -1742,7 +2109,7 @@ bool VideoBuilder::buildAudioFile(const Trip& trip,
     }
 
     std::string outDir   = opts.outputDir.empty() ? "." : opts.outputDir;
-    std::string listPath = (fs::path(outDir) / "pm_tmp_audio_concat.txt").string();
+    std::string listPath = (fs::path(outDir) / "clops_tmp_audio_concat.txt").string();
     std::vector<double> audioDurations = probeSegmentDurations(
         segments, ffprobeFromFfmpeg(opts.ffmpegPath), trip.videoProfile.frameRate);
     std::string concatList = writeConcatList(segments, listPath, audioDurations);
@@ -1784,8 +2151,12 @@ bool VideoBuilder::buildAudioFile(const Trip& trip,
     std::cout << "\nExtracting audio (" << fmt << "): " << outFile << "\n";
     bool ok = runFfmpeg(cmd.str());
     fs::remove(listPath);
-    if (ok) std::cout << "  Done: " << outFile << "\n";
-    else    std::cerr << "  ffmpeg failed extracting audio.\n";
+    if (ok) {
+        std::cout << "  Done: " << outFile << "\n";
+        brandOutputFile(outFile, "audio", opts.ffmpegPath);
+    } else {
+        std::cerr << "  ffmpeg failed extracting audio.\n";
+    }
     return ok;
 }
 
@@ -1816,7 +2187,7 @@ double VideoBuilder::getFileDuration(const std::string& file,
 // If filePath is empty (slot unassigned):
 //   - Generate full-duration logo-on-dark-blue
 //
-// Output written to <outDir>/pm_tmp_slot_<slotIndex>.ts
+// Output written to <outDir>/clops_tmp_slot_<slotIndex>.ts
 // Returns output path, or "" on failure.
 // ---------------------------------------------------------------------------
 std::string VideoBuilder::buildPaddedInput(const std::string& filePath,
@@ -1827,7 +2198,7 @@ std::string VideoBuilder::buildPaddedInput(const std::string& filePath,
                                             const std::string& logoPath,
                                             const std::string& outDir) {
     std::string sid    = std::to_string(slotIndex);
-    std::string outPath = (fs::path(outDir) / ("pm_tmp_slot_" + sid + ".ts")).string();
+    std::string outPath = (fs::path(outDir) / ("clops_tmp_slot_" + sid + ".ts")).string();
     std::ostringstream cmd;
 
     // Dark blue background color for logo placeholder
@@ -1869,9 +2240,9 @@ std::string VideoBuilder::buildPaddedInput(const std::string& filePath,
             double fadeStart = fileDuration - 0.5;
             if (fadeStart < 0.0) fadeStart = 0.0;
 
-            std::string part1 = (fs::path(outDir) / ("pm_tmp_slot_" + sid + "_p1.ts")).string();
-            std::string part2 = (fs::path(outDir) / ("pm_tmp_slot_" + sid + "_p2.ts")).string();
-            std::string concatList = (fs::path(outDir) / ("pm_tmp_slot_" + sid + "_cat.txt")).string();
+            std::string part1 = (fs::path(outDir) / ("clops_tmp_slot_" + sid + "_p1.ts")).string();
+            std::string part2 = (fs::path(outDir) / ("clops_tmp_slot_" + sid + "_p2.ts")).string();
+            std::string concatList = (fs::path(outDir) / ("clops_tmp_slot_" + sid + "_cat.txt")).string();
 
             // Part 1: original + fade to black
             std::ostringstream cmd1;
@@ -1917,9 +2288,9 @@ std::string VideoBuilder::buildPaddedInput(const std::string& filePath,
 
     // Clean up part files if they exist
     for (const std::string& tmp : {
-        (fs::path(outDir) / ("pm_tmp_slot_" + sid + "_p1.ts")).string(),
-        (fs::path(outDir) / ("pm_tmp_slot_" + sid + "_p2.ts")).string(),
-        (fs::path(outDir) / ("pm_tmp_slot_" + sid + "_cat.txt")).string()
+        (fs::path(outDir) / ("clops_tmp_slot_" + sid + "_p1.ts")).string(),
+        (fs::path(outDir) / ("clops_tmp_slot_" + sid + "_p2.ts")).string(),
+        (fs::path(outDir) / ("clops_tmp_slot_" + sid + "_cat.txt")).string()
     }) {
         std::error_code ec;
         fs::remove(tmp, ec);
@@ -2006,7 +2377,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
 
     while (true) {
         std::cout << "\n";
-        UI::printTitle("PathMux v" + std::string(APP_VERSION)
+        UI::printTitle("CamClops v" + std::string(APP_VERSION)
                        + " -- Collage from Files");
         UI::printLine();
         UI::printLine("  Slots:  (top-left  top-right  bottom-left  bottom-right)");
@@ -2219,7 +2590,7 @@ void VideoBuilder::runCollageFromFiles(ConfigManager& config) {
             std::cerr << "  Skipping 1080p — 4K collage failed.\n";
         } else if (collage4KBuilt.empty()) {
             // Need 4K as intermediate — not a user deliverable
-            std::string tmp4K = (fs::path(outDir) / "pm_tmp_collage4k.mp4").string();
+            std::string tmp4K = (fs::path(outDir) / "clops_tmp_collage4k.mp4").string();
             buildCollageFromSlots(opts, tmp4K, paddedInputs);
             VideoOptions vopts;
             vopts.ffmpegPath = opts.ffmpegPath;
@@ -2263,7 +2634,7 @@ int VideoBuilder::pickTrip(const std::vector<Trip>& trips,
 
     while (true) {
         std::cout << "\n";
-        UI::printTitle("PathMux v" + std::string(APP_VERSION) + " -- Select Trip to Build");
+        UI::printTitle("CamClops v" + std::string(APP_VERSION) + " -- Select Trip to Build");
         UI::printLine();
 
         if (tripsOut.empty()) {
@@ -2360,7 +2731,7 @@ VideoOptions VideoBuilder::configureOptions(ConfigManager& config, Trip& trip,
         auto yn = [](bool v) -> std::string { return v ? "yes" : "no"; };
 
         std::cout << "\n";
-        UI::printTitle("PathMux v" + std::string(APP_VERSION) + " -- Build Options");
+        UI::printTitle("CamClops v" + std::string(APP_VERSION) + " -- Build Options");
         UI::warnMissingTools(config.getFfmpegPath(), config.getExiftoolPath());
         UI::printLine("  Trip " + trip.id
                       + "   " + trip.date + "  " + trip.startTime
@@ -2850,7 +3221,7 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
 
     std::cout << "\nBuild complete.\n";
 
-    // Append build provenance to pm_buildlog.json in the footage source path.
+    // Append build provenance to clops_buildlog.json in the footage source path.
     int outDur = (trip.durationFFProbed >= 0)
                  ? trip.durationFFProbed : trip.segDetectedDuration;
     appendBuildLog(trip, opts, outDur, timings);
@@ -2866,7 +3237,7 @@ void VideoBuilder::run(ConfigManager& config) {
     int mode = 0;
     while (mode == 0) {
         std::cout << "\n";
-        UI::printTitle("PathMux v" + std::string(APP_VERSION) + " -- Video Build");
+        UI::printTitle("CamClops v" + std::string(APP_VERSION) + " -- Video Build");
         UI::printLine();
         UI::printLine("  [1]  Build from manifest");
         UI::printLine("  [2]  Build collage from existing camera files");
@@ -3096,4 +3467,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00111
+// SN: 00117

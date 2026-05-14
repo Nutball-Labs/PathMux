@@ -4,10 +4,11 @@
 #include <QMainWindow>
 #include "config_manager.hpp"
 
+class QDockWidget;
 class QSplitter;
 class ManifestPanel;
 class TripGridPanel;
-class HelpDialog;
+class JobQueuePanel;
 class HelpDialog;
 
 class MainWindow : public QMainWindow {
@@ -17,8 +18,8 @@ public:
 
 private slots:
     void onScanRequested();
-    void onRebuildRequested(const Pathmux::ManifestEntry& entry);
-    void onScanComplete(const Pathmux::ManifestEntry& entry);
+    void onRebuildRequested(const CamClops::ManifestEntry& entry);
+    void onScanComplete(const CamClops::ManifestEntry& entry);
     void onZoomChanged(double factor);
     void onAbout();
     void onHelp();
@@ -27,12 +28,17 @@ private slots:
     void onSetupWizard();
     void onCameraProfiles();
 
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void buildMenuBar();
 
     QSplitter*     m_splitter;
     ManifestPanel* m_manifestPanel;
     TripGridPanel* m_tripGridPanel;
-    HelpDialog*    m_helpDialog = nullptr;
+    HelpDialog*    m_helpDialog   = nullptr;
+    QDockWidget*   m_jobDock      = nullptr;
+    JobQueuePanel* m_jobPanel     = nullptr;
+    QWidget*       m_jobFloatWin  = nullptr;
 };
-// SN: 00104
+// SN: 00113

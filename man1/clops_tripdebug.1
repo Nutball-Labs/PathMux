@@ -1,0 +1,77 @@
+.TH PM_TRIPDEBUG 1 "May 2026" "v1.9.10a" "CamClops - Trip Detection Debugger"
+.SH NAME
+clops_tripdebug \- trip detection debugger for CamClops
+.SH SYNOPSIS
+.B clops_tripdebug
+.RB [ \-T | \-f ]
+.I path_to_dashcam_folder
+.SH DESCRIPTION
+.B clops_tripdebug
+runs CamClops trip detection directly against a dashcam footage directory and
+displays the results without reading or writing any manifest.  It is a
+diagnostic tool for verifying that footage is being grouped into trips as
+expected.
+.PP
+Trip detection uses the active camera profile
+.RI ( activeProfileId
+in
+.IR ~/.config/camclops/camclops.json )
+to determine directory layout, filename patterns, and segment duration.
+Run
+.BR "clops_probe \-\-wizard" " " PATH
+to create a profile for cameras other than the built-in Pruveeo D90.
+.PP
+Without options,
+.B clops_tripdebug
+prints a summary table of detected trips.  Use
+.B \-T
+for a full segment listing or
+.B \-f
+for an interactive drill-down.
+.SH OPTIONS
+.TP
+.B \-T ", " \-\-tree
+Print the complete segment tree for every detected trip and exit.  Each
+segment shows its timestamp and which cameras (Front/Rear/Left/Right) have
+footage files present.
+.TP
+.B \-f ", " \-\-full
+Interactive mode.  Displays the summary list, then prompts for a trip ID to
+inspect.  Enter a numeric ID to see its segment tree.  Enter
+.B R
+to redraw the summary,
+.B Q
+to quit.
+.TP
+.B \-v ", " \-\-version
+Print the CamClops version string and exit.
+.TP
+.B \-h ", " \-\-help
+Print a usage summary and exit.
+.SH OUTPUT
+.SS Summary (default)
+.nf
+  ID    Start Timestamp      Duration        Segments
+  -----------------------------------------------------------------
+  1     2026-02-09 04:38:38  1h 22m 14s      83
+  2     2026-02-09 08:14:01  0h 34m 07s      35
+
+2 trip(s) detected.
+.fi
+.SS Tree (\-T or \-f drill-down)
+.nf
+Trip #1  [2026-02-09  04:38:38]  duration=1h 22m 14s  segments=83
+-----------------------------------------------------------------
+  [  1]  20260209_043838  [F.L.]
+         F: 20260209_043838F.ts
+         L: 20260209_043838L.ts
+  [  2]  20260209_043938  [FBLR]
+  ...
+.fi
+.SH "SEE ALSO"
+.BR camclops (1),
+.BR clops_ls (1),
+.BR clops_audit (1)
+.SH AUTHOR
+Developed by Stephen Berg, 2026.
+.\" SN: 00112

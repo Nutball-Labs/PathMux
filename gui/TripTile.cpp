@@ -3,6 +3,7 @@
 #include "TripTile.h"
 #include "TripPropertiesDialog.h"
 #include "DangerousDialog.h"
+#include "ExtrasDialog.h"
 #include "format_helpers.hpp"
 #include "config_manager.hpp"
 #include <QLabel>
@@ -18,18 +19,12 @@
 #include <algorithm>
 
 namespace fs = std::filesystem;
-using namespace Pathmux;
-
-static QString gpsStatusText(const Trip& t)
-{
-    if (t.gpsTrackStatus == "complete") return "GPS \u2713";   // ✓
-    if (t.gpsTrackStatus == "partial")  return "GPS \u007e";   // ~
-    return "GPS \u2014";                                        // —
-}
+using namespace CamClops;
 
 TripTile::TripTile(const Trip& trip, bool imperial,
-                   const std::string& manifestFile, QWidget* parent)
-    : QWidget(parent), m_trip(trip), m_sourcePath(manifestFile)
+                   const std::string& manifestFile,
+                   const std::string& mid, QWidget* parent)
+    : QWidget(parent), m_trip(trip), m_sourcePath(manifestFile), m_mid(mid)
 {
     setFixedSize(W, H);
     setAttribute(Qt::WA_StyledBackground, true);
@@ -61,7 +56,7 @@ TripTile::TripTile(const Trip& trip, bool imperial,
     m_idLabel->setStyleSheet(
         "background: #1a3a5c; color: white;"
         "border-top-left-radius: 4px; border-top-right-radius: 4px;");
-    m_idLabel->setText(QString::fromStdString("[" + trip.id + "]"));
+    updateTitleBar();
 
     // --- Start time (date + time, bold) ---
     m_startLabel = new QLabel(this);
@@ -70,6 +65,7 @@ TripTile::TripTile(const Trip& trip, bool imperial,
     boldFont.setBold(true);
     boldFont.setPointSize(10);
     m_startLabel->setFont(boldFont);
+    m_startLabel->setStyleSheet("color: #1a1a1a;");
     m_startLabel->setText(
         QString::fromStdString(trip.date + "  " + trip.startTime));
 
@@ -79,6 +75,7 @@ TripTile::TripTile(const Trip& trip, bool imperial,
     QFont durFont = font();
     durFont.setPointSize(10);
     m_durationLabel->setFont(durFont);
+    m_durationLabel->setStyleSheet("color: #333;");
     m_durationLabel->setText(QString::fromStdString(trip.duration));
 
     // --- Note (hidden when empty) ---
@@ -98,36 +95,43 @@ TripTile::TripTile(const Trip& trip, bool imperial,
         m_noteLabel->setText(QString::fromStdString(trip.note));
     }
 
-    // --- Detail row (segs · distance · GPS) ---
+    // --- Detail row (segs · distance) ---
     m_detailLabel = new QLabel(this);
-    m_detailLabel->setGeometry(RIGHT_X, H - PADDING - 22, RIGHT_W, 18);
+    m_detailLabel->setGeometry(RIGHT_X, DETAIL_LABEL_Y, RIGHT_W, 18);
     QFont detFont = font();
     detFont.setPointSize(8);
     m_detailLabel->setFont(detFont);
-    m_detailLabel->setEnabled(false);   // renders in palette disabled colour
+    m_detailLabel->setStyleSheet("color: #888;");
 
     int segs = (int)trip.segments.size();
     QString detail = QString("%1 seg%2").arg(segs).arg(segs == 1 ? "" : "s");
-
     if ((trip.startLat != 0.0 || trip.startLon != 0.0) &&
         (trip.endLat   != 0.0 || trip.endLon   != 0.0)) {
         double dist = haversineKm(trip.startLat, trip.startLon,
                                   trip.endLat,   trip.endLon);
-        detail += "  \u00b7  " + QString::fromStdString(formatDistance(dist, imperial));
+        detail += "  ·  " + QString::fromStdString(formatDistance(dist, imperial));
     }
-    detail += "  \u00b7  " + gpsStatusText(trip);
     m_detailLabel->setText(detail);
 
     // --- Build Video button ---
-    m_buildBtn = new QPushButton("Build Video\u2026", this);
+    m_buildBtn = new QPushButton("Build Video…", this);
     m_buildBtn->setGeometry(RIGHT_X, BUILD_BTN_Y, RIGHT_W, BUILD_BTN_H);
     m_buildBtn->setStyleSheet(
         "QPushButton { border: 1px solid #0078d4; border-radius: 3px; "
         "color: #0078d4; background: white; font-size: 9pt; }"
         "QPushButton:hover { background: #e5f1fb; }"
-        "QPushButton:pressed { background: #cce4f7; }"
-    );
+        "QPushButton:pressed { background: #cce4f7; }");
     connect(m_buildBtn, &QPushButton::clicked, this, &TripTile::buildRequested);
+
+    // --- Extras button — opens lightweight job-queue dialog ---
+    m_extrasBtn = new QPushButton("Extras…", this);
+    m_extrasBtn->setGeometry(RIGHT_X, EXTRAS_BTN_Y, RIGHT_W, BUILD_BTN_H);
+    m_extrasBtn->setStyleSheet(
+        "QPushButton { border: 1px solid #aaaaaa; border-radius: 3px; "
+        "color: #555555; background: white; font-size: 9pt; }"
+        "QPushButton:hover { background: #f0f0f0; }"
+        "QPushButton:pressed { background: #e0e0e0; }");
+    connect(m_extrasBtn, &QPushButton::clicked, this, &TripTile::onExtrasClicked);
 }
 
 void TripTile::setThumbnail(const QString& slot, const QPixmap& pixmap)
@@ -149,8 +153,7 @@ void TripTile::setZoom(double factor)
     int divX     = pad + thumbW + pad;
     int rightX   = divX + pad;
     int rightW   = w - rightX - pad;
-
-    int badgeH = int(BADGE_H * factor);
+    int badgeH   = int(BADGE_H * factor);
 
     setFixedSize(w, h);
 
@@ -161,9 +164,11 @@ void TripTile::setZoom(double factor)
     m_startLabel   ->setGeometry(rightX, badgeH + pad + int(22 * factor), rightW, int(22 * factor));
     m_durationLabel->setGeometry(rightX, badgeH + pad + int(48 * factor), rightW, int(20 * factor));
     m_noteLabel    ->setGeometry(rightX, badgeH + pad + int(NOTE_Y * factor), rightW, int(NOTE_H * factor));
-    m_detailLabel  ->setGeometry(rightX, h - pad - int(22 * factor), rightW, int(18 * factor));
-    m_buildBtn     ->setGeometry(rightX, int(BUILD_BTN_Y * factor), rightW,
-                                 int(BUILD_BTN_H * factor));
+    m_detailLabel  ->setGeometry(rightX, int(DETAIL_LABEL_Y * factor), rightW, int(18 * factor));
+    m_buildBtn     ->setGeometry(rightX, int(BUILD_BTN_Y    * factor), rightW, int(BUILD_BTN_H * factor));
+
+    if (m_extrasBtn)
+        m_extrasBtn->setGeometry(rightX, int(EXTRAS_BTN_Y * factor), rightW, int(BUILD_BTN_H * factor));
 
     QFont sf = font();
     sf.setPointSizeF(qMax(6.0, 10.0 * factor));
@@ -189,6 +194,13 @@ void TripTile::setZoom(double factor)
     update();
 }
 
+void TripTile::onExtrasClicked()
+{
+    auto* dlg = new ExtrasDialog(m_trip, m_sourcePath, m_mid, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->exec();
+}
+
 void TripTile::mouseDoubleClickEvent(QMouseEvent*)
 {
     emit doubleClicked();
@@ -198,19 +210,20 @@ void TripTile::contextMenuEvent(QContextMenuEvent* event)
 {
     QMenu menu(this);
     QAction* propsAct       = menu.addAction("Properties");
-    QAction* dangerousAct   = menu.addAction("Dangerous\u2026");
+    QAction* dangerousAct   = menu.addAction("Dangerous…");
     menu.addSeparator();
-    QAction* archiveTripAct = menu.addAction("Archive Trip\u2026");
-    QAction* deleteTripAct  = menu.addAction("Delete Trip\u2026");
+    QAction* archiveTripAct = menu.addAction("Archive Trip…");
+    QAction* deleteTripAct  = menu.addAction("Delete Trip…");
 
     QAction* chosen = menu.exec(event->globalPos());
     if (!chosen) return;
 
     if (chosen == propsAct) {
-        auto* dlg = new TripPropertiesDialog(m_trip, m_sourcePath, nullptr);
+        auto* dlg = new TripPropertiesDialog(m_trip, m_sourcePath, m_mid, nullptr);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         connect(dlg, &TripPropertiesDialog::accepted, this, [this, dlg]() {
             m_trip.note = dlg->updatedNote();
+            updateTitleBar();
             if (m_trip.note.empty()) {
                 m_noteLabel->hide();
             } else {
@@ -220,9 +233,14 @@ void TripTile::contextMenuEvent(QContextMenuEvent* event)
         });
         connect(dlg, &TripPropertiesDialog::gpsExtracted, this, [this]() {
             m_trip.gpsTrackStatus = "complete";
+            update();
         });
         connect(dlg, &TripPropertiesDialog::videosChanged,
                 this, &TripTile::tripChanged);
+        connect(dlg, &TripPropertiesDialog::syncAnalyzed, this, [this]() {
+            m_trip.cameraSync.valid = true;
+            update();
+        });
         dlg->show();
 
     } else if (chosen == dangerousAct) {
@@ -291,7 +309,7 @@ void TripTile::archiveWholeTrip()
 
     if (!errors.empty())
         QMessageBox::warning(this, "Archive Errors",
-            QString("Some files could not be archived:\n\u2022 %1")
+            QString("Some files could not be archived:\n• %1")
                 .arg(QString::fromStdString(errors.front())));
 
     ConfigManager cfg;
@@ -349,19 +367,107 @@ void TripTile::leaveEvent(QEvent*)
                   "border-radius: 4px; background: white; }");
 }
 
+void TripTile::refreshFrom(const Trip& trip)
+{
+    m_trip = trip;
+    updateTitleBar();
+    if (m_trip.note.empty()) {
+        m_noteLabel->hide();
+    } else {
+        m_noteLabel->setText(QString::fromStdString(m_trip.note));
+        m_noteLabel->show();
+    }
+    update();
+}
+
+void TripTile::updateTitleBar()
+{
+    QString text = "[" + QString::fromStdString(m_trip.id) + "]";
+    if (!m_trip.note.empty())
+        text += "  —  " + QString::fromStdString(m_trip.note);
+    m_idLabel->setText(text);
+}
+
+void TripTile::drawStatusIndicators(QPainter& p) const
+{
+    struct Ind { const char* label; QColor color; bool drawCross = false; };
+
+    static const QColor kGreen (0x28, 0xa7, 0x45);
+    static const QColor kRed   (0xdc, 0x35, 0x45);
+    static const QColor kAmber (0xfd, 0x7e, 0x14);
+
+    auto anyExists = [](const std::vector<std::string>& paths) -> bool {
+        std::error_code ec;
+        for (const auto& p : paths)
+            if (!p.empty() && fs::exists(p, ec)) return true;
+        return false;
+    };
+
+    bool gpsUnavailable = (m_trip.gpsTrackStatus == "unavailable");
+    QColor gpsColor;
+    if      (gpsUnavailable)                         gpsColor = kRed;
+    else if (m_trip.gpsTrackStatus == "complete")    gpsColor = kGreen;
+    else if (m_trip.gpsTrackStatus == "partial")     gpsColor = kAmber;
+    else                                             gpsColor = kRed;
+
+    const Ind indicators[] = {
+        { "GPS",  gpsColor, gpsUnavailable },
+        { "SYNC", m_trip.cameraSync.valid      ? kGreen : kRed },
+        { "MAP",  anyExists(m_trip.mapVideos)  ? kGreen : kRed },
+        { "DASH", anyExists(m_trip.dashVideos) ? kGreen : kRed },
+        { "HUD",  anyExists(m_trip.hudVideos)  ? kGreen : kRed },
+    };
+
+    double z       = m_zoomFactor;
+    int    rightX  = int(RIGHT_X   * z);
+    int    rightW  = width() - rightX - int(PADDING * z);
+    int    r       = int(7    * z);
+    int    spacing = int(28   * z);
+    int    totalW  = 4 * spacing + 2 * r;
+    int    startX  = rightX + (rightW - totalW) / 2 + r;
+    int    cy      = int((BUILD_BTN_Y + BUILD_BTN_H + 10) * z) + r;
+    int    labelY  = cy + r + int(2 * z);
+
+    QFont lf = font();
+    lf.setPointSizeF(qMax(5.0, 6.5 * z));
+    p.setFont(lf);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    for (int i = 0; i < 5; ++i) {
+        int cx = startX + i * spacing;
+
+        if (indicators[i].drawCross) {
+            int d = int(r * 0.75);
+            p.setPen(QPen(indicators[i].color, qMax(1.5, 2.0 * z), Qt::SolidLine, Qt::RoundCap));
+            p.setBrush(Qt::NoBrush);
+            p.drawLine(cx - d, cy - d, cx + d, cy + d);
+            p.drawLine(cx - d, cy + d, cx + d, cy - d);
+        } else {
+            p.setPen(Qt::NoPen);
+            p.setBrush(indicators[i].color);
+            p.drawEllipse(QPoint(cx, cy), r, r);
+        }
+
+        p.setPen(QColor(0x33, 0x33, 0x33));
+        QRect tr(cx - spacing / 2, labelY, spacing, int(10 * z));
+        p.drawText(tr, Qt::AlignHCenter | Qt::AlignTop,
+                   QString::fromUtf8(indicators[i].label));
+    }
+}
+
 void TripTile::paintEvent(QPaintEvent*)
 {
-    // Required for QWidget stylesheet background painting
     QStyleOption opt;
     opt.initFrom(this);
     QPainter p(this);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
 
-    // Vertical divider — computed from current (possibly zoomed) size
     int pad    = int(PADDING * m_zoomFactor);
     int badgeH = int(BADGE_H * m_zoomFactor);
     int divX   = int(DIV_X  * m_zoomFactor);
     p.setPen(QPen(QColor(0xc8c8c8), 1));
     p.drawLine(divX, badgeH + pad + 4, divX, height() - pad - 4);
+
+    drawStatusIndicators(p);
 }
-// SN: 00106
+// SN: 00117

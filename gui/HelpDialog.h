@@ -15,9 +15,9 @@ public:
     explicit HelpDialog(QWidget* parent = nullptr);
 
     // Open the dialog with a specific topic pre-selected.
-    // topic: one of "index", "pathmux", "pm_probe", "pm_gpsinfo",
-    //        "pm_gpsexport", "pm_ls", "pm_audit", "pm_findgpslock",
-    //        "pm_tripdebug", "gui_overview", "About"
+    // topic: one of "index", "camclops", "clops_probe", "clops_gpsinfo",
+    //        "clops_gpsexport", "clops_ls", "clops_audit", "clops_findgpslock",
+    //        "clops_tripdebug", "gui_overview", "About"
     void showTopic(const QString& topic);
 
 protected:
@@ -29,7 +29,7 @@ private slots:
 private:
     struct Topic {
         QString label;
-        QString resourceUrl;  // e.g. "qrc:/help/pathmux.html" or "internal:about"
+        QString resourceUrl;  // e.g. "qrc:/help/camclops.html" or "internal:about"
     };
 
     void addTopic(const QString& label, const QString& resourceUrl);
@@ -41,7 +41,7 @@ private:
     QTextBrowser* m_browser;
     QList<Topic>  m_topics;
 
-    QString m_pmLogoB64;        // base64 data URI for pathmux_256.png
+    QString m_pmLogoB64;        // base64 data URI for camclops_256.png
     QString m_nlLogoB64;        // base64 data URI for Nutball-Labs_logo.png
     bool    m_showingAbout = false;
 };

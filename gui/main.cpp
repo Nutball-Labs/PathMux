@@ -8,6 +8,7 @@
 #include <string>
 #include "MainWindow.h"
 #include "SetupWizard.h"
+#include "JobQueueMonitor.h"
 #include "config_manager.hpp"
 #include "version.hpp"
 
@@ -32,7 +33,7 @@ int main(int argc, char* argv[])
         if (QByteArray(argv[i]) == "--verbose") {
             qInstallMessageHandler(verboseHandler);
             QLoggingCategory::setFilterRules("*.debug=true\n");
-            fprintf(stderr, "[INF] pathmux-gui verbose mode\n");
+            fprintf(stderr, "[INF] camclops-gui verbose mode\n");
             break;
         }
     }
@@ -54,7 +55,7 @@ int main(int argc, char* argv[])
 
         // Fall back to uiScale in settings (ConfigManager is Qt-free; safe before QApplication)
         if (scale == 0.0) {
-            Pathmux::ConfigManager preConfig;
+            CamClops::ConfigManager preConfig;
             scale = preConfig.getUiScale();
         }
 
@@ -73,7 +74,7 @@ int main(int argc, char* argv[])
     QLoggingCategory::setFilterRules("qt.qpa.xcb*=false\n");
 
     QApplication app(argc, argv);
-    app.setApplicationName("PathMux");
+    app.setApplicationName("CamClops");
     app.setApplicationVersion(APP_VERSION);
     app.setOrganizationName("Nutball Labs");
 
@@ -101,7 +102,8 @@ int main(int argc, char* argv[])
         "}"
         // Give all top-level windows a visible inner border so window edges are
         // clear under GNOME/Adwaita compositing which renders nearly-invisible frames.
-        "QDialog, QMainWindow {"
+        // QWidget#jobFloatWin covers the detached job queue window (plain QWidget).
+        "QDialog, QMainWindow, QWidget#jobFloatWin {"
         "  border: 2px solid #5a5a5a;"
         "}"
         // QCheckBox indicator: light gray background (visible on any dark widget background);
@@ -125,17 +127,29 @@ int main(int argc, char* argv[])
         "QCheckBox::indicator:checked:hover {"
         "  border-color: #00ff55;"
         "}"
+        // Visible divider between manifest and trip-grid panes.
+        "QSplitter::handle:horizontal {"
+        "  width: 4px;"
+        "  background: #909090;"
+        "}"
+        "QSplitter::handle:horizontal:hover {"
+        "  background: #505050;"
+        "}"
+        // Dark outline for all primary panes — matches window border colour.
+        "QFrame#paneFrame {"
+        "  border: 1px solid #5a5a5a;"
+        "}"
     );
 
     // Build a multi-resolution icon so the OS can pick the best size.
     QIcon appIcon;
     for (int sz : {16, 32, 48, 64, 128, 256, 512})
-        appIcon.addPixmap(QPixmap(QString(":/images/pathmux_%1.png").arg(sz)));
+        appIcon.addPixmap(QPixmap(QString(":/images/camclops_%1.png").arg(sz)));
     app.setWindowIcon(appIcon);
 
     // First-run wizard: launch if no valid config exists yet.
     {
-        Pathmux::ConfigManager cfg;
+        CamClops::ConfigManager cfg;
         cfg.loadSettings();
         if (cfg.isFirstRun()) {
             SetupWizard wiz;
@@ -145,6 +159,12 @@ int main(int argc, char* argv[])
 
     MainWindow w;
     w.show();
+
+    // Write /tmp/camclops_jobs.json on every queue change.
+    // clops_monitor.py serves it as a browser status page; or on the terminal:
+    //   watch -n 2 jq . /tmp/camclops_jobs.json
+    JobQueueMonitor monitor;
+
     return app.exec();
 }
-// SN: 00111
+// SN: 00113

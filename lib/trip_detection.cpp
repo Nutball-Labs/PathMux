@@ -14,7 +14,7 @@
 
 namespace fs = std::filesystem;
 
-namespace Pathmux {
+namespace CamClops {
 
 namespace {
 
@@ -293,7 +293,9 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
                                               int gapThresholdSeconds,
                                               int fuzzyWindowSeconds,
                                               const std::string& ffprobePath,
-                                              const std::string& exiftoolPath)
+                                              const std::string& exiftoolPath,
+                                              std::function<void(int,int)> segProgressCb,
+                                              std::function<void(int,int)> gpsProgressCb)
 {
     std::vector<Trip> trips;
     if (!fs::exists(path)) return trips;
@@ -446,8 +448,11 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
 
     bool inTrip = false;
     std::time_t lastTime = 0;
+    int progressDone  = 0;
+    int progressTotal = static_cast<int>(slotFiles[primary].size());
 
     for (auto const& [fTime, fPath] : slotFiles[primary]) {
+        if (segProgressCb) segProgressCb(++progressDone, progressTotal);
 
         if (inTrip && (fTime - lastTime > gapThresholdSeconds)) {
             closeTrip(currentTrip);
@@ -500,16 +505,18 @@ std::vector<Trip> TripDetection::detectTrips(const std::string& path,
     // GPS extraction pass — find first lock and end coords for each trip.
     // Skip entirely if the profile has no GPS source.
     if (profile.gpsMethod != "none") {
-        std::cout << "  Extracting GPS start/end coords";
+        int gpsDone = 0, gpsTotal = static_cast<int>(trips.size());
         for (auto& trip : trips) {
             extractStartEndGps(trip, primary, exiftoolPath, profile);
-            std::cout << "." << std::flush;
+            if (gpsProgressCb) gpsProgressCb(++gpsDone, gpsTotal);
         }
-        std::cout << "\n";
+    } else {
+        for (auto& trip : trips)
+            trip.gpsTrackStatus = "unavailable";
     }
 
     return trips;
 }
 
-} // namespace Pathmux
-// SN: 00104
+} // namespace CamClops
+// SN: 00113

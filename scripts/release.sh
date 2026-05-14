@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# release.sh — Upload PathMux packages to a GitHub release
+# release.sh — Upload CamClops packages to a GitHub release
 # Run after the relevant package-*.sh / package-*.ps1 scripts have produced packages.
 #
 # Usage: ./scripts/release.sh --linux | --mac | --win | --all
@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO="Nutball-Labs/PathMux"
+REPO="Nutball-Labs/CamClops"
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
 PKG_DIR="$PROJ/packages"
 VHP="$PROJ/lib/version.hpp"
@@ -47,8 +47,11 @@ PATCH=$(grep -m1 '#define VERSION_PATCH'  "$VHP" | awk '{print $3}' | tr -d '\r'
 SUFFIX=$(grep -m1 '#define VERSION_SUFFIX' "$VHP" | grep -oP '(?<=")[^"]*' | tr -d '\r' || true)
 CURRENT="${MAJOR}.${MINOR}.${PATCH}${SUFFIX}"
 
-echo "PathMux release uploader"
-echo "Current version in lib/version.hpp: v${CURRENT}"
+INNER="  CamClops release uploader  —  v${CURRENT}  "
+BORDER=$(printf '%*s' $(( ${#INNER} + 2 )) | tr ' ' '*')
+echo "$BORDER"
+echo "*${INNER}*"
+echo "$BORDER"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -77,25 +80,25 @@ PKGS=()
 
 if $DO_LINUX; then
     mapfile -t _linux < <(find "$PKG_DIR" -maxdepth 1 \( \
-            -name "pathmux-${VERSION}-*.rpm"        \
-        -o  -name "pathmux_${VERSION}_*.deb"        \
-        -o  -name "pathmux-${VERSION}-Linux.tar.gz" \
+            -name "camclops-${VERSION}-*.rpm"        \
+        -o  -name "camclops_${VERSION}_*.deb"        \
+        -o  -name "camclops-${VERSION}-Linux.tar.gz" \
         \) | sort)
     PKGS+=("${_linux[@]}")
 fi
 
 if $DO_MAC; then
     mapfile -t _mac < <(find "$PKG_DIR" -maxdepth 1 \( \
-            -name "pathmux-${VERSION}-macOS.pkg"    \
-        -o  -name "pathmux-${VERSION}-macOS.tar.gz" \
-        -o  -name "pathmux-${VERSION}-macOS.zip"    \
+            -name "camclops-${VERSION}-macOS.pkg"    \
+        -o  -name "camclops-${VERSION}-macOS.tar.gz" \
+        -o  -name "camclops-${VERSION}-macOS.zip"    \
         \) | sort)
     PKGS+=("${_mac[@]}")
 fi
 
 if $DO_WIN; then
     mapfile -t _win < <(find "$PKG_DIR" -maxdepth 1 \
-            -name "pathmux-${VERSION}-win64.*"      \
+            -name "camclops-${VERSION}-win64.*"      \
         | grep -v '\.wixpdb$' | sort)
     PKGS+=("${_win[@]}")
 fi
@@ -127,7 +130,7 @@ else
     LATEST_ARG=(); $MARK_LATEST && LATEST_ARG=(--latest)
     gh release create "$TAG" "${PKGS[@]}" \
         --repo "$REPO" \
-        --title "PathMux ${TAG}" \
+        --title "CamClops ${TAG}" \
         --generate-notes \
         "${LATEST_ARG[@]}"
 fi

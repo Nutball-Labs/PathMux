@@ -1,4 +1,4 @@
-# PathMux Windows build + package — thin wrapper
+# CamClops Windows build + package — thin wrapper
 # Usage:
 #   .\run-build.ps1           — build (including Qt deploy) + ZIP + MSI
 #   .\run-build.ps1 -NoPack   — build only

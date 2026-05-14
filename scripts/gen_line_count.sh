@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gen_line_count.sh — Daily line count snapshot for PathMux
+# gen_line_count.sh — Daily line count snapshot for CamClops
 # Writes Line_Counts/line_count_YYYYMMDD.md in the project root.
 # Scheduled via crontab: 0 1 * * *
 
@@ -61,7 +61,7 @@ manpages=$(scan man1/*.1    2>/dev/null || true)
 # Markdown docs — only include files that exist
 md_files=()
 for f in ROADMAP.md CHANGELOG.md Session_Log.md CLAUDE.md README.md \
-          PROPOSED_UTILS.md ROADMAP_MacOS.md pathmux_project_brief.md \
+          PROPOSED_UTILS.md ROADMAP_MacOS.md camclops_project_brief.md \
           ROADMAP_WINDOWS.md; do
     [ -f "$f" ] && md_files+=("$f")
 done
@@ -83,7 +83,7 @@ t_grand=$(( t_src_cpp + t_src_h + t_py + t_cmake + t_md + t_man ))
 # ---------------------------------------------------------------------------
 {
 cat <<HEADER
-# PathMux Line Count — ${DISPLAY_DATE}
+# CamClops Line Count — ${DISPLAY_DATE}
 
 ## Grand Total: $(fmt $t_grand) lines
 

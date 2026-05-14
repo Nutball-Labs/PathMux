@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-using namespace Pathmux;
+using namespace CamClops;
 
 bool PrefsEditor::run(ConfigManager& config) {
     AppSettings working = config.getSettings();
@@ -36,7 +36,7 @@ bool PrefsEditor::run(ConfigManager& config) {
             return p;
         };
 
-        std::string title = std::string("PathMux v") + APP_VERSION + " Preferences";
+        std::string title = std::string("CamClops v") + APP_VERSION + " Preferences";
         std::string unsaved = changed ? "  * unsaved changes" : "";
 
         std::cout << "\n";
@@ -66,7 +66,7 @@ bool PrefsEditor::run(ConfigManager& config) {
         UI::printLine("[L]  Encode preset             " + working.encode.preset
                       + "  -- use --encoderprefs for encoder details");
         UI::printLine("[M]  Temp directory            "
-                      + (working.tmpDir.empty() ? "(auto: <export dir>/pm_tmp)" : working.tmpDir));
+                      + (working.tmpDir.empty() ? "(auto: <export dir>/clops_tmp)" : working.tmpDir));
         UI::printLine("[N]  Camera profile            " + working.activeProfileId);
         UI::printLine();
         UI::printLine(unsaved);
@@ -191,8 +191,8 @@ bool PrefsEditor::run(ConfigManager& config) {
             changed = true;
         }
         else if (ch == 'N') {
-            // Enumerate available profiles from ~/.config/pathmux/profiles/
-            std::string profilesDir = Pathmux::Platform::getConfigDir() + "profiles";
+            // Enumerate available profiles from ~/.config/camclops/profiles/
+            std::string profilesDir = CamClops::Platform::getConfigDir() + "profiles";
             std::vector<std::string> profileIds;
             std::error_code ec;
             if (fs::is_directory(profilesDir, ec)) {
@@ -204,7 +204,7 @@ bool PrefsEditor::run(ConfigManager& config) {
             }
             if (profileIds.empty()) {
                 std::cout << "  No profiles found in " << profilesDir << "\n"
-                          << "  Run 'pm_probe --wizard <path>' to create one.\n";
+                          << "  Run 'clops_probe --wizard <path>' to create one.\n";
             } else {
                 std::cout << "  Available profiles:\n";
                 for (int i = 0; i < (int)profileIds.size(); ++i)
@@ -256,7 +256,7 @@ bool EncoderPrefsEditor::run(ConfigManager& config) {
     bool changed = false;
 
     while (true) {
-        std::string title = std::string("PathMux v") + APP_VERSION + " Encoder Preferences";
+        std::string title = std::string("CamClops v") + APP_VERSION + " Encoder Preferences";
         std::string unsaved = changed ? "  * unsaved changes" : "";
 
         std::cout << "\n";

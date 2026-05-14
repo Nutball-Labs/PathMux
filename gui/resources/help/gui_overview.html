@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <link rel="stylesheet" href="style.css">
-<title>PathMux GUI Overview</title>
+<title>CamClops GUI Overview</title>
 </head>
 <body>
 
-<h1>PathMux GUI Overview</h1>
-<p class="mandesc">pathmux-gui — Qt6 desktop interface for dashcam trip management</p>
+<h1>CamClops GUI Overview</h1>
+<p class="mandesc">camclops-gui — Qt6 desktop interface for dashcam trip management</p>
 
 <h2>Main Window Layout</h2>
 
@@ -36,7 +36,7 @@ Front/, Rear/, etc. subdirectories).</li>
 in the right panel.</li>
 </ol>
 
-<p>Each footage directory contains a single <code>pm_manifest_XX.json</code> file
+<p>Each footage directory contains a single <code>clops_manifest_XX.json</code> file
 shared by all platforms. If the same footage is accessible from Linux, Windows,
 and macOS (for example, on a NAS or shared drive), each platform registers its
 local path automatically when it opens the directory — no manual configuration
@@ -106,7 +106,7 @@ from the main menu.</p>
 </ul>
 
 <p>Each quadrant has a <b>checkbox</b> (top label) and a <b>source combo</b>. The
-checkbox unchecked or "None" selected → that quadrant plays the PathMux/Nutball-Labs
+checkbox unchecked or "None" selected → that quadrant plays the CamClops/Nutball-Labs
 logo morph animation in the built video (a 6-second looping cross-fade, not a black
 frame). The combo lists:</p>
 <ul>
@@ -204,7 +204,7 @@ You can also hold Ctrl and scroll the mouse wheel over either panel.</dd>
 
 <dt>Validate Manifest</dt>
 <dd>Check the current manifest for integrity problems (equivalent to
-<b>pathmux --validate</b>).</dd>
+<b>camclops --validate</b>).</dd>
 </dl>
 
 <h3>Tools</h3>
@@ -224,7 +224,7 @@ GPU) without reconfiguring everything.</dd>
 <dd>Manage camera profiles.  Lists all built-in and user profiles.
 <ul>
 <li><b>Fork as Custom</b> — create an editable JSON copy of a built-in profile in
-<code>~/.config/pathmux/profiles/</code>.  Edit it with any text editor, then
+<code>~/.config/camclops/profiles/</code>.  Edit it with any text editor, then
 rescan footage to embed the updated profile.</li>
 <li><b>Open in Editor</b> — open a user profile in the system default editor.</li>
 <li><b>Set as Active</b> — set the selected profile as the default for new scans
@@ -236,7 +236,7 @@ Manifests that already have an embedded profile snapshot are unaffected by
 profile changes until the footage directory is rescanned.</dd>
 
 <dt>Probe SD Card…</dt>
-<dd>Run <b>pm_probe --wizard</b> against an SD card to create or update a camera
+<dd>Run <b>clops_probe --wizard</b> against an SD card to create or update a camera
 profile.</dd>
 </dl>
 
@@ -245,7 +245,7 @@ profile.</dd>
 <dt>Contents (F1)</dt>
 <dd>Open this help window.</dd>
 
-<dt>About PathMux</dt>
+<dt>About CamClops</dt>
 <dd>Show version information and credits.</dd>
 </dl>
 
@@ -286,16 +286,16 @@ Complete the wizard to configure your system, then use
 a satellite fix after power-on. No GPS data is recorded during this period.
 If you use GPS track data for mileage logs, tax records, or legal documentation,
 be aware that the first portion of every trip may be missing from the GPS track.
-The distance shown in PathMux is great-circle distance between first and last
+The distance shown in CamClops is great-circle distance between first and last
 recorded fix — not total odometer distance.
 </div>
 
 <h2>See Also</h2>
 <p class="seealso">
-<a href="pathmux.html">pathmux (CLI)</a>
-<a href="pm_probe.html">pm_probe</a>
-<a href="pm_gpsexport.html">pm_gpsexport</a>
-<a href="pm_ls.html">pm_ls</a>
+<a href="camclops.html">camclops (CLI)</a>
+<a href="clops_probe.html">clops_probe</a>
+<a href="clops_gpsexport.html">clops_gpsexport</a>
+<a href="clops_ls.html">clops_ls</a>
 </p>
 
 </body>

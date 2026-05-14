@@ -18,19 +18,27 @@ class QScrollArea;
 class QTextEdit;
 class QVBoxLayout;
 
-// One row in the stage stack — name, bar, live status (ETA → ✓ when done)
+// One row in the stage stack — name, bar, live status (ETA → ✓ when done).
+// Group rows (isGroup == true) own a collapsible child area for chunk detail.
 struct StageRow {
     QString       label;
-    QProgressBar* bar     = nullptr;
-    QLabel*       status  = nullptr;
-    bool          started = false;  // true once first progress signal received
-    bool          failed  = false;  // true if stage emitted pct == -1
+    QProgressBar* bar          = nullptr;
+    QLabel*       status       = nullptr;
+    bool          started      = false;
+    bool          failed       = false;
+    // Group-row fields — null / 0 for normal rows
+    bool          isGroup      = false;
+    QPushButton*  toggleBtn    = nullptr;  // ▶ / ▼
+    QWidget*      childArea    = nullptr;  // collapsible child container
+    QVBoxLayout*  childLayout  = nullptr;
+    int           totalChunks  = 0;
+    int           doneChunks   = 0;
 };
 
 class BuildProgressDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit BuildProgressDialog(const Pathmux::Trip& trip,
+    explicit BuildProgressDialog(const CamClops::Trip& trip,
                                  const VideoOptions&  opts,
                                  QWidget*             parent = nullptr);
     void startBuild();
@@ -48,16 +56,23 @@ private slots:
     void onFinished(bool ok, const QString& error);
 
 private:
-    void addStageRow(const QString& label);
+    void addStageRow(const QString& label,
+                     QVBoxLayout* parentLayout = nullptr,
+                     bool indented = false);
+    void addGroupRow(const QString& camera, int nChunks);
+    void addChildRow(const QString& groupCamera, const QString& label);
+    void updateGroupAggregate(const QString& groupCamera);
     void populateExpectedRows();
 
-    Pathmux::Trip     m_trip;
+    CamClops::Trip     m_trip;
     VideoOptions      m_opts;
 
     QScrollArea*      m_scrollArea   = nullptr;
     QVBoxLayout*      m_stageLayout  = nullptr;
     QVector<StageRow> m_rows;
     QMap<QString,int> m_rowIndex;    // label → index in m_rows
+    QMap<QString,int> m_groupIndex;  // camera → index of group header row in m_rows
+    QMap<QString,QString> m_childToGroup; // child label → group camera
 
     QLabel*           m_outputDirLabel = nullptr;  // shows resolved output path
     QLabel*           m_finalLabel     = nullptr;
@@ -67,4 +82,4 @@ private:
     BuildWorker*      m_worker        = nullptr;
     bool              m_buildRunning  = false;
 };
-// SN: 00101
+// SN: 00116

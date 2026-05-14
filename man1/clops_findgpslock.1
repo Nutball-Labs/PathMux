@@ -1,0 +1,95 @@
+.TH PM_FINDGPSLOCK 1 "May 2026" "v1.9.10a" "CamClops - GPS Lock Finder"
+.SH NAME
+clops_findgpslock \- report GPS lock acquisition time for dashcam footage segments
+.SH SYNOPSIS
+.B clops_findgpslock
+[\fB\-\-verbose\fR] \fIfile.ts\fR [\fIfile2.ts\fR \fI...\fR]
+.SH DESCRIPTION
+.B clops_findgpslock
+scans one or more dashcam footage segments that carry a LIGOGPSINFO GPS stream
+and reports when GPS lock was acquired relative to the start of each clip.
+The Pruveeo D90 is the primary confirmed camera for this GPS format.
+.PP
+Cameras using the LIGO firmware GPS stream do not write GPS records
+until a satellite fix is acquired.  The lock offset
+.RB ( +Ns )
+is computed by comparing the UTC timestamp of the first valid GPS record
+against the local clip-start time encoded in the filename, using epoch
+arithmetic for accuracy across midnight crossings and DST boundaries.
+.PP
+For each file,
+.B clops_findgpslock
+prints a header line with the filename and the clip-start time derived from
+the filename, followed by the lock line showing the offset and the first
+valid GPS fix.
+.SH OPTIONS
+.TP
+.B \-v ", " \-\-version
+Print version information and exit.
+.TP
+.B \-h ", " \-\-help
+Print a usage summary and exit.
+.TP
+.B \-\-verbose
+Pass verbose flags to ExifTool and show its stderr output during the scan.
+Useful for diagnosing extraction failures.
+.SH OUTPUT
+.nf
+# 20260216_095422F.ts  2026-02-16 09:54:22
+  lock +107s  20260216 15:56:09    30.415534   -89.027873
+.fi
+.PP
+The header line shows the filename and the clip-start time (local) derived
+from the filename.  The lock line shows:
+.TP
+.B lock +Ns
+Seconds elapsed from clip start until the first valid GPS fix.
+.TP
+.I timestamp
+GPS lock time in UTC
+.RB ( YYYYMMDD\ HH:MM:SS ).
+.TP
+.I lat\~\~lon
+Latitude and longitude at the moment of lock, in decimal degrees.
+.PP
+If no valid GPS record is found in the file, the message
+.B (no GPS lock found)
+is printed instead.
+.SH NOTES
+Filename timestamps are in local time; GPS timestamps are in UTC.
+The offset computation accounts for the timezone difference via
+.BR mktime (3)
+(local) and
+.BR timegm (3)
+(UTC).
+.PP
+A lock offset of
+.B +0s
+is theoretically possible on a warm-start trip where the receiver retained
+its last fix.  In practice the D90 typically shows 20\(en120 seconds on a
+cold start.
+.PP
+This tool is diagnostic.
+.B gpsLockSeconds
+is populated automatically in the trip manifest whenever GPS is extracted
+.RB ( "camclops \-G" ,
+.BR clops_gpsexport (1),
+or the GUI GPS tab) and can be batch-populated with
+.BR "clops_gpsinfo \-\-scan\-all\-trips" .
+Lock times are surfaced in the interactive browser and
+.BR clops_ls (1).
+.SH "EXIT STATUS"
+.TP
+.B 0
+At least one file processed without error.
+.TP
+.B 1
+Bad arguments or file not found.
+.SH "SEE ALSO"
+.BR camclops (1),
+.BR clops_gpsinfo (1),
+.BR clops_gpsexport (1),
+.BR exiftool (1)
+.SH AUTHOR
+Developed by Stephen Berg, 2026.
+.\" SN: 00112

@@ -15,6 +15,7 @@ class QLabel;
 class QWheelEvent;
 class TripTile;
 class EmptyManifestWidget;
+class Job;
 
 class TripGridPanel : public QWidget {
     Q_OBJECT
@@ -25,12 +26,12 @@ public:
     void refreshPageState();
 
 public slots:
-    void loadManifest(const Pathmux::ManifestEntry& entry);
+    void loadManifest(const CamClops::ManifestEntry& entry);
     void setZoom(double factor);
 
 signals:
-    void tripDoubleClicked(const Pathmux::ManifestEntry& manifest,
-                           const Pathmux::Trip& trip);
+    void tripDoubleClicked(const CamClops::ManifestEntry& manifest,
+                           const CamClops::Trip& trip);
     void scanRequested();
     void zoomChanged(double factor);
 
@@ -57,7 +58,7 @@ private:
     QWidget*             m_gridContainer;
     QLabel*              m_manifestHeader = nullptr;  // sticky bar above tile grid
 
-    Pathmux::ManifestEntry  m_currentManifest;
+    CamClops::ManifestEntry  m_currentManifest;
     std::vector<TripTile*>  m_tiles;
     bool                    m_imperial    = false;
     double                  m_zoomFactor  = 1.0;
@@ -72,6 +73,7 @@ private:
 
 private slots:
     void loadNextThumbnail();
-    void onBuildRequested(const Pathmux::Trip& trip);
+    void onBuildRequested(const CamClops::Trip& trip);
+    void onJobFinished(Job* job, bool ok);
 };
-// SN: 00109
+// SN: 00113

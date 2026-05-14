@@ -11,7 +11,7 @@
 LogoMorphWidget::LogoMorphWidget(QWidget* parent)
     : QWidget(parent)
 {
-    m_pmxOrig = QPixmap(":/images/pathmux_256.png");
+    m_pmxOrig = QPixmap(":/images/camclops_256.png");
     m_ntbOrig = QPixmap(":/images/Nutball-Labs_logo.png");
 
     setAttribute(Qt::WA_OpaquePaintEvent, false);
@@ -88,7 +88,7 @@ void LogoMorphWidget::paintEvent(QPaintEvent*)
         p.drawPixmap(dst, pm);
     };
 
-    drawCentered(m_pmxCached, 1.0 - t);  // PathMux fades out
+    drawCentered(m_pmxCached, 1.0 - t);  // CamClops fades out
     drawCentered(m_ntbCached, t);         // Nutball-Labs fades in
 
     p.setOpacity(1.0);

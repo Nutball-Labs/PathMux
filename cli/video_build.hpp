@@ -13,7 +13,11 @@
 #include "trip_detection.hpp"
 #include "config_manager.hpp"
 
-using namespace Pathmux;
+using namespace CamClops;
+
+// Max segments per per-camera sync-pad chunk on Windows.  Each chunk produces
+// a command of ~2–4 KB, well under cmd.exe's 8191-char limit.
+static constexpr int WIN_SYNC_CHUNK_SIZE = 15;
 
 // ---------------------------------------------------------------------------
 // CollageSlot — one quadrant of a free-form collage.
@@ -65,7 +69,7 @@ struct VideoOptions {
 
     // Output
     std::string outputDir;          // "" = use config defaultExportDir
-    std::string tmpDir;             // "" = auto: <outputDir>/pm_tmp
+    std::string tmpDir;             // "" = auto: <outputDir>/clops_tmp
     std::string containerFormat;    // "mp4", "mkv", "mov" — per-camera files
                                     // collage is always mp4/H.265
 
@@ -86,7 +90,7 @@ struct VideoOptions {
     NavAction navAction = NavAction::NONE;
 
     // Provenance — set by the caller before invoking buildTrip() or run().
-    // Used to write pm_buildlog.json in the footage source path.
+    // Used to write clops_buildlog.json in the footage source path.
     std::string sourcePath;   // footage source path (e.g. /z/srcdash/ex1)
     std::string manifestId;   // two-char base36 manifest ID (e.g. "CQ")
 
@@ -199,6 +203,14 @@ private:
     bool buildCollage4K(const Trip& trip,
                         const VideoOptions& opts);
 
+    // Windows-only: build 4K collage via chunked per-camera sync-pad encoding
+    // instead of the single monolithic command that exceeds cmd.exe's limit.
+    // Each camera's segments are encoded in chunks of WIN_SYNC_CHUNK_SIZE,
+    // concatenated into a per-camera file, then xstacked into the final collage.
+#ifdef _WIN32
+    bool buildCollage4KChunked(const Trip& trip, const VideoOptions& opts);
+#endif
+
     bool buildCollage1080(const std::string& source4K,
                           const std::string& outputPath,
                           const VideoOptions& opts);
@@ -258,9 +270,11 @@ private:
     // Probe per-segment durations using frame count × frame period.
     // frameRate is the trip videoProfile string (e.g. "30/1", "30000/1001").
     // Falls back to format=duration probe if frame count or fps parse fails.
-    std::vector<double> probeSegmentDurations(const std::vector<std::string>& files,
-                                              const std::string& ffprobePath,
-                                              const std::string& frameRate);
+    std::vector<double> probeSegmentDurations(
+        const std::vector<std::string>& files,
+        const std::string& ffprobePath,
+        const std::string& frameRate,
+        std::function<void(int done, int total)> onProgress = nullptr);
 
     // Get frame count of a video file via ffprobe.
     int getFrameCount(const std::string& file, const std::string& ffprobePath);
@@ -307,4 +321,4 @@ private:
 };
 
 #endif
-// SN: 00111
+// SN: 00117

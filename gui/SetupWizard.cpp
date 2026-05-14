@@ -17,7 +17,7 @@
 #include <QIcon>
 #include <QApplication>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // WelcomePage
@@ -26,13 +26,13 @@ using namespace Pathmux;
 WelcomePage::WelcomePage(QWidget* parent)
     : QWizardPage(parent)
 {
-    setTitle("Welcome to PathMux " APP_VERSION);
+    setTitle("Welcome to CamClops " APP_VERSION);
     setSubTitle("Let's get you set up in just a few steps.");
 
     auto* vlay = new QVBoxLayout(this);
 
     auto* body = new QLabel(
-        "<p>PathMux organises your 360° dashcam footage into trips, "
+        "<p>CamClops organises your 360° dashcam footage into trips, "
         "extracts GPS tracks, and helps you build video collages.</p>"
         "<p>This wizard will help you configure the critical settings "
         "needed to get started:</p>"
@@ -87,7 +87,7 @@ ToolsPage::ToolsPage(QWidget* parent)
     : QWizardPage(parent)
 {
     setTitle("External Tool Paths");
-    setSubTitle("PathMux requires ffmpeg for video processing and ExifTool for GPS extraction.");
+    setSubTitle("CamClops requires ffmpeg for video processing and ExifTool for GPS extraction.");
 
     auto* form = new QFormLayout(this);
     form->setSpacing(8);
@@ -206,7 +206,7 @@ OutputPage::OutputPage(QWidget* parent)
     : QWizardPage(parent)
 {
     setTitle("Default Output Directory");
-    setSubTitle("Where should PathMux save exported video files and GPS tracks by default?");
+    setSubTitle("Where should CamClops save exported video files and GPS tracks by default?");
 
     auto* vlay = new QVBoxLayout(this);
 
@@ -247,7 +247,7 @@ HardwarePage::HardwarePage(QWidget* parent)
     : QWizardPage(parent)
 {
     setTitle("Encoder Hardware");
-    setSubTitle("PathMux will probe your ffmpeg installation for available hardware encoders.");
+    setSubTitle("CamClops will probe your ffmpeg installation for available hardware encoders.");
 
     auto* vlay = new QVBoxLayout(this);
 
@@ -372,7 +372,7 @@ void SummaryPage::initializePage()
         "<b>ExifTool:</b> "  + (exiftool.isEmpty()  ? "system PATH (exiftool)" : exiftool) + "<br>" +
         "<b>Export dir:</b> "+ (exportDir.isEmpty() ? "(current directory)"    : exportDir)+ "<br>" +
         "<b>Encoder preset:</b> " + preset + "<br><br>"
-        "<i>Settings saved to <tt>~/.config/pathmux/pathmux.json</tt> and "
+        "<i>Settings saved to <tt>~/.config/camclops/camclops.json</tt> and "
         "the host-specific overlay file.</i>";
 
     m_summary->setText(text);
@@ -385,7 +385,7 @@ void SummaryPage::initializePage()
 SetupWizard::SetupWizard(QWidget* parent)
     : QWizard(parent)
 {
-    setWindowTitle("PathMux Setup Wizard");
+    setWindowTitle("CamClops Setup Wizard");
     setWizardStyle(QWizard::ModernStyle);
     setMinimumSize(540, 480);
     resize(600, 500);

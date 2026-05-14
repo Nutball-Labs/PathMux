@@ -16,7 +16,7 @@
 #include <fstream>
 
 namespace fs = std::filesystem;
-using namespace Pathmux;
+using namespace CamClops;
 
 CameraProfilesDialog::CameraProfilesDialog(QWidget* parent)
     : QDialog(parent)

@@ -1,6 +1,6 @@
-# PathMux — Windows Port Checklist
+# CamClops — Windows Port Checklist
 
-Tracks what must be done to build and run PathMux (CLI and Qt6 GUI) on Windows.
+Tracks what must be done to build and run CamClops (CLI and Qt6 GUI) on Windows.
 Overall development direction lives in ROADMAP.md. This file covers platform-specific
 porting blockers only.
 
@@ -45,7 +45,7 @@ porting blockers only.
   `GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)`
 - [ ] **Home/config paths** (`lib/platform.cpp`) — implement Windows stubs:
   - `getHomePath()` → `%USERPROFILE%`
-  - `getConfigDir()` → `%APPDATA%\pathmux\`
+  - `getConfigDir()` → `%APPDATA%\camclops\`
 - [ ] **`popen`/`pclose`** — alias to `_popen`/`_pclose` on Windows; add thin wrapper
   or `#ifdef` in platform layer (used for ffprobe and exiftool subprocess calls)
 - [ ] **`access()`** — replace or alias to `_access()` on Windows; prefer
@@ -63,11 +63,11 @@ porting blockers only.
   install instructions (not Linux `dnf install` instructions)
 
 ### Testing
-- [ ] `pathmux.exe --version` runs on Windows 10/11
+- [ ] `camclops.exe --version` runs on Windows 10/11
 - [ ] `-s <path>` scan against footage on a Windows drive path
-- [ ] Manifest written to `%APPDATA%\pathmux\` correctly
+- [ ] Manifest written to `%APPDATA%\camclops\` correctly
 - [ ] Terminal box drawing renders in Windows Terminal and cmd.exe
-- [ ] `pm_gpsinfo.exe` operates correctly
+- [ ] `clops_gpsinfo.exe` operates correctly
 - [ ] Paths with spaces and Unicode characters handled without crash
 
 ---
@@ -103,8 +103,8 @@ Qt6 is fully supported on Windows; most GUI code requires no changes.
 - [ ] Qt6 natively provides:
   - Native Win32 window chrome and file dialogs
   - Dark mode follows Windows theme
-  - `QStandardPaths::AppDataLocation` returns correct `%APPDATA%\pathmux\` path
-- [ ] Build and launch `pathmux-gui` on Windows 10/11
+  - `QStandardPaths::AppDataLocation` returns correct `%APPDATA%\camclops\` path
+- [ ] Build and launch `camclops-gui` on Windows 10/11
 
 ### Distribution
 - [ ] Evaluate installer: NSIS (open source), WiX (Microsoft), or Qt Installer Framework
@@ -118,7 +118,7 @@ Qt6 is fully supported on Windows; most GUI code requires no changes.
 
 - **ExifTool bundling:** Standalone `.exe` is Perl compiled to Win32. Verify redistribution
   is permitted under Perl Artistic License before bundling in installer.
-- **Manifest colocated write:** `pm_manifest_<id>.json` written alongside footage.
+- **Manifest colocated write:** `clops_manifest_<id>.json` written alongside footage.
   Verify write permission detection works on NTFS (different model from POSIX `access()`).
 - **Drive-letter paths in manifests:** Verify `std::filesystem` comparison and
   manifest index lookups handle `C:\...` paths without false mismatches.

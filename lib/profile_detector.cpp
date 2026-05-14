@@ -7,7 +7,7 @@
 
 namespace fs = std::filesystem;
 
-namespace Pathmux {
+namespace CamClops {
 
 // Count files in a slot's scan directory whose filename matches the profile
 // regex and, if the slot has a filenameToken, the token capture group.
@@ -154,5 +154,5 @@ ProfileMatch detectProfile(const std::string& path,
     return result;
 }
 
-} // namespace Pathmux
+} // namespace CamClops
 // SN: 00104

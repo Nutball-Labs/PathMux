@@ -1,0 +1,29 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/images">
+    <file>checkmark.svg</file>
+    <file>Nutball-Labs_logo.png</file>
+    <file>camclops_16.png</file>
+    <file>camclops_32.png</file>
+    <file>camclops_48.png</file>
+    <file>camclops_64.png</file>
+    <file>camclops_128.png</file>
+    <file>camclops_256.png</file>
+    <file>camclops_512.png</file>
+    <file>logo_morph.mp4</file>
+  </qresource>
+  <qresource prefix="/">
+    <file>help/style.css</file>
+    <file>help/index.html</file>
+    <file>help/camclops.html</file>
+    <file>help/clops_probe.html</file>
+    <file>help/clops_gpsinfo.html</file>
+    <file>help/clops_gpsexport.html</file>
+    <file>help/clops_ls.html</file>
+    <file>help/clops_audit.html</file>
+    <file>help/clops_findgpslock.html</file>
+    <file>help/clops_tripdebug.html</file>
+    <file>help/gui_overview.html</file>
+  </qresource>
+</RCC>
+<!-- SN: 00111 -->

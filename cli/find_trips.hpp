@@ -9,7 +9,7 @@
 #include "config_manager.hpp"
 #include "json.hpp"
 
-using namespace Pathmux;
+using namespace CamClops;
 
 class FindTrips {
 public:

@@ -12,14 +12,14 @@
 AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
 {
-    setWindowTitle("About PathMux");
+    setWindowTitle("About CamClops");
     setFixedWidth(420);
 
     auto* vbox = new QVBoxLayout(this);
     vbox->setContentsMargins(20, 20, 20, 16);
     vbox->setSpacing(0);
 
-    // --- Logo row: Nutball-Labs (left) | PathMux (right) ---
+    // --- Logo row: Nutball-Labs (left) | CamClops (right) ---
     {
         auto* hbox = new QHBoxLayout;
         hbox->setSpacing(16);
@@ -33,7 +33,7 @@ AboutDialog::AboutDialog(QWidget* parent)
             hbox->addWidget(nlLabel);
         }
 
-        QPixmap pmLogo(":/images/pathmux_256.png");
+        QPixmap pmLogo(":/images/camclops_256.png");
         if (!pmLogo.isNull()) {
             auto* pmLabel = new QLabel(this);
             pmLabel->setPixmap(pmLogo.scaledToHeight(80, Qt::SmoothTransformation));
@@ -47,7 +47,7 @@ AboutDialog::AboutDialog(QWidget* parent)
     }
 
     // --- App name (large, bold) ---
-    auto* appLabel = new QLabel("PathMux", this);
+    auto* appLabel = new QLabel("CamClops", this);
     QFont appFont = appLabel->font();
     appFont.setPointSize(18);
     appFont.setBold(true);

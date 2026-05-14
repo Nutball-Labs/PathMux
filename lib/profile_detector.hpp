@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace Pathmux {
+namespace CamClops {
 
 // ---------------------------------------------------------------------------
 // ProfileMatch — result returned by detectProfile().
@@ -37,7 +37,7 @@ struct ProfileMatch {
 ProfileMatch detectProfile(const std::string& path,
                            const std::vector<CameraProfile>& candidates);
 
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
 // SN: 00104

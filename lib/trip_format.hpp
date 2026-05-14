@@ -5,7 +5,7 @@
 
 // ---------------------------------------------------------------------------
 // trip_format.hpp — structured output helpers (CSV, XML) for trip data.
-// Header-only: shared by pathmux (find_trips.cpp) and pm_ls.
+// Header-only: shared by camclops (find_trips.cpp) and clops_ls.
 //
 // Available field names:
 //   manifest_id, trip_id, address, date, start_time, start_epoch,
@@ -23,7 +23,7 @@
 #include <iomanip>
 #include <iostream>
 
-namespace Pathmux {
+namespace CamClops {
 
 // Default fields emitted when --fields is not specified.
 inline std::vector<std::string> defaultTripFields() {
@@ -124,7 +124,7 @@ inline void writeTripsXML(const std::vector<ManifestEntry>& index,
     const std::vector<std::string>& fields = cols.empty() ? defaultTripFields() : cols;
 
     std::cout << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-              << "<pathmux version=\"" << version << "\">\n";
+              << "<camclops version=\"" << version << "\">\n";
 
     for (const auto& me : index) {
         if (!filterMid.empty() && me.id != filterMid) continue;
@@ -150,10 +150,10 @@ inline void writeTripsXML(const std::vector<ManifestEntry>& index,
         std::cout << "  </manifest>\n";
     }
 
-    std::cout << "</pathmux>\n";
+    std::cout << "</camclops>\n";
 }
 
-} // namespace Pathmux
+} // namespace CamClops
 
 #endif
 // SN: 00089

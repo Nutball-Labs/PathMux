@@ -5,12 +5,12 @@
 
 #include "config_manager.hpp"
 
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // HostPrefsEditor — launched via --hostprefs.
 // Manages settings that vary per machine: encoder, tool paths, output dirs.
-// Saves to ~/.config/pathmux/pathmux_<hostname>.json, not the shared base.
+// Saves to ~/.config/camclops/camclops_<hostname>.json, not the shared base.
 // ---------------------------------------------------------------------------
 class HostPrefsEditor {
 public:

@@ -8,13 +8,13 @@
 #include <string>
 #include <vector>
 
-using namespace Pathmux;
+using namespace CamClops;
 
 void LocationsEditor::run(ConfigManager& config) {
     while (true) {
         std::vector<NamedLocation> locs = config.loadLocations();
 
-        std::string title = std::string("PathMux v") + APP_VERSION + " Known Locations";
+        std::string title = std::string("CamClops v") + APP_VERSION + " Known Locations";
         std::cout << "\n";
         UI::printCenteredTitle(title);
         UI::printLine();

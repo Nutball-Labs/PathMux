@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "ManifestManagerDialog.h"
-#include "ScanProgressDialog.h"
+#include "JobQueue.h"
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QPushButton>
@@ -14,7 +14,7 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
-using namespace Pathmux;
+using namespace CamClops;
 
 // ---------------------------------------------------------------------------
 // ManifestManagerDialog
@@ -134,11 +134,11 @@ void ManifestManagerDialog::onRefresh()
     if (row < 0 || row >= (int)m_entries.size()) return;
 
     const ManifestEntry& e = m_entries[row];
-    ScanProgressDialog dlg(this);
-    connect(&dlg, &ScanProgressDialog::scanComplete,
-            this, &ManifestManagerDialog::onScanComplete);
-    dlg.startScan(QString::fromStdString(e.path));
-    dlg.exec();
+    auto* job = new ManifestScanJob(QString::fromStdString(e.path));
+    connect(job, &Job::finished, this, [this, job](bool ok) {
+        if (ok) onScanComplete(job->completedEntry());
+    });
+    JobQueue::instance().enqueue(job);
 }
 
 void ManifestManagerDialog::onRewrite()
@@ -154,11 +154,11 @@ void ManifestManagerDialog::onRewrite()
         fs::remove(e.manifestFile, ec);
     }
 
-    ScanProgressDialog dlg(this);
-    connect(&dlg, &ScanProgressDialog::scanComplete,
-            this, &ManifestManagerDialog::onScanComplete);
-    dlg.startScan(QString::fromStdString(e.path));
-    dlg.exec();
+    auto* job = new ManifestScanJob(QString::fromStdString(e.path));
+    connect(job, &Job::finished, this, [this, job](bool ok) {
+        if (ok) onScanComplete(job->completedEntry());
+    });
+    JobQueue::instance().enqueue(job);
 }
 
 void ManifestManagerDialog::onDelete()
@@ -215,9 +215,9 @@ void ManifestManagerDialog::onEditNickname()
     loadManifests();
 }
 
-void ManifestManagerDialog::onScanComplete(const Pathmux::ManifestEntry&)
+void ManifestManagerDialog::onScanComplete(const CamClops::ManifestEntry&)
 {
     emit manifestsChanged();
     loadManifests();
 }
-// SN: 00095
+// SN: 00113

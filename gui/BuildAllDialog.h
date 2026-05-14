@@ -21,7 +21,7 @@ struct BuildAllStage {
 
     QString     name;           // display: "Extract GPS", "Map Video", etc.
     // Script fields:
-    QString     scriptName;     // "pm_maprender.py", etc.
+    QString     scriptName;     // "clops_maprender.py", etc.
     QString     outputPath;
     int         width  = 3840;
     int         height = 2160;
@@ -34,7 +34,7 @@ struct BuildAllStage {
 class BuildAllDialog : public QDialog {
     Q_OBJECT
 public:
-    BuildAllDialog(const Pathmux::Trip&        trip,
+    BuildAllDialog(const CamClops::Trip&        trip,
                    const QString&              manifestFile,
                    const QList<BuildAllStage>& stages,
                    QWidget*                    parent = nullptr);
@@ -59,7 +59,7 @@ private slots:
     void onCancel();
 
 private:
-    Pathmux::Trip          m_trip;
+    CamClops::Trip          m_trip;
     QString                m_manifestFile;
     QList<BuildAllStage>   m_stages;
     bool                   m_done = false;

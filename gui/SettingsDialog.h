@@ -16,12 +16,12 @@ class QLabel;
 class QPushButton;
 
 // ---------------------------------------------------------------------------
-// SettingsDialog — tabbed settings for all PathMux preferences.
+// SettingsDialog — tabbed settings for all CamClops preferences.
 // Tabs mirror the CLI settings hierarchy:
-//   General  → pathmux.json (trip, display, output, format)
-//   Encoder  → pathmux_<hostname>.json  (encode preset + all fields)
-//   Host     → pathmux_<hostname>.json  (path overrides for this machine)
-//   KML      → pathmux.json  (kml export styling)
+//   General  → camclops.json (trip, display, output, format)
+//   Encoder  → camclops_<hostname>.json  (encode preset + all fields)
+//   Host     → camclops_<hostname>.json  (path overrides for this machine)
+//   KML      → camclops.json  (kml export styling)
 //   Locations → locations.json
 // ---------------------------------------------------------------------------
 class SettingsDialog : public QDialog {
@@ -54,8 +54,8 @@ private:
     void loadFromConfig();
     void saveToConfig();
 
-    Pathmux::ConfigManager m_config;
-    std::vector<Pathmux::NamedLocation> m_locations;
+    CamClops::ConfigManager m_config;
+    std::vector<CamClops::NamedLocation> m_locations;
 
     // -- General tab --
     QSpinBox*  m_gapThreshold   = nullptr;
@@ -68,6 +68,8 @@ private:
     QComboBox* m_logLevel       = nullptr;
     QLineEdit* m_activeProfile  = nullptr;
     QComboBox* m_uiScale        = nullptr;
+    QComboBox* m_jobQueueMode   = nullptr;
+    QSpinBox*  m_monitorPort    = nullptr;
 
     // -- Encoder tab --
     QComboBox* m_preset          = nullptr;
@@ -109,4 +111,4 @@ private:
     // -- Locations tab --
     QTableWidget* m_locTable       = nullptr;
 };
-// SN: 00104
+// SN: 00115

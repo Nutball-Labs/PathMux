@@ -19,7 +19,7 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-namespace Pathmux {
+namespace CamClops {
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -27,14 +27,14 @@ namespace Pathmux {
 
 ConfigManager::ConfigManager() {
     configDir         = Platform::getConfigDir();
-    settingsFile      = configDir + "pathmux.json";
+    settingsFile      = configDir + "camclops.json";
     locationsFile     = configDir + "locations.json";
     manifestIndexFile = configDir + "manifests.json";
     staleArchiveFile  = configDir + "manifests_stale.json";
 
     // Derive short hostname for host-specific settings overlay.
     hostname         = getShortHostname();
-    hostSettingsFile = configDir + "pathmux_" + hostname + ".json";
+    hostSettingsFile = configDir + "camclops_" + hostname + ".json";
 
     loadSettings();
 }
@@ -45,7 +45,7 @@ void ConfigManager::ensureConfigDir() {
 }
 
 // ---------------------------------------------------------------------------
-// Settings — pathmux.json
+// Settings — camclops.json
 // ---------------------------------------------------------------------------
 
 void ConfigManager::loadSettings() {
@@ -61,7 +61,7 @@ void ConfigManager::loadSettings() {
     try {
         ifs >> j;
     } catch (const json::parse_error&) {
-        std::cerr << "Warning: pathmux.json is corrupt — using defaults.\n";
+        std::cerr << "Warning: camclops.json is corrupt — using defaults.\n";
         cfgState = ConfigState::FIRST_RUN;
         return;
     }
@@ -360,7 +360,7 @@ CameraProfile ConfigManager::getManifestProfile(const std::string& sourcePath) c
 }
 
 // ---------------------------------------------------------------------------
-// Host overlay — pathmux_<hostname>.json
+// Host overlay — camclops_<hostname>.json
 // ---------------------------------------------------------------------------
 
 void ConfigManager::loadHostOverlay() {
@@ -384,6 +384,8 @@ void ConfigManager::loadHostOverlay() {
     if (j.contains("tmpDir"))          settings.tmpDir          = j["tmpDir"];
     if (j.contains("logLevel"))        settings.logLevel        = j["logLevel"];
     if (j.contains("uiScale"))         settings.uiScale         = j["uiScale"];
+    if (j.contains("jobQueueMode"))    settings.jobQueueMode    = j["jobQueueMode"];
+    if (j.contains("monitorPort"))     settings.monitorPort     = j["monitorPort"];
     if (j.contains("hudFontScale"))    settings.hudFontScale    = j["hudFontScale"];
     if (j.contains("hudLineScale"))    settings.hudLineScale    = j["hudLineScale"];
     if (j.contains("hudColor"))        settings.hudColor        = j["hudColor"];
@@ -414,6 +416,8 @@ void ConfigManager::saveHostSettings() {
     j["tmpDir"]           = settings.tmpDir;
     j["logLevel"]         = settings.logLevel;
     j["uiScale"]          = settings.uiScale;
+    j["jobQueueMode"]     = settings.jobQueueMode;
+    j["monitorPort"]      = settings.monitorPort;
     j["hudFontScale"]     = settings.hudFontScale;
     j["hudLineScale"]     = settings.hudLineScale;
     j["hudColor"]         = settings.hudColor;
@@ -467,7 +471,7 @@ void ConfigManager::showSettings() const {
         return std::to_string(h) + "h" + (m ? " " + std::to_string(m) + "m" : "");
     };
 
-    std::cout << "\n--- PathMux Settings (" << settingsFile << ") ---\n";
+    std::cout << "\n--- CamClops Settings (" << settingsFile << ") ---\n";
     std::cout << std::left
               << std::setw(28) << "gapThresholdSeconds"
               << settings.gapThresholdSeconds
@@ -687,7 +691,7 @@ std::string ConfigManager::ensureManifestId(const std::string& sourcePath) {
     for (const auto& e : index)
         if (e.path == sourcePath) return e.id;
 
-    // 2. Scan directory for existing pm_manifest_XX.json files.
+    // 2. Scan directory for existing clops_manifest_XX.json files.
     //    Adopt the best one rather than minting a new ID, so all platforms
     //    converge on one manifest file per footage directory.
     std::error_code ec;
@@ -706,9 +710,9 @@ std::string ConfigManager::ensureManifestId(const std::string& sourcePath) {
 
         for (const auto& de : fs::directory_iterator(sourcePath, ec)) {
             std::string fname = de.path().filename().string();
-            // Must match "pm_manifest_XX.json" exactly (19 chars, 2-char base36 ID)
+            // Must match "clops_manifest_XX.json" exactly (19 chars, 2-char base36 ID)
             if (fname.size() != 19) continue;
-            if (fname.rfind("pm_manifest_", 0) != 0) continue;
+            if (fname.rfind("clops_manifest_", 0) != 0) continue;
             if (fname.substr(fname.size() - 5) != ".json") continue;
             std::string id = fname.substr(12, 2);
             if (!std::isalnum((unsigned char)id[0]) ||
@@ -765,7 +769,7 @@ std::string ConfigManager::lookupManifestFilePath(const std::string& sourcePath)
     std::string id = getManifestIdForPath(sourcePath);
     if (id.empty()) return "";
 
-    std::string filename  = "pm_manifest_" + id + ".json";
+    std::string filename  = "clops_manifest_" + id + ".json";
     std::string colocated = sourcePath + "/" + filename;
     if (fs::exists(colocated)) return colocated;
 
@@ -773,7 +777,7 @@ std::string ConfigManager::lookupManifestFilePath(const std::string& sourcePath)
     if (fs::exists(inConfig)) return inConfig;
 
     // Migration: look for old-style sanitized-path file and rename it
-    std::string oldName = "pm_manifest_" + sanitizePath(sourcePath) + ".json";
+    std::string oldName = "clops_manifest_" + sanitizePath(sourcePath) + ".json";
     std::vector<std::string> candidates = {sourcePath + "/" + oldName,
                                            configDir + oldName};
     for (const std::string& loc : candidates) {
@@ -796,12 +800,12 @@ std::string ConfigManager::lookupManifestFilePath(const std::string& sourcePath)
 
 std::string ConfigManager::getManifestFilePath(const std::string& sourcePath) {
     std::string id       = ensureManifestId(sourcePath);
-    std::string filename = "pm_manifest_" + id + ".json";
+    std::string filename = "clops_manifest_" + id + ".json";
     std::string preferred = sourcePath + "/" + filename;
 
     std::error_code ec;
     if (fs::exists(sourcePath, ec)) {
-        std::string testFile = sourcePath + "/.pm_write_test";
+        std::string testFile = sourcePath + "/.clops_write_test";
         std::ofstream test(testFile);
         if (test.is_open()) {
             test.close();
@@ -955,7 +959,7 @@ std::vector<ManifestEntry> ConfigManager::loadManifestIndex() {
         if (e.path.empty()) continue;
         // Discard bogus entries where path is a manifest file, not a source directory.
         // These are created when a manifest file path is mistakenly passed as a source path.
-        if (e.path.find("pm_manifest_") != std::string::npos) {
+        if (e.path.find("clops_manifest_") != std::string::npos) {
             std::cerr << "Note: removing malformed index entry with file path as source: "
                       << e.path << "\n";
             // Clean up the orphaned manifest file if it exists in the config dir
@@ -1004,7 +1008,7 @@ void ConfigManager::saveManifestIndex(const std::vector<ManifestEntry>& index) {
 
 void ConfigManager::saveManifestNote(const std::string& path,
                                       const std::string& note) {
-    if (path.find("pm_manifest_") != std::string::npos) {
+    if (path.find("clops_manifest_") != std::string::npos) {
         std::cerr << "Bug: saveManifestNote called with manifest file path: '"
                   << path << "' — ignoring.\n";
         return;
@@ -1187,7 +1191,7 @@ bool ConfigManager::validateManifestIndex() {
     if (index.empty()) return true;
 
     // Pass 2: check md5 for entries whose file exists.  Prompt only on mismatch
-    // (file exists but was modified outside PathMux — worth flagging).
+    // (file exists but was modified outside CamClops — worth flagging).
     std::vector<int> modified;
     for (int i = 0; i < (int)index.size(); ++i) {
         const auto& e = index[i];
@@ -1200,7 +1204,7 @@ bool ConfigManager::validateManifestIndex() {
     for (int k = (int)modified.size() - 1; k >= 0; --k) {
         int i = modified[k];
         const auto& e = index[i];
-        std::cout << "\n  Warning: Manifest modified outside PathMux\n"
+        std::cout << "\n  Warning: Manifest modified outside CamClops\n"
                   << "    Path: " << e.path << "\n"
                   << "    File: " << e.manifestFile << "\n"
                   << "\n  [I]  Ignore for this session\n"
@@ -1304,9 +1308,9 @@ void ConfigManager::saveTripCache(const std::string& path,
                                    const std::vector<Trip>& trips,
                                    const CameraProfile& profile) {
     // Guard: reject manifest file paths passed as source directories.
-    // A manifest file path (e.g. /foo/pm_manifest_AB.json) must never be
+    // A manifest file path (e.g. /foo/clops_manifest_AB.json) must never be
     // used as a source path — doing so creates a bogus duplicate index entry.
-    if (path.find("pm_manifest_") != std::string::npos) {
+    if (path.find("clops_manifest_") != std::string::npos) {
         std::cerr << "Bug: saveTripCache called with manifest file path: '"
                   << path << "' — ignoring to prevent duplicate index entry.\n";
         return;
@@ -1341,7 +1345,7 @@ void ConfigManager::saveTripCache(const std::string& path,
     existingPathMap[pathMapKey(hostname)] = path;
 
     // Build identity hash → id map from existing trips, and preserve any
-    // cameraSync data written by pm_sync_analyze.py so a rescan doesn't wipe it.
+    // cameraSync data written by clops_sync_analyze.py so a rescan doesn't wipe it.
     std::map<std::string, std::string>  hashToId;
     std::map<std::string, CameraSync>   existingSyncById;
     for (const auto& t : existingTrips) {
@@ -1446,7 +1450,7 @@ void ConfigManager::saveTripCache(const std::string& path,
         }
         {
             // Use in-memory cameraSync if valid; otherwise preserve whatever
-            // pm_sync_analyze.py wrote for this trip in the previous manifest.
+            // clops_sync_analyze.py wrote for this trip in the previous manifest.
             auto syncIt = existingSyncById.find(trip.id);
             const CameraSync& cs = trip.cameraSync.valid         ? trip.cameraSync
                                  : (syncIt != existingSyncById.end()) ? syncIt->second
@@ -1544,7 +1548,7 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
     std::vector<Trip> trips;
 
     // Accept either a full source path or a direct manifest file path.
-    bool isDirectManifest = (path.find("pm_manifest_") != std::string::npos && fs::exists(path));
+    bool isDirectManifest = (path.find("clops_manifest_") != std::string::npos && fs::exists(path));
     std::string fullFile;
     if (isDirectManifest) {
         fullFile = path;
@@ -1908,6 +1912,6 @@ void ConfigManager::clearStale(bool force) {
     std::cout << "  Stale archive cleared.\n";
 }
 
-} // namespace Pathmux
+} // namespace CamClops
 
-// SN: 00111
+// SN: 00115

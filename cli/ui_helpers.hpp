@@ -31,8 +31,8 @@
 // ---------------------------------------------------------------------------
 namespace UI {
 
-using Pathmux::truncate;
-using Pathmux::utf8DisplayWidth;
+using CamClops::truncate;
+using CamClops::utf8DisplayWidth;
 
 constexpr char CORNER = '+';  // all four corners
 constexpr char H      = '=';  // outer border horizontal (top / bottom)
@@ -46,7 +46,7 @@ constexpr int BOX_MAX = 120;  // cap: avoid absurd widths on huge monitors
 // resize.  Falls back to BOX_MIN if terminal size can't be determined
 // (e.g. output is piped or redirected).
 inline int boxWidth() {
-    int w = Pathmux::Platform::getTerminalWidth();
+    int w = CamClops::Platform::getTerminalWidth();
     if (w < BOX_MIN) w = BOX_MIN;
     if (w > BOX_MAX) w = BOX_MAX;
     return w;
@@ -201,13 +201,13 @@ inline void warnMissingTools(const std::string& ffmpegPath,
 }
 
 // ---------------------------------------------------------------------------
-// readCommand — prints "PathMux: " prompt and reads a line, retrying on
+// readCommand — prints "CamClops: " prompt and reads a line, retrying on
 // blank input so the user gets a fresh prompt without a full menu redraw.
 // Returns the trimmed, non-empty input string.
 // ---------------------------------------------------------------------------
 inline std::string readCommand() {
     while (true) {
-        std::cout << "PathMux: " << std::flush;
+        std::cout << "CamClops: " << std::flush;
         std::string input;
         std::getline(std::cin, input);
         // Trim leading whitespace

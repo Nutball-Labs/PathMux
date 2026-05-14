@@ -1,0 +1,214 @@
+.TH PM_GPSINFO 1 "May 2026" "v1.9.10a" "CamClops - GPS Inspector"
+.SH NAME
+clops_gpsinfo \- GPS metadata inspector for dashcam footage segments
+.SH SYNOPSIS
+.B clops_gpsinfo
+[\fIOPTIONS\fR] \fIfile.ts\fR
+.br
+.B clops_gpsinfo
+[\fIOPTIONS\fR] \fIMID\fR:\fITID\fR
+.br
+.B clops_gpsinfo
+.B \-\-scan\-all\-trips
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B clops_gpsinfo
+reads GPS metadata from a dashcam footage segment using ExifTool and reports
+the GPS lock time, first fix coordinates, and optionally all GPS records.
+It can also batch-scan every trip across all cached manifests to report
+seconds-to-GPS-lock for fleet analysis.
+.PP
+The tool operates in three modes:
+.TP
+.B Single-file mode
+Probes one \fI.ts\fR segment and reports the GPS lock event and (optionally)
+all GPS records from that file.
+.TP
+.B MID:TID mode
+Resolves a manifest trip address to the first Front camera segment and
+probes that file.  Equivalent to passing the absolute path directly.
+.TP
+.B Batch mode
+.RB ( \-\-scan\-all\-trips )
+Reads all cached manifests, scans the first Front segment of each trip,
+and prints a table of GPS lock times.  Lock times are written back into
+each manifest for display in the interactive browser and
+.BR clops_ls (1).
+.SH OPTIONS
+.SS "Single-file and MID:TID options"
+.TP
+.B \-\-first\-lock
+Report the first GPS record with a valid (non-zero) fix.  This is the
+default mode.
+.TP
+.B \-\-all
+Report all GPS records from the segment, not just the first lock.
+.TP
+.B \-\-json
+Output in JSON format (default).
+.TP
+.B \-\-text
+Output in human-readable text format.
+.TP
+.B \-\-csv
+Output in comma-separated values format.
+.TP
+.B \-\-xml
+Output in XML format.
+.SS "Batch scan options"
+.TP
+.B \-\-scan\-all\-trips
+Scan the first Front camera segment of every trip across all cached
+manifests.  Prints a table showing manifest ID, trip ID, nominal segment
+duration, seconds to first GPS lock, and the segment filename.  Results are
+written back into each manifest (the
+.B gpsLockSeconds
+field) so subsequent tools do not need to re-scan.
+.TP
+.B \-\-scan\-all\-trips
+cannot be combined with a file path or MID:TID argument.
+.SS "Common options"
+.TP
+.BI \-\-exiftool " PATH"
+Path to the ExifTool binary.  Defaults to
+.B exiftool
+(resolved via
+.BR PATH ).
+.TP
+.BI \-\-exiftool\-opts " OPTIONS"
+Override the ExifTool options string.  Defaults to the
+.B gps_exiftool_args
+value from the camera profile embedded in the manifest,
+or the built-in profile default if no manifest profile is present.
+.TP
+.B \-v ", " \-\-version
+Print the CamClops version string and exit.
+.TP
+.B \-h ", " \-\-help
+Print a usage summary and exit.
+.SH "GPS LOCK"
+GPS receivers require time to acquire a satellite fix after power-on
+(cold start).  The Pruveeo D90 firmware does not write GPS records to the
+LIGO stream until a satellite fix is acquired, so there are no pre-lock
+zero-position records in the stream.
+.PP
+Lock time is computed by comparing the UTC timestamp of the first valid GPS
+record against the clip-start time encoded in the filename (local time),
+using epoch arithmetic
+.RB ( mktime (3)
+for local,
+.BR timegm (3)
+for UTC) to handle timezone differences correctly.
+The result is stored as
+.B gpsLockSeconds
+in the trip manifest.
+.PP
+.B Automatic computation (v1.9.0+):
+When GPS is extracted from the GUI (Trip Properties \(-> GPS tab),
+.B gpsLockSeconds
+is computed and stored automatically as part of the extraction run.
+Running
+.B \-\-scan\-all\-trips
+is no longer required for GUI-extracted trips.
+Use
+.B \-\-scan\-all\-trips
+for batch operations or to refresh lock times on trips extracted with an
+older version of CamClops.
+.PP
+A
+.B gpsLockSeconds
+of
+.B 0
+means the receiver already had a fix at the start of the clip (warm start).
+Typical cold-start values on the D90 are 20\(en120 seconds.
+.PP
+A result of
+.B none
+(or
+.BR \-1 )
+means no valid GPS fix was found in the segment at all.  This is normal for
+very short stub segments recorded at startup before the receiver acquired
+a lock.
+.SH "OUTPUT FORMATS"
+.SS JSON (default)
+.nf
+{
+  "file": "/path/to/Front/20260209_043838F.ts",
+  "total_records": 147,
+  "first_lock_record": 0,
+  "first_lock": {
+    "timestamp_utc": "2026:02:09 10:39:14",
+    "record_index": 0,
+    "lat": 30.419000,
+    "lon": -89.025191
+  }
+}
+.fi
+.SS Text
+.nf
+File:           /path/to/Front/20260209_043838F.ts
+Total records:  147
+Valid fixes:    147  (100% coverage)
+First lock:     record 0  (0s after segment start)
+  Timestamp:    2026:02:09 10:39:14
+  Position:     30.419000, -89.025191
+  Speed:        0.0 km/h
+  Heading:      0.0\[de]
+.fi
+.PP
+In
+.B \-\-all
+mode the text report also shows the last fix and a GPS dropout count.
+.SH "SCAN-ALL-TRIPS OUTPUT"
+.nf
+MID  TID  SegDur  LockAt  First Segment
+---  ---  ------  ------  --------------------
+CY   7E     180s      0s  20260225_044424F.ts
+CY   3Z     180s    none  20260225_035430F.ts
+.fi
+.PP
+.B SegDur
+is the nominal segment interval derived from filename timestamp spacing.
+.B LockAt
+is seconds to first GPS fix (0s = immediate; none = no fix found).
+.SH NOTES
+Timestamps in GPS output use the format
+.B "YYYY:MM:DD HH:MM:SS"
+in UTC, as returned by ExifTool.  Filename timestamps are in local time.
+.PP
+Speed is reported in km/h.  Altitude is present in the GPS stream but
+known incorrect on the Pruveeo D90 (returns negative values at sea level)
+and is therefore not reported.
+.PP
+GPS extraction requires ExifTool to be installed and the options string
+to match the camera's GPS format.  If extraction returns no records,
+verify your ExifTool installation.  If your camera's GPS format is not
+supported by ExifTool, contact the ExifTool maintainer directly.
+See
+.BR exiftool (1).
+.SH FILES
+.TP
+.I ~/.config/camclops/camclops.json
+Application settings including
+.BR exiftoolPath .
+GPS extraction arguments are stored in the camera profile, not in global settings.
+.TP
+.I ~/.config/camclops/manifests.json
+Manifest index used by MID:TID resolution and
+.BR \-\-scan\-all\-trips .
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Failure (bad arguments, file not found, ExifTool error, or MID:TID not
+resolved).
+.SH "SEE ALSO"
+.BR camclops (1),
+.BR clops_gpsexport (1),
+.BR clops_ls (1),
+.BR exiftool (1)
+.SH AUTHOR
+Developed by Stephen Berg, 2026.
+.\" SN: 00112
