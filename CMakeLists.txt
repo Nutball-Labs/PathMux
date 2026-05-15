@@ -308,7 +308,6 @@ if(Qt6_FOUND)
         gui/TripTile.cpp
         gui/EmptyManifestWidget.cpp
         gui/TripPropertiesDialog.cpp
-        gui/DangerousDialog.cpp
         gui/ExtrasDialog.cpp
         gui/TripBuildDialog.cpp
         gui/BuildProgressDialog.cpp
@@ -488,6 +487,29 @@ if(Qt6_FOUND)
     # time.  Requires Python3 + Pillow + ffmpeg on the build machine.
     # The MP4 is embedded in the binary via QRC (266 KB).
     find_package(Python3 QUIET COMPONENTS Interpreter)
+    # Verify the found Python3 has PIL; if not, fall back to 'python3' from PATH
+    if(Python3_FOUND)
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" -c "import PIL"
+            RESULT_VARIABLE _pil_rc OUTPUT_QUIET ERROR_QUIET)
+        if(NOT _pil_rc EQUAL 0)
+            find_program(_python3_fallback NAMES python3)
+            if(_python3_fallback)
+                execute_process(
+                    COMMAND "${_python3_fallback}" -c "import PIL"
+                    RESULT_VARIABLE _pil_fb_rc OUTPUT_QUIET ERROR_QUIET)
+                if(_pil_fb_rc EQUAL 0)
+                    set(Python3_EXECUTABLE "${_python3_fallback}")
+                    message(STATUS "Logo morph: ${Python3_EXECUTABLE} has no PIL — falling back to ${_python3_fallback}")
+                else()
+                    set(Python3_FOUND FALSE)
+                    message(STATUS "Logo morph: no Python3 with PIL found — will use pre-built mp4 if available")
+                endif()
+            else()
+                set(Python3_FOUND FALSE)
+            endif()
+        endif()
+    endif()
     find_program(FFMPEG_BUILD_TOOL NAMES ffmpeg
         HINTS /usr/bin /usr/local/bin /opt/homebrew/bin)
     set(LOGO_MORPH_MP4 "${CMAKE_SOURCE_DIR}/gui/resources/logo_morph.mp4")
@@ -741,4 +763,4 @@ endif()
 
 include(CPack)
 
-# SN: 00115
+# SN: 00118

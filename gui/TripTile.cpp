@@ -2,7 +2,6 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #include "TripTile.h"
 #include "TripPropertiesDialog.h"
-#include "DangerousDialog.h"
 #include "ExtrasDialog.h"
 #include "format_helpers.hpp"
 #include "config_manager.hpp"
@@ -210,7 +209,6 @@ void TripTile::contextMenuEvent(QContextMenuEvent* event)
 {
     QMenu menu(this);
     QAction* propsAct       = menu.addAction("Properties");
-    QAction* dangerousAct   = menu.addAction("Dangerous…");
     menu.addSeparator();
     QAction* archiveTripAct = menu.addAction("Archive Trip…");
     QAction* deleteTripAct  = menu.addAction("Delete Trip…");
@@ -241,12 +239,7 @@ void TripTile::contextMenuEvent(QContextMenuEvent* event)
             m_trip.cameraSync.valid = true;
             update();
         });
-        dlg->show();
-
-    } else if (chosen == dangerousAct) {
-        auto* dlg = new DangerousDialog(m_trip, m_sourcePath, nullptr);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        connect(dlg, &DangerousDialog::manifestChanged, this, &TripTile::tripChanged);
+        connect(dlg, &TripPropertiesDialog::tripDeleted, this, &TripTile::tripChanged);
         dlg->show();
 
     } else if (chosen == archiveTripAct) {
@@ -470,4 +463,4 @@ void TripTile::paintEvent(QPaintEvent*)
 
     drawStatusIndicators(p);
 }
-// SN: 00117
+// SN: 00118

@@ -308,11 +308,30 @@ void HardwarePage::onProbe()
     QString output = QString::fromLatin1(proc.readAllStandardOutput())
                    + QString::fromLatin1(proc.readAllStandardError());
 
-    // Detect encoder families
-    bool hasNvenc   = output.contains("h264_nvenc")  || output.contains("hevc_nvenc");
-    bool hasQsv     = output.contains("h264_qsv")    || output.contains("hevc_qsv");
-    bool hasVaapi   = output.contains("h264_vaapi")  || output.contains("hevc_vaapi");
-    bool hasVt      = output.contains("h264_videotoolbox");  // macOS VideoToolbox
+    // First-pass: which encoders did ffmpeg compile in?
+    bool nvencCompiled = output.contains("h264_nvenc");
+    bool qsvCompiled   = output.contains("h264_qsv");
+    bool vaapiCompiled = output.contains("h264_vaapi");
+    bool vtCompiled    = output.contains("h264_videotoolbox");
+
+    // Second-pass: actually test each compiled-in encoder with a 1-frame null encode.
+    // Compiled-in != hardware present (RPM Fusion ffmpeg includes all HW encoders).
+    auto testEncoder = [&](const QString& enc, const QStringList& extraArgs) -> bool {
+        if (!output.contains(enc)) return false;
+        QProcess t;
+        QStringList args = {"-f","lavfi","-i","nullsrc=s=64x64:d=1"};
+        args << extraArgs;
+        args << "-c:v" << enc << "-frames:v" << "1" << "-f" << "null" << "-";
+        t.start(ffmpeg, args);
+        t.waitForFinished(5000);
+        return t.exitCode() == 0;
+    };
+
+    bool hasNvenc = nvencCompiled && testEncoder("h264_nvenc", {});
+    bool hasQsv   = qsvCompiled   && testEncoder("h264_qsv",   {"-init_hw_device","qsv=hw","-filter_hw_device","hw"});
+    bool hasVaapi = vaapiCompiled && testEncoder("h264_vaapi", {"-vaapi_device","/dev/dri/renderD128",
+                                                                "-vf","format=nv12,hwupload"});
+    bool hasVt    = vtCompiled;
 
     QStringList found;
     if (hasNvenc) found << "NVENC (NVIDIA GPU)";
@@ -429,4 +448,4 @@ void SetupWizard::applyToConfig(ConfigManager& config)
     config.saveSettings();
     config.saveHostSettings();
 }
-// SN: 00106
+// SN: 00118

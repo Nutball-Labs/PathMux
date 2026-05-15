@@ -18,6 +18,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QSpinBox;
 class QStackedWidget;
+class QTimer;
 class InactiveAwareTabBar;
 class QThread;
 
@@ -36,6 +37,7 @@ signals:
     void gpsExtracted();   // emitted immediately when GPS extraction succeeds
     void videosChanged();  // emitted when mapVideos/dashVideos/hudVideos are updated
     void syncAnalyzed();   // emitted when camera sync analysis completes successfully
+    void tripDeleted();    // emitted after the trip files + manifest entry are removed
 
 protected:
     void reject() override;
@@ -53,6 +55,7 @@ private slots:
     void onExportGps();
     void onRunSyncAnalysis();
     void onSyncFinished(int exitCode, QProcess::ExitStatus status);
+    void onDeleteTrip();
 
 private:
     CamClops::Trip m_trip;
@@ -71,8 +74,11 @@ private:
     QPushButton*      m_extractGpsBtn   = nullptr;
     QLabel*           m_extractMsgLabel = nullptr;
 
-    // Bottom button box (Ok / Cancel)
+    // Bottom button box (Ok / Cancel / Delete Trip)
     QDialogButtonBox* m_buttonBox       = nullptr;
+    QPushButton*      m_deleteBtn       = nullptr;
+    QTimer*           m_deleteArmTimer  = nullptr;
+    bool              m_deleteArmed     = false;
 
     // GPS tab — export
     QComboBox*    m_exportFormatCombo = nullptr;
@@ -133,4 +139,4 @@ private:
     QWidget* buildSyncWidget();
     void     refreshSyncTab();
 };
-// SN: 00113
+// SN: 00118

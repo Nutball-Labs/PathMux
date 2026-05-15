@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## [2.0.1a / SN: 00118] - 2026-05-14
+
+### Added
+- **Delete Trip in Properties dialog** (`gui/TripPropertiesDialog`): red "Delete
+  Trip…" button on the left of the button box. Two-click confirmation — first
+  click arms it (button turns solid red, label shows segment count, 4-second
+  auto-disarm timer); second click within the window deletes all `.ts` and `.jpg`
+  files, removes the trip from the manifest, and closes the dialog.
+
+### Fixed
+- **Setup wizard GPU probe falsely detects NVENC** (`gui/SetupWizard`): probe
+  previously checked only whether `h264_nvenc` appeared in `ffmpeg -encoders`
+  output. RPM Fusion's ffmpeg is compiled with NVENC/QSV/VAAPI unconditionally,
+  so machines without NVIDIA hardware were incorrectly suggested NVENC. Each
+  encoder family is now verified with a 1-frame null test encode; only encoders
+  that succeed are reported as available.
+- **CMake logo_morph.mp4 generation fails when system Python lacks PIL**
+  (`CMakeLists.txt`): `find_package(Python3)` picks the highest installed version
+  (Python 3.12 on penny), which may not have Pillow. Added a post-find PIL import
+  test; falls back to the `python3` binary from PATH if the primary interpreter
+  fails the test. Skips generation gracefully (uses pre-built mp4) if no Python
+  with PIL is found.
+
+### Removed
+- **DangerousDialog** (`gui/DangerousDialog`): segment-level delete/archive
+  dialog removed. Per-segment editing is better handled in `camclops-tl`.
+  The "Dangerous…" context menu item on trip tiles is gone. Trip deletion is
+  now available directly from the Trip Properties dialog.
+
 ## [2.0.0 / SN: 00117] - 2026-05-14
 
 ### Added

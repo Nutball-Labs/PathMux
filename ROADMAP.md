@@ -641,9 +641,9 @@ to Tier 1 concat for missing keys. Migrate existing manifests on read.
 
 ---
 
-*Last updated: 2026-05-09*
-*Project status: Phase 2 (Qt6 GUI — actively shipping; v2.0.0 in progress)*
-*Current version: 1.9.10a (SN 00113, unreleased session work)*
+*Last updated: 2026-05-15*
+*Project status: Phase 2 (Qt6 GUI — actively shipping; v2.0.1a current)*
+*Current version: 2.0.1a (SN 00118)*
 
 **Audio sync reference:**
 - Audio track always sourced from **Left camera** (driver position)

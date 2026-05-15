@@ -30,6 +30,7 @@
 #include <QScrollBar>
 #include <QProcess>
 #include <QScrollArea>
+#include <QTimer>
 #include <QUrl>
 #include <QString>
 #include <QCoreApplication>
@@ -37,6 +38,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <filesystem>
 #include "config_manager.hpp"
 #include "gps_export.hpp"
 #include "json.hpp"
@@ -769,6 +771,20 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &TripPropertiesDialog::onAccepted);
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    m_deleteBtn = new QPushButton("Delete Trip…", this);
+    m_deleteBtn->setStyleSheet("color: #cc0000;");
+    m_buttonBox->addButton(m_deleteBtn, QDialogButtonBox::ResetRole);
+    connect(m_deleteBtn, &QPushButton::clicked, this, &TripPropertiesDialog::onDeleteTrip);
+
+    m_deleteArmTimer = new QTimer(this);
+    m_deleteArmTimer->setSingleShot(true);
+    connect(m_deleteArmTimer, &QTimer::timeout, this, [this]() {
+        m_deleteArmed = false;
+        m_deleteBtn->setText("Delete Trip…");
+        m_deleteBtn->setStyleSheet("color: #cc0000;");
+    });
+
     vbox->addWidget(m_buttonBox);
 }
 
@@ -1611,5 +1627,52 @@ void TripPropertiesDialog::appendVideoToManifest(const QString& path,
     emit videosChanged();
 }
 
+// ---------------------------------------------------------------------------
+// Delete Trip — two-click confirmation
+// ---------------------------------------------------------------------------
+void TripPropertiesDialog::onDeleteTrip()
+{
+    if (!m_deleteArmed) {
+        // First click: arm the button
+        m_deleteArmed = true;
+        int n = (int)m_trip.segments.size();
+        m_deleteBtn->setText(
+            QString("Confirm — delete %1 segment(s)? Click again").arg(n));
+        m_deleteBtn->setStyleSheet(
+            "color: white; background-color: #cc0000; font-weight: bold;");
+        m_deleteArmTimer->start(4000);
+        return;
+    }
+
+    // Second click within 4s: execute
+    m_deleteArmTimer->stop();
+    m_deleteArmed = false;
+    m_deleteBtn->setEnabled(false);
+
+    namespace fs = std::filesystem;
+    for (const auto& seg : m_trip.segments) {
+        for (const auto& [slot, path] : seg.cameras) {
+            if (!path.empty() && path != "-") {
+                try { fs::remove(path); } catch (...) {}
+            }
+        }
+        for (const auto& [slot, path] : seg.thumbs) {
+            if (!path.empty()) {
+                try { fs::remove(path); } catch (...) {}
+            }
+        }
+    }
+
+    ConfigManager cfg;
+    cfg.loadSettings();
+    auto trips = cfg.loadTripCache(m_sourcePath);
+    trips.erase(std::remove_if(trips.begin(), trips.end(),
+        [this](const Trip& t) { return t.id == m_trip.id; }), trips.end());
+    cfg.saveTripCache(m_sourcePath, trips);
+
+    emit tripDeleted();
+    accept();
+}
+
 #include "TripPropertiesDialog.moc"
-// SN: 00117
+// SN: 00118

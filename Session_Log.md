@@ -1,7 +1,93 @@
-# PathMux Session Log
+# CamClops Session Log
 
 Running log of development sessions. Captures decisions, reasoning, and context
 that CHANGELOG and ROADMAP don't cover. One entry per working session.
+
+---
+
+## 2026-05-15
+
+### Session — GitHub repo rename, /update-push release skill
+
+**Focus:** Housekeeping and tooling. No source code changes.
+
+**GitHub repo rename:** Repository renamed from `Nutball-Labs/PathMux` to
+`Nutball-Labs/CamClops` via `gh repo rename`. Local remote URL updated to
+`git@github.com:Nutball-Labs/CamClops.git`. GitHub automatically maintains
+a redirect from the old URL so existing links do not immediately break.
+
+**`/update-push` skill** (`.claude/commands/update-push.md`): new Claude Code
+slash command that drives the full release-prep and publish workflow. Phase 1
+audits all doc files (CHANGELOG, ROADMAP, README, Session_Log, man pages,
+camclops_project_brief), finds packages for the current version, drafts GitHub
+release notes, and stops for review. Phase 2 (after explicit "approved") commits
+doc changes, pushes to `main`, creates the GitHub release tag, uploads packages,
+and marks the release as latest.
+
+**History policy clarified:** CHANGELOG entries written before the rebrand retain
+their PathMux/pm_* names. No history rewriting in the changelog; the rebrand
+commit (`42b4e46`) is the canonical marker.
+
+**Man page `.TH` headers corrected:** All `clops_*.1` man pages had stale
+`PM_*` names in their `.TH` macro (e.g. `PM_FINDGPSLOCK` instead of
+`CLOPS_FINDGPSLOCK`). All nine man pages updated; version bumped from
+`v1.9.10a` to `v2.0.1a`.
+
+---
+
+## 2026-05-14 (session 2)
+
+### Session — Rebrand close-out, build fixes, hardware probe, Delete Trip in Properties, DangerousDialog removal
+
+**Focus:** First session under the CamClops name. Closed out post-rebrand build
+issues, fixed the setup wizard GPU detector, added proper trip deletion to the
+Properties dialog, and retired DangerousDialog.
+
+**Project memory migration:** Memory files from the old `pathmux` project directory
+were copied to the new CamClops project directory so future sessions have full
+context without needing the old path.
+
+**Build directory stale cache:** After the directory rename from
+`/z/Nutball-Labs/pathmux` to `/z/Nutball-Labs/CamClops`, all three build
+directories (`build-linux`, `build-macos`, `build-windows`) held stale
+`CMakeCache.txt` files pointing to the old path. Renamed them (`old-build-*`)
+to force a clean reconfigure.
+
+**CMake Python PIL fallback (`CMakeLists.txt`):** `find_package(Python3)` picks
+the highest Python version present (3.12 on penny). The RPM Fusion ffmpeg build
+has Pillow installed under Python 3.9, not 3.12. Added a post-find verification
+block: after finding Python3, CMake runs `python3 -c "import PIL"` on the found
+interpreter; if it fails, falls back to the `python3` name on PATH and retests.
+If neither has PIL, `logo_morph.mp4` generation is skipped gracefully (pre-built
+file used if present). Prevents build failure on machines where the system Python3
+has Pillow but a newer Python does not.
+
+**Setup wizard hardware probe (`gui/SetupWizard.cpp`):** The probe step ran
+`ffmpeg -encoders` and checked if `h264_nvenc`/`h264_qsv`/`h264_vaapi` appeared
+in the output. RPM Fusion's ffmpeg is compiled with all three regardless of
+hardware, so penny (Intel iGPU, no NVIDIA) was incorrectly reported as having
+NVENC. Fixed: after the encoder list pass, each compiled-in encoder family is
+validated by running a 1-frame null encode (`ffmpeg -f lavfi -i nullsrc=s=64x64:d=1
+-c:v <enc> -frames:v 1 -f null -`). NVENC fails with "Cannot load libcuda.so.1";
+QSV and VAAPI succeed. Wizard now correctly suggests QSV on penny.
+
+**Delete Trip in TripPropertiesDialog (`gui/TripPropertiesDialog`):** A red
+"Delete Trip…" button added to the left of the button box. Two-click confirmation:
+first click arms the button (label → "Confirm — delete N segment(s)? Click again",
+bright red fill), starting a 4-second auto-disarm timer. Second click within the
+window deletes all `.ts` and `.jpg` segment files, removes the trip entry from
+the manifest via `loadTripCache`/`saveTripCache`, emits `tripDeleted()`, and
+closes the dialog. The timer resets the button to its idle state if the second
+click does not arrive.
+
+**DangerousDialog removed:** `DangerousDialog.cpp/.h` deleted. The segment-level
+delete/archive workflow it provided is superseded by camclops-tl (more accurate,
+frame-level). Removed from `CMakeLists.txt`, the `#include` from `TripTile.cpp`,
+and the "Dangerous…" context menu item. `TripTile` now connects
+`TripPropertiesDialog::tripDeleted → TripTile::tripChanged` so the grid refreshes
+after a deletion from Properties.
+
+**SN high-water mark:** 00117 → 00118. Version: 2.0.1a.
 
 ---
 
