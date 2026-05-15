@@ -103,13 +103,8 @@ To build from source instead, see [Building from Source](#building-from-source).
 
 ## Supported Cameras
 
-| Camera | Layout | GPS | Status |
-|---|---|---|---|
-| Pruveeo D90 360° | `Front/` `Rear/` `Left/` `Right/` subdirs, `.ts` | LIGOGPSINFO via ExifTool | ✅ Confirmed |
-| Cobra CCDC4500 / GPS | `DCIM/100_DSC/`, CAM1+CAM2, `.MOV`/`.3GP` | gps0 atom via ExifTool (GPS models) | ✅ Confirmed |
-| Prilotte | `DCIMA/` + `DCIMC/` subdirs, `.AVI` MJPEG | None (mtime timestamps) | ✅ Confirmed (no GPS) |
-
-**Don't see your camera?** See [Adding Camera Support](#adding-camera-support) below.
+See [Supported_Cameras.md](Supported_Cameras.md) for the full camera compatibility
+table and instructions for adding support for a new camera model.
 
 ---
 
@@ -291,50 +286,6 @@ and most mapping applications.
 
 ---
 
-## Adding Camera Support
-
-### Try the wizard first
-
-```bash
-./clops_probe --wizard /path/to/sdcard
-```
-
-The wizard handles subdirectory layouts (one folder per camera) and flat
-layouts (all cameras in one directory, distinguished by filename token).
-It detects timestamp format, GPS method, and thumbnail handling
-automatically where possible.
-
-### If the wizard doesn't produce a working profile
-
-Open a GitHub issue so we can build a profile without needing the hardware
-in hand. There are two ways to collect the diagnostic info we need:
-
-**Option A — Collection scripts (easiest, no CamClops required)**
-
-Download the [`Cam_Profile_Detection/`](https://github.com/Nutball-Labs/CamClops/tree/main/Cam_Profile_Detection)
-folder, run the script for your OS, and attach the generated `.txt` file to
-the issue:
-
-- **Linux / macOS:** `./collect_cam_profile.sh`
-- **Windows:** double-click `collect_cam_profile.bat`
-
-The script walks you through each step, runs `ffprobe` and `exiftool`
-automatically, and saves everything to a single file.
-
-**Option B — clops_probe (if CamClops is already installed)**
-
-```bash
-./clops_probe --card /path/to/sdcard --json > camera_report.json
-```
-
-Attach `camera_report.json` to the issue.
-
----
-
-Open issues at **https://github.com/Nutball-Labs/CamClops/issues** and include
-the camera make and model in the title.
-
----
 
 ## Configuration
 
@@ -439,4 +390,4 @@ clip creation from single video files.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan and v2.0.0 roadmap.
 
-<!-- SN: 00112 -->
+<!-- SN: 00118 -->
