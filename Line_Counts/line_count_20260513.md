@@ -1,16 +1,16 @@
-# PathMux Line Count — 2026-05-04
+# PathMux Line Count — 2026-05-13
 
-## Grand Total: 36,768 lines
+## Grand Total: 43,715 lines
 
 | Category | Lines |
 |---|---|
-| C++ source (`.cpp`) | 22,701 |
-| C++ headers (`.hpp` / `.h`) | 3,655 |
-| Python scripts (`.py`) | 2,887 |
-| Markdown (`.md`) | 4,970 |
-| `CMakeLists.txt` | 697 |
-| Man pages (`.1`) | 1,858 |
-| **Total** | **36,768** |
+| C++ source (`.cpp`) | 24,771 |
+| C++ headers (`.hpp` / `.h`) | 3,991 |
+| Python scripts (`.py`) | 6,215 |
+| Markdown (`.md`) | 5,825 |
+| `CMakeLists.txt` | 734 |
+| Man pages (`.1`) | 2,179 |
+| **Total** | **43,715** |
 
 ---
 
@@ -20,43 +20,51 @@
 
 | File | Lines |
 |---|---|
-| `gui/TripPropertiesDialog.cpp` | 1,805 |
-| `gui/TripBuildDialog.cpp` | 1,208 |
-| `gui/SettingsDialog.cpp` | 703 |
+| `gui/TripPropertiesDialog.cpp` | 1,615 |
+| `gui/TripBuildDialog.cpp` | 1,206 |
+| `gui/JobQueue.cpp` | 1,011 |
+| `gui/SettingsDialog.cpp` | 717 |
 | `gui/BuildProgressDialog.cpp` | 648 |
+| `gui/JobQueuePanel.cpp` | 551 |
+| `gui/MainWindow.cpp` | 494 |
+| `gui/TripTile.cpp` | 471 |
 | `gui/BuildAllDialog.cpp` | 456 |
 | `gui/SetupWizard.cpp` | 432 |
 | `gui/DangerousDialog.cpp` | 417 |
-| `gui/MainWindow.cpp` | 388 |
 | `gui/MapProgressDialog.cpp` | 372 |
-| `gui/TripTile.cpp` | 367 |
+| `gui/TripGridPanel.cpp` | 314 |
 | `gui/CameraProfilesDialog.cpp` | 295 |
-| `gui/TripGridPanel.cpp` | 293 |
 | `gui/ManifestPanel.cpp` | 293 |
+| `gui/ExtrasDialog.cpp` | 268 |
 | `gui/ManifestManagerDialog.cpp` | 223 |
 | `gui/HelpDialog.cpp` | 181 |
+| `gui/main.cpp` | 170 |
+| `gui/JobQueue.h` | 164 |
 | `gui/ScanProgressDialog.cpp` | 146 |
-| `gui/TripPropertiesDialog.h` | 138 |
-| `gui/main.cpp` | 129 |
+| `gui/TripPropertiesDialog.h` | 136 |
 | `gui/SetupWizard.h` | 117 |
-| `gui/SettingsDialog.h` | 112 |
-| `gui/TripBuildDialog.h` | 103 |
+| `gui/SettingsDialog.h` | 113 |
+| `gui/TripBuildDialog.h` | 102 |
 | `gui/LogoMorphWidget.cpp` | 96 |
 | `gui/AboutDialog.cpp` | 95 |
+| `gui/TripTile.h` | 82 |
 | `gui/BuildAllDialog.h` | 80 |
-| `gui/TripGridPanel.h` | 77 |
+| `gui/TripGridPanel.h` | 79 |
 | `gui/EmptyManifestWidget.cpp` | 75 |
 | `gui/DangerousDialog.h` | 75 |
-| `gui/TripTile.h` | 70 |
+| `gui/JobQueueMonitor.cpp` | 73 |
 | `gui/BuildProgressDialog.h` | 70 |
 | `gui/MapProgressDialog.h` | 69 |
+| `gui/JobQueuePanel.h` | 64 |
 | `gui/ManifestPanel.h` | 61 |
 | `gui/ManifestManagerDialog.h` | 50 |
 | `gui/HelpDialog.h` | 48 |
 | `gui/CameraProfilesDialog.h` | 46 |
+| `gui/MainWindow.h` | 44 |
+| `gui/ExtrasDialog.h` | 44 |
 | `gui/LogoMorphWidget.h` | 40 |
-| `gui/MainWindow.h` | 38 |
 | `gui/ScanProgressDialog.h` | 33 |
+| `gui/JobQueueMonitor.h` | 31 |
 | `gui/EmptyManifestWidget.h` | 21 |
 | `gui/AboutDialog.h` | 11 |
 
@@ -64,13 +72,13 @@
 
 | File | Lines |
 |---|---|
-| `cli/video_build.cpp` | 3,055 |
+| `cli/video_build.cpp` | 3,099 |
 | `cli/gpx_export.cpp` | 733 |
 | `cli/find_trips.cpp` | 659 |
-| `cli/main.cpp` | 441 |
+| `cli/main.cpp` | 442 |
 | `cli/prefs.cpp` | 411 |
 | `cli/ui_helpers.hpp` | 366 |
-| `cli/video_build.hpp` | 307 |
+| `cli/video_build.hpp` | 310 |
 | `cli/locations.cpp` | 130 |
 | `cli/host_prefs.cpp` | 115 |
 | `cli/kml_prefs.cpp` | 106 |
@@ -85,12 +93,12 @@
 
 | File | Lines |
 |---|---|
-| `lib/config_manager.cpp` | 1,894 |
+| `lib/config_manager.cpp` | 1,915 |
 | `lib/gps_export.cpp` | 687 |
-| `lib/trip_detection.cpp` | 515 |
-| `lib/config_manager.hpp` | 384 |
+| `lib/trip_detection.cpp` | 522 |
+| `lib/config_manager.hpp` | 387 |
 | `lib/camera_profile.cpp` | 310 |
-| `lib/trip_detection.hpp` | 178 |
+| `lib/trip_detection.hpp` | 187 |
 | `lib/trip_format.hpp` | 159 |
 | `lib/profile_detector.cpp` | 158 |
 | `lib/compat.hpp` | 158 |
@@ -121,41 +129,46 @@
 
 | File | Lines |
 |---|---|
-| `scripts/pm_hud.py` | 832 |
-| `scripts/pm_dashboard.py` | 792 |
-| `scripts/pm_sync_analyze.py` | 626 |
-| `scripts/pm_maprender.py` | 548 |
+| `scripts/pm_dashboard.py` | 1,060 |
+| `scripts/pm_dashboard.backup.py` | 1,060 |
+| `scripts/pm_hud.py` | 962 |
+| `scripts/pm_hud.backup.py` | 832 |
+| `scripts/pm_sync_analyze.py` | 705 |
+| `scripts/pm_maprender.py` | 580 |
+| `scripts/pm_maprender.backup.py` | 580 |
+| `scripts/pm_monitor.py` | 347 |
 | `scripts/gen_logo_morph.py` | 89 |
 
 ### Build System
 
 | File | Lines |
 |---|---|
-| `CMakeLists.txt` | 697 |
+| `CMakeLists.txt` | 734 |
 
 ### Documentation (`.md`)
 
 | File | Lines |
 |---|---|
-| `CHANGELOG.md` | 1,519 |
-| `ROADMAP.md` | 1,191 |
-| `Session_Log.md` | 1,003 |
-| `README.md` | 396 |
+| `CHANGELOG.md` | 1,842 |
+| `Session_Log.md` | 1,409 |
+| `ROADMAP.md` | 1,258 |
+| `README.md` | 440 |
 | `CLAUDE.md` | 363 |
+| `pathmux_project_brief.md` | 182 |
 | `ROADMAP_MacOS.md` | 177 |
-| `pathmux_project_brief.md` | 175 |
 | `ROADMAP_WINDOWS.md` | 133 |
-| `PROPOSED_UTILS.md` | 13 |
+| `PROPOSED_UTILS.md` | 21 |
 
 ### Man Pages (`man1/`)
 
 | File | Lines |
 |---|---|
-| `man1/pathmux.1` | 649 |
-| `man1/pm_probe.1` | 247 |
-| `man1/pm_ls.1` | 230 |
+| `man1/pathmux.1` | 676 |
+| `man1/pm_ls.1` | 281 |
+| `man1/pm_probe.1` | 254 |
+| `man1/pm_videos.1` | 227 |
 | `man1/pm_gpsinfo.1` | 214 |
-| `man1/pm_gpsexport.1` | 195 |
+| `man1/pm_gpsexport.1` | 193 |
 | `man1/pm_audit.1` | 162 |
-| `man1/pm_findgpslock.1` | 93 |
-| `man1/pm_tripdebug.1` | 68 |
+| `man1/pm_findgpslock.1` | 95 |
+| `man1/pm_tripdebug.1` | 77 |
