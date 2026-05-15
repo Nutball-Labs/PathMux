@@ -1,5 +1,9 @@
 # CamClops
 
+<p align="center">
+  <img src="images/CamClops.png" alt="CamClops" width="540">
+</p>
+
 Organize your dashcam footage into trips, export GPS tracks, and build
 synchronized multi-camera videos — from a desktop GUI or the command line.
 
@@ -390,4 +394,4 @@ clip creation from single video files.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan and v2.0.0 roadmap.
 
-<!-- SN: 00118 -->
+<!-- SN: 00119 -->

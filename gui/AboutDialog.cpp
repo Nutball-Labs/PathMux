@@ -33,7 +33,7 @@ AboutDialog::AboutDialog(QWidget* parent)
             hbox->addWidget(nlLabel);
         }
 
-        QPixmap pmLogo(":/images/camclops_256.png");
+        QPixmap pmLogo(":/images/camclops_logo.png");
         if (!pmLogo.isNull()) {
             auto* pmLabel = new QLabel(this);
             pmLabel->setPixmap(pmLogo.scaledToHeight(80, Qt::SmoothTransformation));
@@ -92,4 +92,4 @@ AboutDialog::AboutDialog(QWidget* parent)
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::accept);
     vbox->addWidget(buttons);
 }
-// SN: 00092
+// SN: 00119

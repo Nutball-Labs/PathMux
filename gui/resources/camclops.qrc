@@ -2,6 +2,7 @@
 <RCC version="1.0">
   <qresource prefix="/images">
     <file>checkmark.svg</file>
+    <file>camclops_logo.png</file>
     <file>Nutball-Labs_logo.png</file>
     <file>camclops_16.png</file>
     <file>camclops_32.png</file>
@@ -26,4 +27,4 @@
     <file>help/gui_overview.html</file>
   </qresource>
 </RCC>
-<!-- SN: 00111 -->
+<!-- SN: 00119 -->

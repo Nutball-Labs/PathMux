@@ -75,7 +75,7 @@ TripGridPanel::TripGridPanel(QWidget* parent)
     m_gridContainer->setAutoFillBackground(false);
     m_stack->setAutoFillBackground(false);
 
-    m_bgLogo = QPixmap(":/images/Nutball-Labs_logo.png");
+    m_bgLogo = QPixmap(":/images/camclops_512.png");
 
     // Determine initial page
     ConfigManager config;
@@ -311,4 +311,4 @@ void TripGridPanel::onJobFinished(Job*, bool ok)
         }
     }
 }
-// SN: 00113
+// SN: 00119
