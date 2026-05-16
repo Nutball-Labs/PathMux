@@ -244,6 +244,9 @@ def interp_point(pts, t_sec):
 # ─────────────────────────────────────────────────────────────────────────────
 
 _font_warned = False
+_hud_frame_counter = None   # set by main() before Pool forks; inherited via fork
+
+
 
 
 def find_font(size):
@@ -572,6 +575,13 @@ def _render_chunk(job):
     All arguments must be picklable — no PIL objects.
     Returns (returncode, tmp_path).
     """
+    # Die when parent dies — prevents orphaned workers after GUI cancel/close.
+    try:
+        import ctypes as _ct, signal as _sig
+        _ct.CDLL("libc.so.6", use_errno=True).prctl(1, _sig.SIGTERM)
+    except Exception:
+        pass
+
     (frame_start, frame_end, rfps, ofps, W, H,
      pts, cfg, pal, font_sizes, ffmpeg_exe, tmp_path) = job
 
@@ -605,6 +615,11 @@ def _render_chunk(job):
             proc.stdin.write(frame_buf)
         except BrokenPipeError:
             break
+        # _hud_frame_counter is a multiprocessing.Value inherited via fork from
+        # main() — increment without locking to avoid per-frame lock overhead;
+        # a few missed counts from unsynchronised reads are acceptable for display.
+        if _hud_frame_counter is not None:
+            _hud_frame_counter.value += 1
     proc.stdin.close()
     proc.wait()
     return (proc.returncode, tmp_path)
@@ -614,7 +629,19 @@ def _render_chunk(job):
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _cleanup_stale_tmp(prefix="clops_hud_"):
+    """Remove leftover temp dirs from killed/cancelled prior runs."""
+    import glob, shutil
+    for d in glob.glob(os.path.join(tempfile.gettempdir(), prefix + "*")):
+        if os.path.isdir(d):
+            try:
+                shutil.rmtree(d)
+            except OSError:
+                pass
+
+
 def main():
+    _cleanup_stale_tmp()
     parser = argparse.ArgumentParser(
         description="CamClops military-style HUD overlay renderer — GPS track → WebM"
     )
@@ -904,7 +931,7 @@ def main():
 
             pct = int(fi / n_frames * 100)
             now = time.monotonic()
-            if pct != prev_pct and (now - last_print_t) >= 0.1:
+            if (pct != prev_pct or (now - last_print_t) >= 5.0) and (now - last_print_t) >= 0.1:
                 elapsed = now - t_start
                 fps_act = (fi + 1) / elapsed if elapsed > 0 else 0
                 eta     = (n_frames - fi) / fps_act if fps_act > 0 else 0
@@ -931,6 +958,10 @@ def main():
         tmp_dir    = tempfile.mkdtemp(prefix="clops_hud_")
         tmp_files  = []
         list_file  = None
+        # Lock-free counter in shared mmap — set BEFORE Pool forks so workers
+        # inherit the same mapping via fork (not pickle).
+        global _hud_frame_counter
+        _hud_frame_counter = multiprocessing.Value('i', 0, lock=False)
         try:
             jobs = []
             for i in range(n_workers):
@@ -943,30 +974,44 @@ def main():
                 jobs.append((f_start, f_end, rfps, ofps, W, H,
                              pts, cfg, pal, font_sizes, args.ffmpeg, tmp_path))
 
-            n_chunks     = len(jobs)
-            completed    = 0
-            any_failed   = False
-            last_print_t = t_start
+            n_chunks   = len(jobs)
+            any_failed = False
 
-            with multiprocessing.Pool(processes=n_chunks) as pool:
-                for rc, chunk_path in pool.imap_unordered(_render_chunk, jobs):
-                    completed += 1
-                    elapsed = time.monotonic() - t_start
+            # Force fork context on all platforms.  macOS 3.8+ defaults to
+            # 'spawn', which re-imports the module in each worker and loses
+            # the _hud_frame_counter global; it can also hang in Pool.__init__
+            # if the worker's environment can't import PIL.  Fork is safe here
+            # because the main process is single-threaded at this point.
+            _ctx = multiprocessing.get_context("fork")
+            with _ctx.Pool(processes=n_chunks) as pool:
+                async_results = [pool.apply_async(_render_chunk, (job,))
+                                 for job in jobs]
+                last_print = t_start
+
+                while True:
+                    now     = time.monotonic()
+                    elapsed = now - t_start
+                    if (now - last_print) >= 3.0:
+                        done   = _hud_frame_counter.value
+                        pct    = min(99, done * 100 // n_frames) if n_frames > 0 else 0
+                        el_str = f"{int(elapsed // 60)}:{int(elapsed % 60):02d}"
+                        line   = f"  {pct}%  ({done}/{n_frames} frames)  {el_str} elapsed\n"
+                        os.write(2, line.encode())
+                        last_print = now
+                    if all(r.ready() for r in async_results):
+                        break
+                    time.sleep(1.0)
+
+            for r in async_results:
+                try:
+                    rc, chunk_path = r.get()
                     if rc != 0:
                         any_failed = True
                         print(f"\n  Error: chunk failed (code {rc}): {chunk_path}",
                               file=sys.stderr)
-                        # Terminate remaining workers immediately — don't wait for
-                        # them to finish.  pool.terminate() is called by the context
-                        # manager __exit__, so just break.
-                        break
-                    pct = completed * 100 // n_chunks
-                    now = time.monotonic()
-                    if (now - last_print_t) >= 0.1:
-                        print(f"  {pct}%  ({completed}/{n_chunks} chunks)  "
-                              f"{int(elapsed // 60)}:{int(elapsed % 60):02d} elapsed",
-                              file=sys.stderr, flush=True)
-                        last_print_t = now
+                except Exception as exc:
+                    any_failed = True
+                    print(f"\n  Error: worker exception: {exc}", file=sys.stderr)
 
             print(file=sys.stderr)
             if any_failed:
@@ -1011,4 +1056,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# SN: 00117
+# SN: 00119

@@ -466,7 +466,20 @@ def gen_test_build(mid, tid, cam_order, all_lags, all_seg_cams, ref_cam):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _cleanup_stale_tmp():
+    """Remove leftover sync concat files from killed/cancelled prior runs."""
+    import glob, shutil
+    tmp = tempfile.gettempdir()
+    for pat in ("clops_sync_*.txt", "pm_sync_*.txt"):
+        for f in glob.glob(os.path.join(tmp, pat)):
+            try:
+                os.unlink(f)
+            except OSError:
+                pass
+
+
 def main():
+    _cleanup_stale_tmp()
     ap = argparse.ArgumentParser(
         description="Analyze camera start offsets for a CamClops trip."
     )
@@ -702,4 +715,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# SN: 00114
+# SN: 00119

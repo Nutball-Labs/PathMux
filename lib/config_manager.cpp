@@ -710,11 +710,12 @@ std::string ConfigManager::ensureManifestId(const std::string& sourcePath) {
 
         for (const auto& de : fs::directory_iterator(sourcePath, ec)) {
             std::string fname = de.path().filename().string();
-            // Must match "clops_manifest_XX.json" exactly (19 chars, 2-char base36 ID)
-            if (fname.size() != 19) continue;
-            if (fname.rfind("clops_manifest_", 0) != 0) continue;
+            static const std::string kPfx = "clops_manifest_";
+            // clops_manifest_XX.json — length and ID offset derived from prefix
+            if (fname.size() != kPfx.size() + 2 + 5) continue;
+            if (fname.rfind(kPfx, 0) != 0) continue;
             if (fname.substr(fname.size() - 5) != ".json") continue;
-            std::string id = fname.substr(12, 2);
+            std::string id = fname.substr(kPfx.size(), 2);
             if (!std::isalnum((unsigned char)id[0]) ||
                 !std::isalnum((unsigned char)id[1])) continue;
             if (indexedIds.count(normalizeId(id))) continue; // ID belongs to another path
@@ -1914,4 +1915,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace CamClops
 
-// SN: 00115
+// SN: 00119
