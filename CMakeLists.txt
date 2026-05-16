@@ -292,6 +292,60 @@ add_custom_target(archive
 )
 
 # ---------------------------------------------------------------------------
+# macOS app icon — camclops.icns generated from PNG sources via iconutil.
+# Both camclops-gui and camclops-tl include this in their Contents/Resources/.
+# The custom command fires whenever the source PNGs change.
+# ---------------------------------------------------------------------------
+if(APPLE)
+    set(CAMCLOPS_ICNS_OUTPUT "${CMAKE_BINARY_DIR}/camclops.icns")
+    set(CAMCLOPS_ICONSET_DIR "${CMAKE_BINARY_DIR}/camclops.iconset")
+    add_custom_command(
+        OUTPUT  "${CAMCLOPS_ICNS_OUTPUT}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CAMCLOPS_ICONSET_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_16.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_16x16.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_32.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_16x16@2x.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_32.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_32x32.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_64.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_32x32@2x.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_128.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_128x128.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_256.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_128x128@2x.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_256.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_256x256.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_512.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_256x256@2x.png"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_512.png"
+                "${CAMCLOPS_ICONSET_DIR}/icon_512x512.png"
+        COMMAND iconutil -c icns "${CAMCLOPS_ICONSET_DIR}" -o "${CAMCLOPS_ICNS_OUTPUT}"
+        DEPENDS
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_16.png"
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_32.png"
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_64.png"
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_128.png"
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_256.png"
+                "${CMAKE_SOURCE_DIR}/gui/resources/camclops_512.png"
+        COMMENT "Generating camclops.icns from PNG sources"
+    )
+    set_source_files_properties("${CAMCLOPS_ICNS_OUTPUT}" PROPERTIES
+        GENERATED               TRUE
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
+endif()
+
+# ---------------------------------------------------------------------------
 # camclops-gui — Qt6 Widgets front-end
 # Skipped silently if Qt6 is not installed; CLI builds are unaffected.
 # Linux install:   sudo dnf install qt6-qtbase-devel
@@ -344,7 +398,9 @@ if(Qt6_FOUND)
             MACOSX_BUNDLE_BUNDLE_VERSION     "${CAMCLOPS_VERSION}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${CAMCLOPS_VERSION}"
             MACOSX_BUNDLE_INFO_PLIST         "${CMAKE_SOURCE_DIR}/gui/Info.plist.in"
+            MACOSX_BUNDLE_ICON_FILE          "camclops"
         )
+        target_sources(camclops-gui PRIVATE "${CAMCLOPS_ICNS_OUTPUT}")
     endif()
     target_include_directories(camclops-gui PRIVATE gui/ cli/ ${CMAKE_SOURCE_DIR})
     target_link_libraries(camclops-gui PRIVATE camclopslib Qt6::Widgets)
@@ -570,6 +626,8 @@ if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
         Qt6::MultimediaWidgets
     )
     if(WIN32)
+        set_target_properties(camclops-tl PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_sources(camclops-tl PRIVATE camclops-tl/camclops-tl.rc)
         install(TARGETS camclops-tl RUNTIME DESTINATION ".")
         if(WINDEPLOYQT_EXECUTABLE)
             install(CODE "
@@ -587,15 +645,27 @@ if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
         endif()
     elseif(APPLE)
         set_target_properties(camclops-tl PROPERTIES
-            SKIP_BUILD_RPATH   TRUE
-            SKIP_INSTALL_RPATH TRUE
-            MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_BUNDLE_NAME "camclops-tl"
-            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+            SKIP_BUILD_RPATH                 TRUE
+            SKIP_INSTALL_RPATH               TRUE
+            MACOSX_BUNDLE                    TRUE
+            MACOSX_BUNDLE_BUNDLE_NAME        "CamClops Timelapse"
+            MACOSX_BUNDLE_GUI_IDENTIFIER     "com.nutballlabs.camclops-tl"
+            MACOSX_BUNDLE_BUNDLE_VERSION     "${PROJECT_VERSION}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_INFO_PLIST         "${CMAKE_SOURCE_DIR}/camclops-tl/Info.plist.in"
+            MACOSX_BUNDLE_ICON_FILE          "camclops"
         )
+        target_sources(camclops-tl PRIVATE "${CAMCLOPS_ICNS_OUTPUT}")
         install(TARGETS camclops-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
+        if(MACDEPLOYQT_EXECUTABLE)
+            add_custom_command(TARGET camclops-tl POST_BUILD
+                COMMAND "${MACDEPLOYQT_EXECUTABLE}" "$<TARGET_BUNDLE_DIR:camclops-tl>" -codesign=-
+                COMMAND find "$<TARGET_BUNDLE_DIR:camclops-tl>" -name "._*" -delete
+                VERBATIM
+                COMMENT "Running macdeployqt and ad-hoc signing camclops-tl.app"
+            )
+        endif()
     else()
         install(TARGETS camclops-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
         install(FILES "camclops-tl/camclops-tl.desktop"
@@ -750,17 +820,27 @@ functionality.")
     set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/Nutball-Labs/CamClops")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libstdc++6")
 
-    # ldconfig scriptlets — update the linker cache after install/remove
-    file(WRITE "${CMAKE_BINARY_DIR}/postinst" "#!/bin/sh\nset -e\nldconfig\n")
-    file(WRITE "${CMAKE_BINARY_DIR}/postrm"   "#!/bin/sh\nset -e\nldconfig\n")
+    # Post-install / post-remove scriptlets:
+    #   1. ldconfig          — refresh the shared-library linker cache
+    #   2. gtk-update-icon-cache — register the hicolor icons so launchers show them
+    #   3. update-desktop-database — index the .desktop files for MIME/app lookups
+    # All icon/desktop commands are silenced and non-fatal so the package install
+    # does not fail on minimal systems without a desktop environment.
+    set(_CLOPS_POSTINST_BODY
+        "ldconfig\n"
+        "gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true\n"
+        "update-desktop-database /usr/share/applications 2>/dev/null || true\n")
+    file(WRITE "${CMAKE_BINARY_DIR}/postinst" "#!/bin/sh\nset -e\n${_CLOPS_POSTINST_BODY}")
+    file(WRITE "${CMAKE_BINARY_DIR}/postrm"   "#!/bin/sh\nset -e\n${_CLOPS_POSTINST_BODY}")
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${CMAKE_BINARY_DIR}/postinst"
         "${CMAKE_BINARY_DIR}/postrm")
-    file(WRITE "${CMAKE_BINARY_DIR}/rclops_ldconfig.sh" "#!/bin/sh\n/sbin/ldconfig\n")
-    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE   "${CMAKE_BINARY_DIR}/rclops_ldconfig.sh")
-    set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_BINARY_DIR}/rclops_ldconfig.sh")
+    file(WRITE "${CMAKE_BINARY_DIR}/clops_postinst.sh"
+        "#!/bin/sh\n/sbin/ldconfig\n${_CLOPS_POSTINST_BODY}")
+    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE   "${CMAKE_BINARY_DIR}/clops_postinst.sh")
+    set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_BINARY_DIR}/clops_postinst.sh")
 endif()
 
 include(CPack)
 
-# SN: 00118
+# SN: 00119

@@ -1,9 +1,12 @@
 [Desktop Entry]
 Type=Application
 Name=CamClops Timelapse Editor
+GenericName=Timelapse Editor
 Comment=Create timelapse sections from CamClops collage MP4 files
 Exec=camclops-tl %f
 Icon=camclops
+Terminal=false
 Categories=AudioVideo;Video;
 MimeType=video/mp4;
-Terminal=false
+Keywords=dashcam;timelapse;video;
+# SN: 00119
