@@ -13,6 +13,10 @@ manifest so subsequent loads are instant. From there you can browse trips,
 extract GPS tracks for mileage logging, export GPX/KML files, or assemble
 per-camera MP4 files and 4K collages.
 
+[![CamClops main window](screenshots/CamClops_Main.png)](Screenshots.md)
+
+*[More screenshots](Screenshots.md)*
+
 ---
 
 ## Download
