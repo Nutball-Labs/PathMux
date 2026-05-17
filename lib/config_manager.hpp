@@ -151,6 +151,7 @@ struct ManifestEntry {
     std::string manifestMd5;     // md5 of manifest file — validated on load
     std::string note;            // User-set note for this manifest
     std::string nickname;        // Display label; defaults to path if empty
+    bool        isVirtual  = false; // runtime-only; never saved to manifests.json
 };
 
 // ---------------------------------------------------------------------------

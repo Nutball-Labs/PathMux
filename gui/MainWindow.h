@@ -2,7 +2,11 @@
 // Copyright (C) 2026 Nutball Labs / Stephen Berg
 #pragma once
 #include <QMainWindow>
+#include <QList>
+#include <QMap>
+#include <QString>
 #include "config_manager.hpp"
+#include "TripSearchDialog.h"
 
 class QDockWidget;
 class QSplitter;
@@ -20,9 +24,13 @@ private slots:
     void onScanRequested();
     void onRebuildRequested(const CamClops::ManifestEntry& entry);
     void onScanComplete(const CamClops::ManifestEntry& entry);
+    void onManifestSelected(const CamClops::ManifestEntry& entry);
+    void onSearchTrips();
+    void onSearchCompleted(QList<SearchResult> results, QString label);
     void onZoomChanged(double factor);
     void onAbout();
     void onHelp();
+    void onUninstall();
     void onSettings();
     void onManageManifests();
     void onSetupWizard();
@@ -40,5 +48,9 @@ private:
     QDockWidget*   m_jobDock      = nullptr;
     JobQueuePanel* m_jobPanel     = nullptr;
     QWidget*       m_jobFloatWin  = nullptr;
+
+    // Virtual search result manifests: id → result list
+    QMap<QString, QList<SearchResult>> m_searchResultsMap;
 };
-// SN: 00113
+// SN: 00119
+

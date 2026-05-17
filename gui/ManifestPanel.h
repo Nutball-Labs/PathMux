@@ -22,10 +22,14 @@ public:
     void selectEntry(const CamClops::ManifestEntry& entry);
     void setZoom(double factor);
 
+    void addVirtualEntry(const CamClops::ManifestEntry& entry);
+    void removeVirtualEntry(const QString& id);
+
 signals:
     void manifestSelected(const CamClops::ManifestEntry& entry);
     void scanRequested();
     void rebuildRequested(const CamClops::ManifestEntry& entry);
+    void virtualEntryRemoved(const QString& id);
     void zoomChanged(double factor);
 
 protected:
@@ -58,4 +62,4 @@ private:
     void applySort();
     void applyListZoom();
 };
-// SN: 00109
+// SN: 00119

@@ -362,6 +362,7 @@ if(Qt6_FOUND)
         gui/TripTile.cpp
         gui/EmptyManifestWidget.cpp
         gui/TripPropertiesDialog.cpp
+        gui/TripSearchDialog.cpp
         gui/ExtrasDialog.cpp
         gui/TripBuildDialog.cpp
         gui/BuildProgressDialog.cpp
@@ -462,6 +463,16 @@ if(Qt6_FOUND)
                 "${CMAKE_SOURCE_DIR}/scripts/clops_sync_analyze.py"
                 "${CMAKE_SOURCE_DIR}/scripts/clops_monitor.py"
             DESTINATION "camclops-gui.app/Contents/scripts"
+        )
+        # Uninstall helper — installed to bin/ so users can run: sudo camclops-uninstall
+        # Also placed inside the bundle's Resources/ as a fallback if bin/ entry is gone.
+        install(PROGRAMS "${CMAKE_SOURCE_DIR}/packaging/uninstall-camclops.sh"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            RENAME camclops-uninstall
+        )
+        install(PROGRAMS "${CMAKE_SOURCE_DIR}/packaging/uninstall-camclops.sh"
+            DESTINATION "camclops-gui.app/Contents/Resources"
+            RENAME uninstall-camclops.sh
         )
     else()
         install(TARGETS camclops-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -659,11 +670,20 @@ if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
         install(TARGETS camclops-tl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     BUNDLE  DESTINATION .)
         if(MACDEPLOYQT_EXECUTABLE)
+            # camclops-tl is always shipped alongside camclops-gui; share its
+            # Frameworks dir rather than duplicating ~33 MB of Qt libraries.
+            # macdeployqt must still run first to rewrite Homebrew absolute load
+            # paths → @executable_path/../Frameworks/…; the symlink is then
+            # substituted so the binary resolves through camclops-gui.app's copy.
+            add_dependencies(camclops-tl camclops-gui)
             add_custom_command(TARGET camclops-tl POST_BUILD
                 COMMAND "${MACDEPLOYQT_EXECUTABLE}" "$<TARGET_BUNDLE_DIR:camclops-tl>" -codesign=-
                 COMMAND find "$<TARGET_BUNDLE_DIR:camclops-tl>" -name "._*" -delete
+                COMMAND rm -rf "$<TARGET_BUNDLE_DIR:camclops-tl>/Contents/Frameworks"
+                COMMAND ln -s "../../camclops-gui.app/Contents/Frameworks"
+                              "$<TARGET_BUNDLE_DIR:camclops-tl>/Contents/Frameworks"
                 VERBATIM
-                COMMENT "Running macdeployqt and ad-hoc signing camclops-tl.app"
+                COMMENT "macdeployqt + sign camclops-tl; replace Frameworks with symlink to camclops-gui"
             )
         endif()
     else()

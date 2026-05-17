@@ -144,7 +144,7 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
         connect(tile, &TripTile::doubleClicked,
                 [this, t]() { emit tripDoubleClicked(m_currentManifest, t); });
         connect(tile, &TripTile::buildRequested,
-                [this, t]() { onBuildRequested(t); });
+                [this, t]() { onBuildRequested(t, m_currentManifest); });
         connect(tile, &TripTile::tripChanged,
                 [this]() { loadManifest(m_currentManifest); });
         tile->setZoom(m_zoomFactor);
@@ -268,37 +268,89 @@ void TripGridPanel::applyZoom()
     layoutTiles();
 }
 
-void TripGridPanel::onBuildRequested(const CamClops::Trip& trip)
+void TripGridPanel::loadSearchResults(const QList<SearchResult>& results,
+                                      const CamClops::ManifestEntry& virtualEntry)
 {
-    // Reload this trip from disk — clops_sync_analyze.py (or any other tool) may
-    // have written cameraSync or other data to the manifest after the GUI last
-    // scanned.  Fall back to the cached trip if the reload fails.
+    m_currentManifest = virtualEntry;
+    clearTiles();
+    m_thumbQueue.clear();
+
+    ConfigManager config;
+    config.loadSettings();
+    m_imperial = config.getUseImperial();
+
+    {
+        int n = results.size();
+        m_manifestHeader->setText(
+            QString("Search Results —— %1 trip%2").arg(n).arg(n == 1 ? "" : "s"));
+        m_manifestHeader->show();
+    }
+
+    for (const auto& r : results) {
+        auto* tile = new TripTile(r.trip, m_imperial,
+                                  r.manifest.path, r.manifest.id,
+                                  m_gridContainer);
+        tile->show();
+        connect(tile, &TripTile::doubleClicked,
+                [this, r]() { emit tripDoubleClicked(r.manifest, r.trip); });
+        connect(tile, &TripTile::buildRequested,
+                [this, r]() { onBuildRequested(r.trip, r.manifest); });
+        connect(tile, &TripTile::tripChanged,
+                [this, r]() {
+                    // Reload the tile's source manifest to refresh its data
+                    CamClops::ConfigManager mgr;
+                    auto trips = mgr.loadTripCache(r.manifest.manifestFile);
+                    for (auto* t : m_tiles) {
+                        for (const auto& fresh : trips) {
+                            if (fresh.id == t->trip().id) { t->refreshFrom(fresh); break; }
+                        }
+                    }
+                });
+        tile->setZoom(m_zoomFactor);
+        m_tiles.push_back(tile);
+
+        for (const std::string slot : {"front", "rear"}) {
+            auto it = r.trip.firstThumbs.find(slot);
+            if (it != r.trip.firstThumbs.end() && !it->second.empty())
+                enqueueThumb(tile,
+                             QString::fromStdString(slot),
+                             QString::fromStdString(it->second));
+        }
+    }
+
+    m_stack->setCurrentIndex(PAGE_GRID);
+    QTimer::singleShot(0, this, &TripGridPanel::layoutTiles);
+    if (!m_thumbQueue.empty())
+        QTimer::singleShot(0, this, &TripGridPanel::loadNextThumbnail);
+}
+
+void TripGridPanel::onBuildRequested(const CamClops::Trip& trip,
+                                     const CamClops::ManifestEntry& manifest)
+{
     CamClops::Trip freshTrip = trip;
-    if (!m_currentManifest.manifestFile.empty()) {
+    if (!manifest.isVirtual && !manifest.manifestFile.empty()) {
         CamClops::ConfigManager mgr;
-        auto trips = mgr.loadTripCache(m_currentManifest.manifestFile);
+        auto trips = mgr.loadTripCache(manifest.manifestFile);
         for (const auto& t : trips) {
             if (t.id == trip.id) { freshTrip = t; break; }
         }
     }
 
-    TripBuildDialog dlg(m_currentManifest, freshTrip, this);
+    TripBuildDialog dlg(manifest, freshTrip, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
     if (dlg.processNow()) {
         VideoOptions opts = dlg.buildOptions();
-        auto* job = new CollageJob(freshTrip, opts, m_currentManifest.id);
+        auto* job = new CollageJob(freshTrip, opts, manifest.id);
         JobQueue::instance().enqueue(job);
     }
 }
 
 void TripGridPanel::onJobFinished(Job*, bool ok)
 {
-    if (!ok || m_currentManifest.manifestFile.empty()) return;
+    if (!ok || m_currentManifest.isVirtual || m_currentManifest.manifestFile.empty()) return;
 
-    // Reload trip data from the manifest so tile indicators (GPS/MAP/DASH/HUD)
-    // reflect whatever the job just wrote, without rebuilding the tile widgets.
     ConfigManager config;
     config.loadSettings();
     auto trips = config.loadTripCache(m_currentManifest.manifestFile);

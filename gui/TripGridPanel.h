@@ -3,11 +3,13 @@
 #pragma once
 #include <QWidget>
 #include <QPixmap>
+#include <QList>
 #include <deque>
 #include <tuple>
 #include <vector>
 #include "config_manager.hpp"
 #include "trip_detection.hpp"
+#include "TripSearchDialog.h"
 
 class QStackedWidget;
 class QScrollArea;
@@ -27,6 +29,8 @@ public:
 
 public slots:
     void loadManifest(const CamClops::ManifestEntry& entry);
+    void loadSearchResults(const QList<SearchResult>& results,
+                           const CamClops::ManifestEntry& virtualEntry);
     void setZoom(double factor);
 
 signals:
@@ -73,7 +77,8 @@ private:
 
 private slots:
     void loadNextThumbnail();
-    void onBuildRequested(const CamClops::Trip& trip);
+    void onBuildRequested(const CamClops::Trip& trip,
+                          const CamClops::ManifestEntry& manifest);
     void onJobFinished(Job* job, bool ok);
 };
-// SN: 00113
+// SN: 00119

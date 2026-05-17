@@ -41,6 +41,52 @@ import time
 _CAMCLOPS_VERSION = "1.101.2"
 _CAMCLOPS_HWM     = "00117"
 
+# ---------------------------------------------------------------------------
+# Error log — tees sys.stderr to ~/.config/camclops/logs/<script>.log
+# so GUI-launched runs leave a readable trace even when the GUI hides stderr.
+# ---------------------------------------------------------------------------
+def _setup_log():
+    import datetime
+    log_dir = os.path.join(os.path.expanduser("~"), ".config", "camclops", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    script   = os.path.splitext(os.path.basename(__file__))[0]
+    log_path = os.path.join(log_dir, script + ".log")
+
+    # Rotate: if > 1 MB keep last 512 KB so the file stays manageable
+    try:
+        if os.path.getsize(log_path) > 1_048_576:
+            with open(log_path, "rb") as fh:
+                fh.seek(-524_288, 2)
+                tail = fh.read()
+            with open(log_path, "wb") as fh:
+                fh.write(tail)
+    except OSError:
+        pass
+
+    log_fh = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_fh.write(f"\n=== {script}  {ts}  {' '.join(sys.argv[1:])} ===\n")
+
+    class _Tee:
+        def __init__(self, stream, fh):
+            self._s, self._f = stream, fh
+        def write(self, data):
+            self._s.write(data)
+            try:   self._f.write(data)
+            except Exception: pass
+        def flush(self):
+            self._s.flush()
+            try:   self._f.flush()
+            except Exception: pass
+        def fileno(self):     return self._s.fileno()
+        def isatty(self):     return False
+        @property
+        def encoding(self):   return self._s.encoding
+
+    sys.stderr = _Tee(sys.__stderr__, log_fh)
+    print(f"  Log: {log_path}", file=sys.stderr)
+    return log_fh
+
 def _brand_output(path: str, content_type: str, ffmpeg: str) -> None:
     base, ext = os.path.splitext(path)
     tmp = base + ".clops_brand" + ext   # preserve extension so ffmpeg picks correct muxer
@@ -583,7 +629,7 @@ def _render_chunk(job):
         pass
 
     (frame_start, frame_end, rfps, ofps, W, H,
-     pts, cfg, pal, font_sizes, ffmpeg_exe, tmp_path) = job
+     pts, cfg, pal, font_sizes, ffmpeg_exe, tmp_path, counter) = job
 
     fonts     = _make_fonts(font_sizes)
     frame_buf = bytearray(W * H * 4)
@@ -607,7 +653,7 @@ def _render_chunk(job):
         "-threads",    "1",
         tmp_path,
     ]
-    proc = subprocess.Popen(ff_cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(ff_cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     for fi in range(frame_start, frame_end):
         pt = interp_point(pts, fi / rfps)
         render_hud_frame(W, H, pt, cfg, pal, fonts, frame_buf)
@@ -615,14 +661,17 @@ def _render_chunk(job):
             proc.stdin.write(frame_buf)
         except BrokenPipeError:
             break
-        # _hud_frame_counter is a multiprocessing.Value inherited via fork from
-        # main() — increment without locking to avoid per-frame lock overhead;
-        # a few missed counts from unsynchronised reads are acceptable for display.
-        if _hud_frame_counter is not None:
-            _hud_frame_counter.value += 1
+        if counter is not None:
+            counter.value += 1
     proc.stdin.close()
+    ff_stderr = proc.stderr.read().decode(errors="replace")
     proc.wait()
-    return (proc.returncode, tmp_path)
+    # Only pass stderr back on failure — discard on success to keep output clean.
+    err_tail = ""
+    if proc.returncode != 0:
+        lines = [l for l in ff_stderr.splitlines() if l.strip()]
+        err_tail = "\n    ".join(lines[-6:]) if lines else "(no output)"
+    return (proc.returncode, tmp_path, err_tail)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -641,6 +690,7 @@ def _cleanup_stale_tmp(prefix="clops_hud_"):
 
 
 def main():
+    _setup_log()
     _cleanup_stale_tmp()
     parser = argparse.ArgumentParser(
         description="CamClops military-style HUD overlay renderer — GPS track → WebM"
@@ -958,10 +1008,9 @@ def main():
         tmp_dir    = tempfile.mkdtemp(prefix="clops_hud_")
         tmp_files  = []
         list_file  = None
-        # Lock-free counter in shared mmap — set BEFORE Pool forks so workers
-        # inherit the same mapping via fork (not pickle).
-        global _hud_frame_counter
-        _hud_frame_counter = multiprocessing.Value('i', 0, lock=False)
+        # Shared counter passed in each job tuple so it works with both fork
+        # (Linux) and spawn (Windows).  multiprocessing.Value is pickle-safe and
+        # the default lock makes concurrent increments from spawned workers safe.
         try:
             jobs = []
             for i in range(n_workers):
@@ -971,47 +1020,60 @@ def main():
                     break
                 tmp_path = os.path.join(tmp_dir, f"chunk_{i:04d}.webm")
                 tmp_files.append(tmp_path)
+                # counter placeholder — filled in after Manager is created below
                 jobs.append((f_start, f_end, rfps, ofps, W, H,
-                             pts, cfg, pal, font_sizes, args.ffmpeg, tmp_path))
+                             pts, cfg, pal, font_sizes, args.ffmpeg, tmp_path, None))
 
             n_chunks   = len(jobs)
             any_failed = False
 
-            # Force fork context on all platforms.  macOS 3.8+ defaults to
-            # 'spawn', which re-imports the module in each worker and loses
-            # the _hud_frame_counter global; it can also hang in Pool.__init__
-            # if the worker's environment can't import PIL.  Fork is safe here
-            # because the main process is single-threaded at this point.
-            _ctx = multiprocessing.get_context("fork")
-            with _ctx.Pool(processes=n_chunks) as pool:
-                async_results = [pool.apply_async(_render_chunk, (job,))
-                                 for job in jobs]
-                last_print = t_start
+            # Prefer fork on Linux for lower startup cost; fall back to spawn
+            # on Windows.
+            try:
+                _ctx = multiprocessing.get_context("fork")
+            except ValueError:
+                _ctx = multiprocessing.get_context("spawn")
 
-                while True:
-                    now     = time.monotonic()
-                    elapsed = now - t_start
-                    if (now - last_print) >= 3.0:
-                        done   = _hud_frame_counter.value
-                        pct    = min(99, done * 100 // n_frames) if n_frames > 0 else 0
-                        el_str = f"{int(elapsed // 60)}:{int(elapsed % 60):02d}"
-                        line   = f"  {pct}%  ({done}/{n_frames} frames)  {el_str} elapsed\n"
-                        os.write(2, line.encode())
-                        last_print = now
-                    if all(r.ready() for r in async_results):
-                        break
-                    time.sleep(1.0)
+            # Manager.Value is a picklable proxy — safe to pass through the
+            # Pool's internal queue regardless of start method.
+            # multiprocessing.Value is NOT picklable and raises
+            # "Synchronized objects should only be shared between processes
+            # through inheritance" when passed via apply_async.
+            with multiprocessing.Manager() as _mgr:
+                counter = _mgr.Value('i', 0)
+                jobs = [(*j[:-1], counter) for j in jobs]
 
-            for r in async_results:
-                try:
-                    rc, chunk_path = r.get()
-                    if rc != 0:
+                with _ctx.Pool(processes=n_chunks) as pool:
+                    async_results = [pool.apply_async(_render_chunk, (job,))
+                                     for job in jobs]
+                    last_print = t_start
+
+                    while True:
+                        now     = time.monotonic()
+                        elapsed = now - t_start
+                        if (now - last_print) >= 3.0:
+                            done   = counter.value
+                            pct    = min(99, done * 100 // n_frames) if n_frames > 0 else 0
+                            el_str = f"{int(elapsed // 60)}:{int(elapsed % 60):02d}"
+                            line   = f"  {pct}%  ({done}/{n_frames} frames)  {el_str} elapsed\n"
+                            os.write(2, line.encode())
+                            last_print = now
+                        if all(r.ready() for r in async_results):
+                            break
+                        time.sleep(1.0)
+
+                for r in async_results:
+                    try:
+                        rc, chunk_path, err_tail = r.get()
+                        if rc != 0:
+                            any_failed = True
+                            print(f"\n  Error: chunk failed (code {rc}): {chunk_path}",
+                                  file=sys.stderr)
+                            if err_tail:
+                                print(f"    ffmpeg: {err_tail}", file=sys.stderr)
+                    except Exception as exc:
                         any_failed = True
-                        print(f"\n  Error: chunk failed (code {rc}): {chunk_path}",
-                              file=sys.stderr)
-                except Exception as exc:
-                    any_failed = True
-                    print(f"\n  Error: worker exception: {exc}", file=sys.stderr)
+                        print(f"\n  Error: worker exception: {exc}", file=sys.stderr)
 
             print(file=sys.stderr)
             if any_failed:

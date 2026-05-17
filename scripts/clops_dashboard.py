@@ -47,6 +47,43 @@ import time
 _CAMCLOPS_VERSION = "1.101.2"
 _CAMCLOPS_HWM     = "00117"
 
+def _setup_log():
+    import datetime
+    log_dir = os.path.join(os.path.expanduser("~"), ".config", "camclops", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    script   = os.path.splitext(os.path.basename(__file__))[0]
+    log_path = os.path.join(log_dir, script + ".log")
+    try:
+        if os.path.getsize(log_path) > 1_048_576:
+            with open(log_path, "rb") as fh:
+                fh.seek(-524_288, 2)
+                tail = fh.read()
+            with open(log_path, "wb") as fh:
+                fh.write(tail)
+    except OSError:
+        pass
+    log_fh = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_fh.write(f"\n=== {script}  {ts}  {' '.join(sys.argv[1:])} ===\n")
+    class _Tee:
+        def __init__(self, stream, fh):
+            self._s, self._f = stream, fh
+        def write(self, data):
+            self._s.write(data)
+            try:   self._f.write(data)
+            except Exception: pass
+        def flush(self):
+            self._s.flush()
+            try:   self._f.flush()
+            except Exception: pass
+        def fileno(self):   return self._s.fileno()
+        def isatty(self):   return False
+        @property
+        def encoding(self): return self._s.encoding
+    sys.stderr = _Tee(sys.__stderr__, log_fh)
+    print(f"  Log: {log_path}", file=sys.stderr)
+    return log_fh
+
 def _brand_output(path: str, content_type: str, ffmpeg: str) -> None:
     base, ext = os.path.splitext(path)
     tmp = base + ".clops_brand" + ext
@@ -871,6 +908,7 @@ def render_frame(W, H, pt, speed_kmh, odo_km, weather, fonts,
 # ────────────────────────────────────────────────────────────────────────────
 
 def main():
+    _setup_log()
     parser = argparse.ArgumentParser(
         description="CamClops instrument dashboard renderer — GPS track → MP4 / WebM"
     )

@@ -375,7 +375,10 @@ void TripTile::refreshFrom(const Trip& trip)
 
 void TripTile::updateTitleBar()
 {
-    QString text = "[" + QString::fromStdString(m_trip.id) + "]";
+    QString mid  = QString::fromStdString(m_mid).toUpper();
+    QString tid  = QString::fromStdString(m_trip.id).toUpper();
+    QString text = mid.isEmpty() ? "[" + tid + "]"
+                                 : "[" + mid + ":" + tid + "]";
     if (!m_trip.note.empty())
         text += "  —  " + QString::fromStdString(m_trip.note);
     m_idLabel->setText(text);
@@ -463,4 +466,4 @@ void TripTile::paintEvent(QPaintEvent*)
 
     drawStatusIndicators(p);
 }
-// SN: 00118
+// SN: 00119

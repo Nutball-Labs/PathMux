@@ -29,9 +29,11 @@ public:
     {
         p->save();
 
-        bool selected = opt.state & QStyle::State_Selected;
-        p->fillRect(opt.rect, selected ? opt.palette.highlight()
-                                       : opt.palette.base());
+        bool selected  = opt.state & QStyle::State_Selected;
+        bool isVirtual = idx.data(Qt::UserRole + 4).toBool();
+        QBrush baseBrush = isVirtual ? QBrush(QColor("#1a3040"))
+                                     : opt.palette.base();
+        p->fillRect(opt.rect, selected ? opt.palette.highlight() : baseBrush);
 
         QRect r = opt.rect.adjusted(10, 4, -10, -4);
         int lineH = opt.fontMetrics.height();
@@ -164,41 +166,76 @@ void ManifestPanel::paintEvent(QPaintEvent* ev)
 
 void ManifestPanel::refresh()
 {
+    // Preserve in-memory virtual entries across disk reload
+    std::vector<ManifestEntry> virtuals;
+    for (const auto& e : m_entries)
+        if (e.isVirtual) virtuals.push_back(e);
+
     ConfigManager config;
     config.loadSettings();
     m_entries = config.loadManifestIndex();
+
+    // Re-insert virtual entries at the front
+    m_entries.insert(m_entries.begin(), virtuals.begin(), virtuals.end());
     applySort();
     populateList();
 }
 
 void ManifestPanel::selectEntry(const ManifestEntry& entry)
 {
+    QString targetId = QString::fromStdString(entry.id);
     for (int i = 0; i < m_list->count(); ++i) {
-        if (m_list->item(i)->data(Qt::UserRole + 1).toString()
-                == QString::fromStdString(entry.manifestFile)) {
+        if (m_list->item(i)->data(Qt::UserRole + 3).toString() == targetId) {
             m_list->setCurrentRow(i);
             return;
         }
     }
 }
 
+void ManifestPanel::addVirtualEntry(const ManifestEntry& entry)
+{
+    // Replace any existing virtual entry with the same id
+    m_entries.erase(
+        std::remove_if(m_entries.begin(), m_entries.end(),
+            [&entry](const ManifestEntry& e){
+                return e.isVirtual && e.id == entry.id;
+            }),
+        m_entries.end());
+    m_entries.insert(m_entries.begin(), entry);
+    populateList();
+}
+
+void ManifestPanel::removeVirtualEntry(const QString& id)
+{
+    std::string sid = id.toStdString();
+    m_entries.erase(
+        std::remove_if(m_entries.begin(), m_entries.end(),
+            [&sid](const ManifestEntry& e){ return e.isVirtual && e.id == sid; }),
+        m_entries.end());
+    populateList();
+    emit virtualEntryRemoved(id);
+}
+
 void ManifestPanel::applySort()
 {
+    // Virtual entries stay pinned at the front; sort only real entries
+    auto sortBegin = std::find_if(m_entries.begin(), m_entries.end(),
+                                  [](const ManifestEntry& e){ return !e.isVirtual; });
     switch (m_sortCombo->currentIndex()) {
     case 1:
-        std::sort(m_entries.begin(), m_entries.end(),
+        std::sort(sortBegin, m_entries.end(),
             [](const ManifestEntry& a, const ManifestEntry& b){
                 return a.tripCount > b.tripCount;
             });
         break;
     case 2:
-        std::sort(m_entries.begin(), m_entries.end(),
+        std::sort(sortBegin, m_entries.end(),
             [](const ManifestEntry& a, const ManifestEntry& b){
                 return a.nickname < b.nickname;
             });
         break;
     default:
-        break; // loadManifestIndex() already sorts by lastTrip desc
+        break;
     }
 }
 
@@ -214,9 +251,15 @@ void ManifestPanel::populateList()
             QString("%1 trip%2").arg(e.tripCount).arg(e.tripCount == 1 ? "" : "s"));
         item->setData(Qt::UserRole + 1,
             QString::fromStdString(e.manifestFile));
-        QString id = QString::fromStdString(e.id).toUpper();
-        item->setData(Qt::UserRole + 2,
-            id.isEmpty() ? QString() : QString("[%1]").arg(id));
+        if (e.isVirtual) {
+            item->setData(Qt::UserRole + 2, QString("[S]"));
+        } else {
+            QString id = QString::fromStdString(e.id).toUpper();
+            item->setData(Qt::UserRole + 2,
+                id.isEmpty() ? QString() : QString("[%1]").arg(id));
+        }
+        item->setData(Qt::UserRole + 3, QString::fromStdString(e.id));
+        item->setData(Qt::UserRole + 4, e.isVirtual);
     }
 }
 
@@ -246,10 +289,17 @@ void ManifestPanel::onContextMenu(const QPoint& pos)
     int row = m_list->row(item);
     if (row < 0 || row >= (int)m_entries.size()) return;
 
+    const auto& entry = m_entries[row];
     QMenu menu(this);
-    QAction* rebuildAct = menu.addAction("Rebuild Manifest");
-    if (menu.exec(m_list->mapToGlobal(pos)) == rebuildAct)
-        emit rebuildRequested(m_entries[row]);
+    if (entry.isVirtual) {
+        QAction* removeAct = menu.addAction("Remove Search Results");
+        if (menu.exec(m_list->mapToGlobal(pos)) == removeAct)
+            removeVirtualEntry(QString::fromStdString(entry.id));
+    } else {
+        QAction* rebuildAct = menu.addAction("Rebuild Manifest");
+        if (menu.exec(m_list->mapToGlobal(pos)) == rebuildAct)
+            emit rebuildRequested(entry);
+    }
 }
 
 void ManifestPanel::wheelEvent(QWheelEvent* event)
@@ -290,4 +340,4 @@ void ManifestPanel::applyListZoom()
     m_list->setFont(f);
     m_list->update();
 }
-// SN: 00109
+// SN: 00119

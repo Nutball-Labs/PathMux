@@ -1258,4 +1258,166 @@ When a user reports an unsupported camera:
 **Priority:** Medium-High — critical for public release and community growth, but not blocking CLI development
 
 
-<!-- SN: 00112 -->
+---
+
+## v3.0 — Schema 4: Trips as Independent Entities / Manifests as Collections
+
+**Target:** v3.0.0 major version bump  
+**Scope:** Fundamental rearchitecture of the storage model — breaking change, lazy
+migration from schema 3
+
+### Design Decision (2026-05-17)
+
+The v2.x manifest is a **directory snapshot** — it captures all trips found in one
+footage directory and stores them as a monolithic JSON blob. The manifest is
+structurally tied to a filesystem location.
+
+v3.0 separates the concepts that v2.x conflates:
+
+| Concept | v2.x | v3.0 |
+|---|---|---|
+| **Trip** | Embedded record inside manifest JSON | Independent `clops_trip_<TID>.json` file |
+| **Manifest** | Directory snapshot (one source root) | Named collection of trip file references |
+| **Scan/Ingest** | Produces a manifest tied to a directory | Produces trip files; optionally groups them into a manifest |
+| **Organization** | Fixed by filesystem layout | Freely re-organisable; trips move between manifests |
+
+A trip file is the authoritative, self-describing record of one trip. A manifest
+is an organisational container — essentially a named playlist of trip file paths.
+The two are decoupled.
+
+### Trip Files (`clops_trip_<TID>.json`)
+
+Each trip lives in its own JSON file, stored wherever the user (or ingest process)
+places it — typically alongside the footage, in a dedicated trips directory, or in
+`~/.config/camclops/trips/`.
+
+A trip file contains everything currently stored per-trip in a schema 3 manifest,
+plus fully-qualified absolute paths to every resource it references:
+
+- **Segment files:** `cameras` and `thumbs` maps with absolute paths
+- **GPS track:** `gpsTrackFile` absolute path (currently inferred by naming convention — made explicit)
+- **Generated assets:** `mapVideos`, `dashVideos`, `hudVideos` — absolute paths
+- **Integrity samples:** `validationFiles` with absolute paths
+- **Origin info:** `sourceMid` (originating manifest ID), `ingestedAt` timestamp
+
+No path_map, no relative-path inference. The trip file is readable on any machine
+that can reach the paths it contains.
+
+### Manifest Files (`clops_manifest_<MID>.json`)
+
+A schema 4 manifest is a lightweight index:
+
+```json
+{
+  "schema_version": 4,
+  "id": "AB",
+  "nickname": "Daily Commutes — 2026",
+  "trips": [
+    "/z/srcdash/ex11/trips/clops_trip_C1.json",
+    "/z/srcdash/ex9/trips/clops_trip_B2.json",
+    "~/.config/camclops/trips/clops_trip_7F.json"
+  ]
+}
+```
+
+Trips from different source directories coexist in one manifest. A trip can appear
+in multiple manifests simultaneously (no data duplication — both manifests reference
+the same trip file).
+
+The global manifest index (`~/.config/camclops/manifests.json`) continues to
+enumerate known manifests; its structure is unchanged.
+
+### Scan / Ingest Workflow
+
+The scan workflow remains the entry point for new footage:
+
+1. User points CamClops at a footage directory
+2. Trip detection runs as today
+3. Each detected trip is written as a `clops_trip_<TID>.json` file (in the footage
+   directory or a user-configured trips directory)
+4. A manifest is created (or updated) that references the new trip files
+5. The manifest produced at ingest is the default organisational view; the user
+   re-organises from there
+
+The "scan a directory" operation becomes "ingest a directory" — same UX, cleaner
+semantics.
+
+### What This Enables
+
+**Free trip organisation** — drag a trip tile to any manifest, create thematic
+collections (Incidents, Road Trips, Commutes), split a scan into sub-collections.
+No files move unless the user explicitly asks to move them.
+
+**Saved search manifests** — a search result set is saved by writing a new manifest
+that references the matched trip files. No special handling needed; it is a manifest
+like any other.
+
+**Archival packaging** — walk the trip file, collect every absolute path, pass to
+tar/zip. The trip file is the manifest for the archive. A `.camclops` package is
+a trip file + its referenced media files, self-contained.
+
+**Multi-manifest membership** — a "Incidents" manifest and a "Commutes" manifest
+can both reference the same trip file. Editing the trip (adding a note, extracting
+GPS) updates it once; both manifests see the change.
+
+**Lightweight manifests** — the manifest file itself is tiny (just a list of paths).
+Trip data is loaded on demand from individual trip files.
+
+### Cross-Machine Access
+
+Trip files store absolute paths, which are machine-specific. Two resolution
+strategies, usable together:
+
+1. **Path substitution table** (AppSettings) — a per-host list of `(from, to)`
+   prefix pairs applied at load time. One entry like `/z/srcdash → D:/srcdash`
+   remaps all trip file locations and all footage paths inside them, provided
+   footage and trip files share a common root (which they naturally do post-ingest).
+
+2. **Re-ingest on new machine** — scan the footage directory on the new machine;
+   trip files are written with local-absolute paths. Manifests are rebuilt or
+   imported. This is the clean path for machines with genuinely different
+   filesystem layouts (e.g. moving footage from NFS to a local drive).
+
+Cross-machine complexity is real but bounded: if trip files and footage share a
+root that remaps cleanly, one substitution rule handles everything. If they
+don't, re-ingest is the correct answer rather than a brittle path-rewriting hack.
+
+### What We Lose / Replace
+
+| v2.x feature | v3.0 replacement |
+|---|---|
+| `path_map` per-manifest | Path substitution table in AppSettings |
+| `loadTripCache(sourcePath)` | `loadTrip(tripFilePath)` |
+| `saveTripCache(sourcePath, trips)` | `saveTrip(trip)` per trip |
+| Monolithic manifest JSON | Manifest index + individual trip files |
+
+`path_map` machinery in `config_manager.cpp` is removed after migration. Hard cut.
+
+### Migration from Schema 3
+
+Lazy and transparent. On first load of a schema 3 manifest:
+
+1. Resolve all relative paths to absolute using existing `path_map` / `resolvePathWithMap()`
+2. Write each trip as an individual `clops_trip_<TID>.json` file alongside footage
+3. Rewrite the manifest as a schema 4 reference list pointing to the new trip files
+4. `schemaVersion` bumps 3 → 4; old `.json` is replaced
+
+No user action required. The migration is a one-time write on next open; after
+that all operations use the schema 4 path. Backup the schema 3 manifest before
+writing (rename to `clops_manifest_<MID>.json.v3bak`) so the user can recover
+if something goes wrong.
+
+### Implementation Order
+
+This is a multi-session effort gated on no active release work:
+
+1. Define `clops_trip_<TID>.json` schema; implement `loadTrip()` / `saveTrip()` in `config_manager`
+2. Update ingest (detectTrips + saveTripCache) to write trip files; manifest becomes reference list
+3. Lazy migration: schema 3 load → resolve paths → write trip files → rewrite manifest
+4. Remove `path_map` write path after migration is confirmed stable
+5. Update `TripGridPanel`, `TripTile`, all consumers to load per-trip from trip file paths
+6. Implement saved-search save (trivial at this point — just save a manifest)
+7. Implement trip migration UI (drag tile to manifest → update two manifest reference lists)
+8. Implement `.camclops` archival packaging (walk trip file, collect paths, tar/zip)
+
+<!-- SN: 00119 -->
