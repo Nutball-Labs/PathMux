@@ -38,6 +38,7 @@ public:
     void addMarkFull(qint64 startMs, qint64 endMs, double targetSecs);
     void setPendingStart(qint64 ms);
     void setMarkTarget(int id, double targetSecs);
+    void updateMark(const TLMark& updated);   // apply edited start/end/target; re-sorts
     void deleteMark(int id);
     void clearAllMarks();
     void clearPending();
@@ -97,4 +98,4 @@ private:
     int      m_dragMark     = -1;
     qint64   m_dragBodyOffMs= 0;
 };
-// SN: 00109
+// SN: 00122

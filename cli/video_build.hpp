@@ -57,6 +57,7 @@ struct VideoOptions {
     bool buildRear   = true;
     bool buildLeft   = true;
     bool buildRight  = true;
+    std::vector<std::string> buildExtraCams;  // non-standard camera names (e.g. "interior")
 
     // Collage
     bool buildCollage4K   = true;   // 3840x2160 H.265 master
@@ -321,4 +322,4 @@ private:
 };
 
 #endif
-// SN: 00117
+// SN: 00122

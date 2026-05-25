@@ -244,19 +244,25 @@ void ManifestPanel::populateList()
     m_list->clear();
     for (const auto& e : m_entries) {
         auto* item = new QListWidgetItem(m_list);
-        QString nick = QString::fromStdString(
-            e.nickname.empty() ? e.path : e.nickname);
+        bool isPark = (e.manifestType == "park_events");
+        QString rawPath = QString::fromStdString(e.nickname.empty() ? e.path : e.nickname);
+        // Strip "park:" prefix so the display name shows the real source path.
+        QString nick = isPark && rawPath.startsWith("park:")
+                     ? rawPath.mid(5) : rawPath;
         item->setData(Qt::DisplayRole, nick);
+        QString eventWord = isPark ? "parking event" : "trip";
         item->setData(Qt::UserRole,
-            QString("%1 trip%2").arg(e.tripCount).arg(e.tripCount == 1 ? "" : "s"));
+            QString("%1 %2%3").arg(e.tripCount).arg(eventWord)
+                              .arg(e.tripCount == 1 ? "" : "s"));
         item->setData(Qt::UserRole + 1,
             QString::fromStdString(e.manifestFile));
         if (e.isVirtual) {
             item->setData(Qt::UserRole + 2, QString("[S]"));
         } else {
             QString id = QString::fromStdString(e.id).toUpper();
-            item->setData(Qt::UserRole + 2,
-                id.isEmpty() ? QString() : QString("[%1]").arg(id));
+            if (!id.isEmpty())
+                item->setData(Qt::UserRole + 2,
+                    isPark ? QString("[P:%1]").arg(id) : QString("[%1]").arg(id));
         }
         item->setData(Qt::UserRole + 3, QString::fromStdString(e.id));
         item->setData(Qt::UserRole + 4, e.isVirtual);
@@ -295,6 +301,21 @@ void ManifestPanel::onContextMenu(const QPoint& pos)
         QAction* removeAct = menu.addAction("Remove Search Results");
         if (menu.exec(m_list->mapToGlobal(pos)) == removeAct)
             removeVirtualEntry(QString::fromStdString(entry.id));
+    } else if (entry.manifestType == "park_events") {
+        // Parking manifests are rebuilt as part of their parent source scan.
+        // Find the parent entry (same path without "park:" prefix) and rebuild that.
+        QAction* rebuildAct = menu.addAction("Rebuild Parent Manifest");
+        if (menu.exec(m_list->mapToGlobal(pos)) == rebuildAct) {
+            std::string parentPath = entry.path.rfind("park:", 0) == 0
+                                   ? entry.path.substr(5) : entry.path;
+            for (const auto& e : m_entries) {
+                if (!e.isVirtual && e.path == parentPath) {
+                    emit rebuildRequested(e);
+                    return;
+                }
+            }
+            // Parent not found — nothing to do (edge case).
+        }
     } else {
         QAction* rebuildAct = menu.addAction("Rebuild Manifest");
         if (menu.exec(m_list->mapToGlobal(pos)) == rebuildAct)
@@ -340,4 +361,4 @@ void ManifestPanel::applyListZoom()
     m_list->setFont(f);
     m_list->update();
 }
-// SN: 00119
+// SN: 00122

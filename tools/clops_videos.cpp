@@ -435,7 +435,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (manifestDirty && !dryRun)
-            config.saveTripCache(qe.manifestFile, trips);
+            config.saveTripCache(qe.sourcePath, trips);
     }
 
     // -----------------------------------------------------------------------
@@ -456,4 +456,4 @@ int main(int argc, char* argv[]) {
     return totalErrors ? 1 : 0;
 }
 
-// SN: 00112
+// SN: 00122

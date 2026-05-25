@@ -622,6 +622,7 @@ if(Qt6_FOUND AND Qt6Multimedia_FOUND AND Qt6MultimediaWidgets_FOUND)
         camclops-tl/MainWindow.cpp
         camclops-tl/TimelineWidget.cpp
         camclops-tl/MarkDialog.cpp
+        camclops-tl/MarkListWidget.cpp
         camclops-tl/FrameStrip.cpp
         camclops-tl/camclops_tl.qrc
     )
@@ -846,7 +847,7 @@ functionality.")
     #   3. update-desktop-database — index the .desktop files for MIME/app lookups
     # All icon/desktop commands are silenced and non-fatal so the package install
     # does not fail on minimal systems without a desktop environment.
-    set(_CLOPS_POSTINST_BODY
+    string(CONCAT _CLOPS_POSTINST_BODY
         "ldconfig\n"
         "gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true\n"
         "update-desktop-database /usr/share/applications 2>/dev/null || true\n")
@@ -863,4 +864,4 @@ endif()
 
 include(CPack)
 
-# SN: 00119
+# SN: 00122

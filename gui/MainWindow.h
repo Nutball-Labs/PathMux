@@ -37,6 +37,7 @@ private slots:
     void onCameraProfiles();
 
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void closeEvent(QCloseEvent* event) override;
 
 private:
     void buildMenuBar();
@@ -52,5 +53,5 @@ private:
     // Virtual search result manifests: id → result list
     QMap<QString, QList<SearchResult>> m_searchResultsMap;
 };
-// SN: 00119
+// SN: 00122
 

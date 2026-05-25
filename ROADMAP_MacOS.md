@@ -134,13 +134,19 @@ Qt6 is fully supported on macOS and handles all platform differences natively.
   - `QStandardPaths::AppDataLocation` returns `~/Library/Application Support/camclops/`
     automatically — consistent with `Platform::getConfigDir()` macOS implementation
   - Keyboard shortcuts follow macOS convention (Cmd instead of Ctrl)
-- [ ] Build and launch `camclops-gui.app` on macOS 13+
+- [x] Build and launch `camclops-gui.app` on macOS 13+ ✓
 
 ### Distribution — `.app` Bundle and `.dmg`
-- [ ] Use `macdeployqt` to bundle Qt6 frameworks into `camclops-gui.app`
-  (avoids dependency on system Qt, which may not match the build version)
-- [ ] Bundle `ffprobe` and `exiftool` inside the `.app` bundle, or document as
-  Homebrew prerequisites in the README
+- [x] Use `macdeployqt` to bundle Qt6 frameworks into `camclops-gui.app` ✓
+  (CMake POST_BUILD; ad-hoc signed with `-codesign=-`)
+- [x] Both `camclops-gui.app` and `camclops-tl.app` move to `/Applications` via
+  post-install script; appear in Finder and Launchpad ✓
+- [x] `camclops-tl.app/Contents/Frameworks` is a relative symlink into
+  `camclops-gui.app/Contents/Frameworks` — avoids 33 MB duplicate (v2.2.0) ✓
+- [x] `sudo camclops-uninstall` helper installed to `/usr/local/bin/` via
+  post-install; accessible from Help → Uninstall CamClops… in the GUI ✓
+- [ ] Document `ffprobe` and `exiftool` as Homebrew prerequisites in the README
+  (`brew install ffmpeg exiftool`) — user-resolved dependency, not bundled
 - [ ] Create `.dmg` installer:
   - CMake/CPack can generate a `.dmg` via `cpack -G DragNDrop`
   - Or use `create-dmg` tool (Homebrew): `brew install create-dmg`
@@ -174,4 +180,4 @@ Qt6 is fully supported on macOS and handles all platform differences natively.
 *Last updated: 2026-03-20*
 *Status: CLI fully working — collage pipeline confirmed on Intel macOS via VideoToolbox*
 
-<!-- SN: 00081 -->
+<!-- SN: 00122 -->

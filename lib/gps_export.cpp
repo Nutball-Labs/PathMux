@@ -158,6 +158,9 @@ bool extractGps(json& root,
     bool gotAny     = false;
     int prePositionLockCount = 0;  // records with zero lat/lon (no position fix yet)
     int preTimeLockCount     = 0;  // records with valid position but unsynchronized clock
+    int teleportCount        = 0;  // records skipped by velocity filter
+    double prevLat = 0.0, prevLon = 0.0;
+    time_t prevEpoch = 0;
 
     // Capture first-segment front path now so gpsLockSeconds can be computed after the loop.
     std::string firstSegFront;
@@ -234,15 +237,34 @@ bool extractGps(json& root,
             accelX = accelY = accelZ = 0.0;
             iss >> accelX >> accelY >> accelZ;  // optional; leave zero if absent
 
-            // Skip records with zero lat/lon — GPS position not yet locked
-            if (lat == 0.0 && lon == 0.0) { ++prePositionLockCount; continue; }
-
             // Skip records with unsynchronized clock (year < 2000).
             // ExifTool renders the all-zero GPS clock register as "1900:01:00";
             // other cameras/versions may emit "1970:01:01" or similar.
             // A broad threshold catches all known variants.
             int year = (datePart.size() >= 4) ? std::stoi(datePart.substr(0, 4)) : 0;
             if (year < 2000) { ++preTimeLockCount; continue; }
+
+            // Parse epoch for velocity check.
+            struct tm ptm = {};
+            {
+                std::istringstream tss(datePart + " " + timePart);
+                tss >> std::get_time(&ptm, "%Y:%m:%d %H:%M:%S");
+            }
+            time_t ptEpoch = timegm(&ptm);
+
+            // Velocity filter: skip records that jump more than 1 degree/second
+            // on either axis from the previous accepted point.  1 degree ≈ 111 km,
+            // so 1 deg/s ≈ 400 000 km/h — no vehicle ever triggers this on valid data.
+            // Catches partial-lock sentinels (0,0 or last-known bleed) regardless of
+            // the camera's specific sentinel value.
+            if (prevEpoch > 0) {
+                double dt = std::max(static_cast<double>(ptEpoch - prevEpoch), 1.0);
+                if (std::abs(lat - prevLat) / dt > 1.0 ||
+                    std::abs(lon - prevLon) / dt > 1.0) {
+                    ++teleportCount;
+                    continue;
+                }
+            }
 
             json pt;
             pt["timestamp"] = datePart + " " + timePart;
@@ -255,7 +277,10 @@ bool extractGps(json& root,
             pt["accelY"]    = accelY;
             pt["accelZ"]    = accelZ;
             trackArray.push_back(pt);
-            gotAny = true;
+            gotAny    = true;
+            prevLat   = lat;
+            prevLon   = lon;
+            prevEpoch = ptEpoch;
         }
         pclose(pipe);
 
@@ -310,6 +335,8 @@ bool extractGps(json& root,
     jTrip["gpsTrackStatus"]            = "complete";
     jTrip["pre_position_lock_samples"] = prePositionLockCount;
     jTrip["pre_time_lock_samples"]     = preTimeLockCount;
+    if (teleportCount > 0)
+        jTrip["teleport_filtered_samples"] = teleportCount;
     jTrip["startLat"]                  = trackArray.front().value("lat", 0.0);
     jTrip["startLon"]                  = trackArray.front().value("lon", 0.0);
     jTrip["endLat"]                    = trackArray.back().value("lat",  0.0);
@@ -684,4 +711,4 @@ bool measureCameraOffsets(const std::map<std::string, std::string>& camPaths,
 }
 
 } // namespace CamClops
-// SN: 00109
+// SN: 00122

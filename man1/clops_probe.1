@@ -1,4 +1,4 @@
-.TH CLOPS_PROBE 1 "May 2026" "v2.0.1a" "CamClops - Camera Profiler"
+.TH CLOPS_PROBE 1 "May 2026" "v2.9.2" "CamClops - Camera Profiler"
 .SH NAME
 clops_probe \- camera compatibility profiler for the CamClops suite
 .SH SYNOPSIS
@@ -30,7 +30,8 @@ Cameras confirmed working with the current profile system:
 .BR "Pruveeo D90" " (MPEG-TS, LIGO GPS stream, 4-channel subdirectory layout),"
 .BR "Cobra CCDC4500" " (MOV/3GP, no GPS, single-channel flat layout),"
 .BR "Cobra GPS" " (MOV/3GP, GPS0 atom, 2-channel flat layout),"
-.BR "Prilotte" " (AVI/MJPEG, no GPS, mtime timestamps, 2-channel subdirectory layout)."
+.BR "Prilotte" " (AVI/MJPEG, no GPS, mtime timestamps, 2-channel subdirectory layout),"
+.BR "Viofo A229 Ultra" " (MP4, no LIGO GPS, interior camera in dedicated subdirectory, parking-mode clips in " "DCIM/Movie/Parking/" " and " "DCIM/Movie/RO/" ")."
 Other cameras may work with a custom profile built by the wizard.
 .PP
 Single-file and
@@ -251,4 +252,4 @@ not in the manifest index.
 .BR exiftool (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-." SN: 00112
+." SN: 00123

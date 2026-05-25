@@ -27,6 +27,7 @@
 #include <QPainter>
 #include <QProcess>
 #include <QMessageBox>
+#include <QPointer>
 #include <QSignalBlocker>
 
 using namespace CamClops;
@@ -194,6 +195,61 @@ QWidget* TripBuildDialog::makeCollageTab(const std::set<std::string>& cams)
     grid->addWidget(makeQuadrantCell(3, cams), 2, 1);  // BR = left
 
     vbox->addWidget(gridFrame);
+
+    // ── Available Extras ──────────────────────────────────────────────────────
+    {
+        bool hasMap  = !m_trip.mapVideos.empty();
+        bool hasDash = !m_trip.dashVideos.empty();
+        bool hasHud  = !m_trip.hudVideos.empty();
+        if (hasMap || hasDash || hasHud) {
+            auto* grp  = new QGroupBox("Available Extras", w);
+            grp->setStyleSheet(
+                "QGroupBox { font-size: 8pt; color: #8888aa;"
+                "  border: 1px solid #303048; border-radius: 4px;"
+                "  margin-top: 8px; padding-top: 4px; }"
+                "QGroupBox::title { subcontrol-origin: margin; left: 8px; }");
+            auto* hbox = new QHBoxLayout(grp);
+            hbox->setSpacing(12);
+            hbox->setContentsMargins(8, 8, 8, 8);
+
+            // One card per extra type in existence order: Map → Dashboard → HUD
+            struct ExtraSpec { bool present; const char* title;
+                               const std::string* path; bool isHud; };
+            std::vector<ExtraSpec> specs = {
+                { hasMap,  "Map",       hasMap  ? &m_trip.mapVideos[0]  : nullptr, false },
+                { hasDash, "Dashboard", hasDash ? &m_trip.dashVideos[0] : nullptr, false },
+                { hasHud,  "HUD",       hasHud  ? &m_trip.hudVideos[0]  : nullptr, true  },
+            };
+            for (const auto& sp : specs) {
+                if (!sp.present) continue;
+                auto* card  = new QWidget(grp);
+                auto* cvbox = new QVBoxLayout(card);
+                cvbox->setSpacing(3);
+                cvbox->setContentsMargins(0, 0, 0, 0);
+
+                auto* thumb = new QLabel(card);
+                thumb->setFixedSize(192, 108);
+                thumb->setAlignment(Qt::AlignCenter);
+                thumb->setText("…");
+                thumb->setStyleSheet(
+                    "background: #111118; border: 1px solid #303048;"
+                    "color: #555566; font-size: 18pt;");
+                cvbox->addWidget(thumb);
+
+                auto* lbl = new QLabel(QString::fromUtf8(sp.title), card);
+                lbl->setAlignment(Qt::AlignCenter);
+                lbl->setStyleSheet("font-size: 8pt; color: #aaaacc;");
+                cvbox->addWidget(lbl);
+
+                hbox->addWidget(card);
+
+                if (!m_ffmpegPath.empty())
+                    startThumbGrab(QString::fromStdString(*sp.path), sp.isHud, thumb);
+            }
+            hbox->addStretch();
+            vbox->addWidget(grp);
+        }
+    }
 
     // ── HUD overlay (full-screen, below grid) ────────────────────────────────
     vbox->addWidget(makeHudRow());
@@ -442,6 +498,12 @@ QWidget* TripBuildDialog::makeHudRow()
 
     m_chkHudOverlay = new QCheckBox("HUD overlay (full-screen):", row);
     hbox->addWidget(m_chkHudOverlay);
+    if (!m_trip.hudVideos.empty()) {
+        auto* avail = new QLabel("● available", row);
+        avail->setStyleSheet("color: #55cc77; font-size: 8pt;");
+        avail->setToolTip("HUD video has been generated for this trip");
+        hbox->addWidget(avail);
+    }
 
     m_hudCombo = new QComboBox(row);
     m_hudCombo->setMinimumWidth(180);
@@ -834,6 +896,38 @@ void TripBuildDialog::onBrowseOutput()
         m_outputDir->setText(dir);
 }
 
+// ---------------------------------------------------------------------------
+// startThumbGrab — async ffmpeg frame grab into a QLabel thumbnail
+// ---------------------------------------------------------------------------
+void TripBuildDialog::startThumbGrab(const QString& path, bool isHud, QLabel* target)
+{
+    auto* proc = new QProcess(this);
+    proc->setProcessChannelMode(QProcess::SeparateChannels);
+
+    QStringList args;
+    args << "-y" << "-ss" << "10";
+    if (isHud) args << "-c:v" << "libvpx-vp9";
+    args << "-i" << path << "-frames:v" << "1";
+    if (isHud)
+        args << "-filter_complex"
+             << "color=#111118:192x108[bg];[0:v]scale=192:108[fg];[bg][fg]overlay=0:0";
+    else
+        args << "-vf" << "scale=192:108";
+    args << "-f" << "image2pipe" << "-vcodec" << "mjpeg" << "pipe:1";
+
+    QPointer<QLabel> safeTarget = target;
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [safeTarget, proc](int code, QProcess::ExitStatus) {
+        if (code == 0 && safeTarget) {
+            QPixmap px;
+            if (px.loadFromData(proc->readAllStandardOutput(), "JPEG") && !px.isNull())
+                safeTarget->setPixmap(px);
+        }
+        proc->deleteLater();
+    });
+    proc->start(QString::fromStdString(m_ffmpegPath), args);
+}
+
 void TripBuildDialog::onPreviewFrame()
 {
     if (m_ffmpegPath.empty()) {
@@ -1061,6 +1155,7 @@ VideoOptions TripBuildDialog::buildOptions() const
         else if (s == "rear")  opts.buildRear  = true;
         else if (s == "left")  opts.buildLeft  = true;
         else if (s == "right") opts.buildRight = true;
+        else if (!s.empty())   opts.buildExtraCams.push_back(s);
     }
     opts.containerFormat = m_container ? m_container->currentText().toStdString() : "mp4";
 
@@ -1068,10 +1163,14 @@ VideoOptions TripBuildDialog::buildOptions() const
     opts.buildCollage4K   = m_chk4K   && m_chk4K->isChecked();
     opts.buildCollage1080 = m_chk1080 && m_chk1080->isChecked();
 
-    // Quadrant source assignments → external slot replacements / blank slots
+    // Quadrant source assignments → external slot replacements / blank slots.
+    // Keys into cameraRemap/blankSlots/externalSlots MUST use kCollagePos[i] (the fixed
+    // collage position name "front"/"rear"/"right"/"left"), NOT the profile slot name.
+    // This matters when the profile uses non-standard names (e.g. "interior" in BL):
+    // the collage build always queries by collage position, never by profile slot name.
     for (int i = 0; i < 4; ++i) {
         if (!m_quadCombo[i]) continue;
-        std::string slotName = m_kSlot[i];
+        const std::string collagePos = kCollagePos[i];
 
         // Disabled checkbox or "None" combo → logo morph loop (falls back to black)
         bool disabled = m_quadEnabled[i] && !m_quadEnabled[i]->isChecked();
@@ -1081,11 +1180,11 @@ VideoOptions TripBuildDialog::buildOptions() const
             if (!morph.empty()) {
                 VideoOptions::ExternalSlot es;
                 es.path     = morph;
-                es.replaces = slotName;
+                es.replaces = collagePos;
                 es.loop     = true;
                 opts.externalSlots.push_back(std::move(es));
             } else {
-                opts.blankSlots.insert(slotName);
+                opts.blankSlots.insert(collagePos);
             }
             continue;
         }
@@ -1093,29 +1192,31 @@ VideoOptions TripBuildDialog::buildOptions() const
         if (data.startsWith("file:")) {
             VideoOptions::ExternalSlot es;
             es.path     = data.mid(5).toStdString();
-            es.replaces = slotName;
+            es.replaces = collagePos;
             opts.externalSlots.push_back(std::move(es));
         } else if (data == kBrowse) {
             QString p = m_quadPath[i] ? m_quadPath[i]->text().trimmed() : QString();
             if (!p.isEmpty()) {
                 VideoOptions::ExternalSlot es;
                 es.path     = p.toStdString();
-                es.replaces = slotName;
+                es.replaces = collagePos;
                 opts.externalSlots.push_back(std::move(es));
             }
         } else if (data.startsWith("camera:")) {
             std::string selectedCam = data.mid(7).toStdString();
-            if (selectedCam != slotName)
-                opts.cameraRemap[slotName] = selectedCam;
-            // identity mapping (selectedCam == slotName) = natural flow, no entry needed
+            // Always remap if the selected camera's slot name differs from the collage
+            // position name — this covers both cross-assignments and cases where the
+            // profile uses a non-standard name in a standard position (e.g. "interior").
+            if (selectedCam != collagePos)
+                opts.cameraRemap[collagePos] = selectedCam;
         }
     }
 
-    // Collage audio source: quadrant index → slot name → audioSource string
+    // Collage audio source: quadrant index → collage position name → audioSource
     if (m_audioQuad) {
         int qi = m_audioQuad->currentIndex();
         if (qi >= 0 && qi < 4)
-            opts.audioSource = m_kSlot[qi];
+            opts.audioSource = kCollagePos[qi];
     }
 
     // ── Audio extract ────────────────────────────────────────────────────────
@@ -1203,4 +1304,4 @@ bool TripBuildDialog::processNow() const
 {
     return true;
 }
-// SN: 00112
+// SN: 00122

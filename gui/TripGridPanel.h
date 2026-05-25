@@ -9,13 +9,14 @@
 #include <vector>
 #include "config_manager.hpp"
 #include "trip_detection.hpp"
+#include <QPointer>
 #include "TripSearchDialog.h"
+#include "TripTile.h"
 
 class QStackedWidget;
 class QScrollArea;
 class QLabel;
 class QWheelEvent;
-class TripTile;
 class EmptyManifestWidget;
 class Job;
 
@@ -69,11 +70,34 @@ private:
 
     // Deferred thumbnail loading queue: (tile*, slot, path)
     std::deque<std::tuple<TripTile*, QString, QString>> m_thumbQueue;
+    std::string m_ffmpegPath;
+
+    // Throttled video-grab queue — prevents opening hundreds of ffmpeg processes at once.
+    struct ProcRequest {
+        QPointer<TripTile> tile;
+        QString slot;
+        QString videoPath;
+        double  offsetSecs;
+        bool    parking;
+        QString manifestFile;  // for saving thumb to disk
+        QString manifestId;    // for clops_thumbs_<id>/ dir name
+        QString eventId;       // trip/event ID for thumb filename + manifest patch
+    };
+    std::deque<ProcRequest> m_procQueue;
+    int                     m_activeProcs  = 0;
+    static constexpr int    MAX_THUMB_PROCS = 4;
 
     void clearTiles();
     void layoutTiles();
     void applyZoom();
     void enqueueThumb(TripTile* tile, const QString& slot, const QString& path);
+    void grabVideoThumb(TripTile* tile, const QString& slot, const QString& videoPath,
+                        double offsetSecs, bool parking,
+                        const QString& manifestFile, const QString& manifestId,
+                        const QString& eventId);
+    void startThumbProc(const ProcRequest& req);
+    void drainProcQueue();
+    void saveGrabbedThumb(const QByteArray& jpeg, const ProcRequest& req);
 
 private slots:
     void loadNextThumbnail();
@@ -81,4 +105,4 @@ private slots:
                           const CamClops::ManifestEntry& manifest);
     void onJobFinished(Job* job, bool ok);
 };
-// SN: 00119
+// SN: 00122

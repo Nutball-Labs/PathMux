@@ -27,6 +27,16 @@ determine whether an unsupported camera model is compatible with CamClops, and t
 collect the information needed to request support for a new camera via a GitHub issue.
 </p>
 <p>
+Cameras confirmed working with the current profile system:
+<b>Pruveeo D90</b> (MPEG-TS, LIGO GPS stream, 4-channel subdirectory layout),
+<b>Cobra CCDC4500</b> (MOV/3GP, no GPS, single-channel flat layout),
+<b>Cobra GPS</b> (MOV/3GP, GPS0 atom, 2-channel flat layout),
+<b>Prilotte</b> (AVI/MJPEG, no GPS, mtime timestamps, 2-channel subdirectory layout),
+<b>Viofo A229 Ultra</b> (MP4, no LIGO GPS, interior camera in dedicated subdirectory,
+parking-mode clips in <code>DCIM/Movie/Parking/</code> and <code>DCIM/Movie/RO/</code>).
+Other cameras may work with a custom profile built by the wizard.
+</p>
+<p>
 Single-file and <i>MID:TID</i> modes probe one segment and print a concise report.
 </p>
 <p>
@@ -200,4 +210,4 @@ the active profile ID matches <i>&lt;name&gt;</i>.</dd>
 </body>
 </html>
 
-<!-- SN: 00104 -->
+<!-- SN: 00123 -->

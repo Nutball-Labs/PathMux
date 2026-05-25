@@ -8,11 +8,11 @@
 
 // 1. Define discrete version components
 #define VERSION_MAJOR 2
-#define VERSION_MINOR 0
-#define VERSION_PATCH 1
+#define VERSION_MINOR 9
+#define VERSION_PATCH 2
 #define VERSION_BUILD 0
 #define VERSION_SUFFIX "a"
-#define VERSION_HWM "00118"   // SN high-water mark at build time; update with each release
+#define VERSION_HWM "00123"   // SN high-water mark at build time; update with each release
 
 // 2. Stringification macros
 #define STRINGIFY_HELPER(x) #x
@@ -45,4 +45,4 @@ static const char CAMCLOPS_LICENSE_NOTICE[] __attribute__((used)) =
     "|   ... Kali does NOT approve.\n";
 
 #endif
-// SN: 00118
+// SN: 00123

@@ -125,6 +125,11 @@ void SettingsDialog::buildGeneralTab(QTabWidget* tabs)
     m_jobQueueMode->addItem("Separate window", "window");
     form->addRow("Job Queue placement:", m_jobQueueMode);
 
+    m_monitorAutoStart = new QCheckBox("Auto-start when the app launches");
+    m_monitorAutoStart->setToolTip("Start clops_monitor.py automatically on startup. "
+                                   "Toggle it off in the Job Queue bar at any time.");
+    form->addRow("Remote monitor:", m_monitorAutoStart);
+
     m_monitorPort = new QSpinBox;
     m_monitorPort->setRange(1024, 65535);
     m_monitorPort->setValue(8647);
@@ -473,6 +478,7 @@ void SettingsDialog::loadFromConfig()
         }
         m_jobQueueMode->setCurrentIndex(idx);
     }
+    m_monitorAutoStart->setChecked(s.monitorAutoStart);
     m_monitorPort->setValue(s.monitorPort);
 
     // Encoder
@@ -554,8 +560,9 @@ void SettingsDialog::saveToConfig()
         double sv = scaleText.toDouble(&ok);
         s.uiScale = (ok && sv > 0.5) ? sv : 1.0;
     }
-    s.jobQueueMode = m_jobQueueMode->currentData().toString().toStdString();
-    s.monitorPort  = m_monitorPort->value();
+    s.jobQueueMode     = m_jobQueueMode->currentData().toString().toStdString();
+    s.monitorAutoStart = m_monitorAutoStart->isChecked();
+    s.monitorPort      = m_monitorPort->value();
 
     // Encoder
     s.encode.preset         = m_preset->currentText().toStdString();
@@ -723,4 +730,4 @@ void SettingsDialog::onAccepted()
     saveToConfig();
     accept();
 }
-// SN: 00115
+// SN: 00122

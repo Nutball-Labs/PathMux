@@ -115,8 +115,9 @@ struct AppSettings {
     // Job Queue panel placement: "docked" (bottom panel) or "window" (floating)
     std::string jobQueueMode = "docked";
 
-    // Remote monitor HTTP port (clops_monitor.py --port)
-    int monitorPort = 8647;
+    // Remote monitor (clops_monitor.py)
+    int  monitorPort      = 8647;
+    bool monitorAutoStart = true;
 
     // HUD overlay appearance
     double      hudFontScale = 1.0;      // multiplier applied to all HUD font sizes
@@ -151,6 +152,7 @@ struct ManifestEntry {
     std::string manifestMd5;     // md5 of manifest file — validated on load
     std::string note;            // User-set note for this manifest
     std::string nickname;        // Display label; defaults to path if empty
+    std::string manifestType = "trips"; // "trips" | "park_events"
     bool        isVirtual  = false; // runtime-only; never saved to manifests.json
 };
 
@@ -301,7 +303,8 @@ public:
     // existing embedded profile is preserved.
     void               saveTripCache(const std::string& path,
                                      const std::vector<Trip>& trips,
-                                     const CameraProfile& profile = CameraProfile{});
+                                     const CameraProfile& profile = CameraProfile{},
+                                     bool skipFrameExtract = false);
     std::vector<Trip>  loadTripCache(const std::string& path);
     void               clearCache(const std::string& path, bool force = false);
 
@@ -388,4 +391,4 @@ private:
 } // namespace CamClops
 
 #endif
-// SN: 00115
+// SN: 00122

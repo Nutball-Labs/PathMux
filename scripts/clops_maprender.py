@@ -42,8 +42,8 @@ import sys
 import time
 from io import BytesIO
 
-_CAMCLOPS_VERSION = "1.101.2"
-_CAMCLOPS_HWM     = "00117"
+_CAMCLOPS_VERSION = "2.6.0a"
+_CAMCLOPS_HWM     = "00120"
 
 def _setup_log():
     import datetime
@@ -256,6 +256,36 @@ def parse_gps_timestamp(ts):
     return datetime.datetime.strptime(ts.rstrip("Z").strip(), "%Y:%m:%d %H:%M:%S")
 
 
+def filter_gps_outliers(gps_track, max_deg_per_sec=1.0):
+    """
+    Remove GPS points that jump more than max_deg_per_sec on either axis
+    from the previous accepted point.  1 deg/s ≈ 400 000 km/h — no vehicle
+    ever triggers this on valid data, but GPS partial-lock sentinels (e.g.
+    lon=0 with valid lat, or last-known bleed) are caught regardless of the
+    camera's specific sentinel value.
+    """
+    if not gps_track:
+        return gps_track
+    filtered = [gps_track[0]]
+    for pt in gps_track[1:]:
+        prev = filtered[-1]
+        try:
+            t0 = parse_gps_timestamp(prev["timestamp"])
+            t1 = parse_gps_timestamp(pt["timestamp"])
+            dt = max((t1 - t0).total_seconds(), 1.0)
+        except Exception:
+            dt = 1.0
+        dlat = abs(pt["lat"] - prev["lat"])
+        dlon = abs(pt["lon"] - prev["lon"])
+        if dlat / dt <= max_deg_per_sec and dlon / dt <= max_deg_per_sec:
+            filtered.append(pt)
+    removed = len(gps_track) - len(filtered)
+    if removed:
+        print(f"  GPS outlier filter: removed {removed} point(s) (>{max_deg_per_sec} deg/s jump)",
+              file=sys.stderr)
+    return filtered
+
+
 def build_points(gps_track, gps_lock_offset=0):
     """
     Convert raw gpsTrack list to list of dicts with elapsed seconds.
@@ -412,6 +442,7 @@ def main():
           f"(GPS lock offset: {gps_lock_secs}s)", file=sys.stderr)
 
     # --- Build interpolation table ---
+    gps_track = filter_gps_outliers(gps_track)
     points = build_points(gps_track, gps_lock_offset=gps_lock_secs)
     points = compress_gaps(points)
     total_duration = points[-1]["t"]
@@ -641,4 +672,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# SN: 00117
+# SN: 00122

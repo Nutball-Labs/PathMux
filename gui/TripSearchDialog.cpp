@@ -17,7 +17,9 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QDateTime>
+#include <QTimeZone>
 #include <QThread>
+#include <QWheelEvent>
 
 // ---------------------------------------------------------------------------
 // SearchParams — internal; not exposed in header
@@ -83,14 +85,18 @@ public slots:
 private:
     bool matchesFilters(const CamClops::Trip& trip, double distKm) const
     {
+        // startEpoch == 0 means the trip has no valid timestamp — exclude from
+        // any time/date filter rather than matching the Unix epoch by accident.
         if (m_params.useDateRange) {
+            if (trip.startEpoch == 0) return false;
             QDate d = QDateTime::fromSecsSinceEpoch((qint64)trip.startEpoch).date();
             if (d < m_params.dateFrom || d > m_params.dateTo) return false;
         }
         if (m_params.useTimeRange) {
+            if (trip.startEpoch == 0) return false;
             auto dt = m_params.useLocalTime
-                ? QDateTime::fromSecsSinceEpoch((qint64)trip.startEpoch, Qt::LocalTime)
-                : QDateTime::fromSecsSinceEpoch((qint64)trip.startEpoch, Qt::UTC);
+                ? QDateTime::fromSecsSinceEpoch((qint64)trip.startEpoch)
+                : QDateTime::fromSecsSinceEpoch((qint64)trip.startEpoch, QTimeZone::utc());
             QTime t = dt.time();
             if (m_params.timeFrom <= m_params.timeTo) {
                 if (t < m_params.timeFrom || t > m_params.timeTo) return false;
@@ -141,6 +147,7 @@ TripSearchDialog::TripSearchDialog(QWidget* parent)
     setModal(false);
     setAttribute(Qt::WA_DeleteOnClose);
     resize(540, 0);
+    m_baseFontPt = font().pointSizeF();
 
     qRegisterMetaType<SearchResult>();
     qRegisterMetaType<QList<SearchResult>>();
@@ -374,6 +381,12 @@ TripSearchDialog::TripSearchDialog(QWidget* parent)
     connect(m_searchBtn,      &QPushButton::clicked, this, &TripSearchDialog::onSearch);
 
     adjustSize();
+
+    // Install event filter on all child widgets so Ctrl+scroll zooms even when
+    // the mouse is over a spinbox, date edit, etc. (those widgets consume wheel
+    // events before they reach the dialog's own wheelEvent).
+    for (auto* w : findChildren<QWidget*>())
+        w->installEventFilter(this);
 }
 
 void TripSearchDialog::onAnyDateToggled(bool checked)
@@ -475,5 +488,32 @@ void TripSearchDialog::onSearchFinished(QList<SearchResult> results)
     }
 }
 
+void TripSearchDialog::wheelEvent(QWheelEvent* event)
+{
+    if (event->modifiers() & Qt::ControlModifier) {
+        const double step = event->angleDelta().y() > 0 ? 0.1 : -0.1;
+        m_zoomFactor = qBound(0.5, m_zoomFactor + step, 3.0);
+        QFont f = font();
+        f.setPointSizeF(m_baseFontPt * m_zoomFactor);
+        setFont(f);
+        adjustSize();
+        event->accept();
+        return;
+    }
+    QDialog::wheelEvent(event);
+}
+
+bool TripSearchDialog::eventFilter(QObject* obj, QEvent* event)
+{
+    if (event->type() == QEvent::Wheel) {
+        auto* we = static_cast<QWheelEvent*>(event);
+        if (we->modifiers() & Qt::ControlModifier) {
+            wheelEvent(we);
+            return true;
+        }
+    }
+    return QDialog::eventFilter(obj, event);
+}
+
 #include "TripSearchDialog.moc"
-// SN: 00119
+// SN: 00123

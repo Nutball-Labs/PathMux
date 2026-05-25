@@ -571,6 +571,16 @@ JobQueuePanel::JobQueuePanel(QWidget* parent)
             this, &JobQueuePanel::onJobAdded);
     connect(&JobQueue::instance(), &JobQueue::jobFinished,
             this, [this](Job*, bool) { updateTitle(); });
+
+    // Auto-start the monitor after the event loop is running so the widget
+    // is fully shown before onMonitorToggled tries to display the URL label.
+    CamClops::ConfigManager _cfgInit;
+    _cfgInit.loadSettings();
+    if (_cfgInit.getSettings().monitorAutoStart) {
+        QMetaObject::invokeMethod(this, [this]() {
+            m_monitorToggle->setChecked(true);
+        }, Qt::QueuedConnection);
+    }
 }
 
 void JobQueuePanel::updateTitle()
@@ -755,4 +765,4 @@ void JobQueuePanel::onMonitorToggled(bool on)
 }
 
 #include "JobQueuePanel.moc"
-// SN: 00117
+// SN: 00122

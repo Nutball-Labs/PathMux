@@ -5,6 +5,281 @@ that CHANGELOG and ROADMAP don't cover. One entry per working session.
 
 ---
 
+## 2026-05-24
+
+### Session — Thumbnail throttle, manifest location fix, GUI scan hang fixes
+
+**Focus:** Pure bug-fix session. All five bugs surfaced during live Viofo A229 Ultra
+testing with a large parking-event dataset (408 events).
+
+---
+
+#### 1. "Too many open files" crash — unbounded grabVideoThumb QProcess instances
+
+**Bug:** Loading a Viofo manifest with many trips (three camera slots each) launched
+one `QProcess` ffmpeg instance per tile per slot simultaneously. With enough tiles the
+process hit the OS fd limit (1024 on Alma 9), crashing GNOME entirely.
+
+**Fix (`gui/TripGridPanel`):** Replaced the fire-and-forget `grabVideoThumb` with a
+throttled queue. `ProcRequest` struct holds all parameters; `m_procQueue` is a
+`std::deque` of pending requests; `m_activeProcs` tracks running count.
+`drainProcQueue()` starts new processes only while `m_activeProcs < MAX_THUMB_PROCS`
+(= 4). `QPointer<TripTile>` used to guard tile access across async completions —
+required `#include <QPointer>` in the header (the forward-declaration in `qmetatype.h`
+is insufficient for template instantiation).
+
+---
+
+#### 2. Thumbnails not persisting across manifest switches
+
+**Bug:** After thumbnails were grabbed and displayed, switching to another manifest and
+back caused all thumbnails to re-grab from scratch. Nothing was saved to disk.
+
+**Fix (`gui/TripGridPanel`):** Added `saveGrabbedThumb()`: saves the raw JPEG bytes to
+`<manifest-parent>/clops_thumbs_<id>/<eventId>_<slot>.jpg` and patches the manifest
+JSON `firstThumbs[slot]` with the relative path. Critical ordering: `saveGrabbedThumb`
+must be called **before** the `if (!req.tile)` null-check — when the user switches
+manifests mid-grab, tiles are destroyed and `req.tile` is null, but the save should
+still happen so the next manifest load finds the cached file.
+
+---
+
+#### 3. Parking manifests landing in `~/.config` instead of footage directory
+
+**Bug:** Parking event manifests always wrote to `~/.config/camclops/` regardless of
+the footage directory's writability. Driving manifests co-locate with footage correctly.
+
+**Root cause (`lib/config_manager.cpp`):** `getManifestFilePath()` passed the literal
+`"park:/footage/path"` string to `fs::exists()` — this path doesn't exist, so the
+writability test always failed and the config-dir fallback always fired.
+
+**Fix:** Call `realSourcePath(sourcePath)` before the writability test to strip the
+`"park:"` prefix. The thumbnails directory follows automatically since
+`saveGrabbedThumb` derives its path from the manifest file's parent directory.
+
+---
+
+#### 4. Viofo rescan GUI hang — 6777 lsof entries, GNOME "force quit"
+
+**Bug:** After wiping manifests and rescanning Viofo footage, the GUI became
+unresponsive. `lsof | grep camclops | wc -l` = 6777. Job queue showed driving and GPS
+steps completing, then the GPS bar stalled orange indefinitely.
+
+**Root cause:** After `detectTrips` returns, `saveTripCache` calls `extractFrame()` →
+`system(ffmpeg)` once per driving trip per camera slot (Viofo: 3 slots). These are
+blocking sequential subprocess calls on the worker thread. With no progress signal
+emitted during this phase, the GPS step bar stays orange the entire time. The duration
+is long enough for GNOME to flag the process as unresponsive.
+
+**Fix (`lib/config_manager.cpp`, `gui/JobQueue.cpp`):** Added `bool skipFrameExtract =
+false` parameter to `saveTripCache`. Defaults `false` so CLI behavior is unchanged.
+`ScanJobWorker` passes `true` for both the driving and parking `saveTripCache` calls.
+With the flag set, the entire `extractFrame`/`extractFrameScene` block is bypassed.
+`grabVideoThumb` already handles Viofo thumbnails lazily — this is the correct
+long-term design. Comment explains the reasoning at the call site.
+
+---
+
+#### 5. Parking scan hangs after progress bar reaches 100%
+
+**Bug:** With 408 parking events, the parking `detectTrips` phase completed (bar hit
+100%) but the scan never finished — the job remained Running indefinitely.
+
+**Root cause:** After `detectTrips`, `saveTripCache` calls `selectValidationFiles()`
+for every trip with empty `validationFiles`. `selectValidationFiles` calls `fileMd5()`
+(via `popen("md5sum ...")`) on up to 3 video files per event. For 408 parking events
+× 3 files × ~100 MB each = reading ~120 GB just to record checksums. Parking clips are
+transient (the dashcam auto-rotates them), so the validation serves no purpose.
+
+**Fix (`lib/config_manager.cpp`):** Added `!isParking` guard to the
+`selectValidationFiles` call. Parking events skip checksum computation entirely.
+
+---
+
+**Files changed:** `gui/TripGridPanel.h`, `gui/TripGridPanel.cpp`,
+`lib/config_manager.hpp`, `lib/config_manager.cpp`, `gui/JobQueue.cpp`
+
+**Version:** 2.9.1 / SN 00122 (HWM unchanged — all files already at 00122).
+
+---
+
+## 2026-05-20
+
+### Session — Sync-pad drift fix for multi-startup trips
+
+**Focus:** Single bug fix. Diagnosed and corrected cumulative sync drift in
+synced collage builds for trips that span multiple camera restarts.
+
+**Bug report:** At the 17:59 mark of `Sync_verify_Collage_1080p.mp4` (UZ:78,
+evening commute with gas station stop), a passing produce truck appeared clearly
+out of sync — front camera showed the truck still ahead while the right camera
+showed it already past the rear wheels. User estimated 2–3 seconds of offset.
+
+**Diagnosis:** Extracted frames from both the 4K collage and the raw right-camera
+segment at the calculated sync-correct position. The OSD GPS timestamps told the
+story unambiguously: front showed `19:20:25`, right showed `19:20:27` at the same
+collage timecode. Raw right camera at the expected synced position (117.030s into
+the segment) also showed `19:20:25` — a perfect match to front, confirming the
+sync analysis values were correct and the problem was in the collage builder.
+
+**Root cause:** The sync-pad approach (`Tier 2`) prepends ghost frames to
+late-starting cameras and appends clone frames to early-starting cameras, making
+each camera's stream output `raw_duration + maxTrimF/fps`. This invariant assumes
+all cameras record the same raw duration per segment. It holds for normal 3-minute
+segments because each camera cuts its file independently after 3 minutes. It
+breaks for **short segments at restart boundaries** — when the dashcam power cuts
+all cameras at the same physical instant, a camera that started 1.76 seconds late
+records a segment that is ~1.76 seconds shorter than front. The ghost-pad delay
+is correct, but the shorter raw content means that camera's padded output is also
+shorter, so its stream runs ahead in the xstack timeline. For this trip, the two
+gas-station segments (24.352 s and 23.473 s front, 22.838 s and 22.318 s right)
+contributed 1.514 s + 1.155 s = 2.669 s of cumulative drift by segment 7.
+Confirmed: file duration was 29.37 s over raw total (≈ expected 29.92 s), proving
+the sync-pad path was taken — the drift was equalization failure, not a missing
+sync path.
+
+**Fix (`cli/video_build.cpp`):** In both `buildCollage4K` and
+`buildCollage1080Direct` sync-pad paths, after computing `segDelayF`/`segHoldF`,
+probe all four camera segment durations (front was already probed for Tier 1;
+only the other three are new). For each camera whose raw segment is shorter than
+the front camera's, compute `segDurEqF` = extra clone frames to append. Add these
+to the existing `HF` tpad hold count for both the video filter chain and the audio
+apad duration. All four streams now output identical frame counts per segment
+regardless of per-startup start-time variation.
+
+**Side note:** This fix is also a prerequisite for the planned "Join Trip"
+feature. Any joined trip is inherently a multi-startup trip (the gap that caused
+detection to split them means the cameras restarted), so without this fix, joined
+trips would have had silent sync drift at the seam.
+
+**HWM bumped:** 00120 → 00121. `lib/version.hpp` and rebuild left to user.
+Version: 2.6.1.
+
+---
+
+## 2026-05-23
+
+### Session — Viofo support: interior camera collage, parking scan, sidecar-less thumbnails, loadTripCache hardening
+
+**Focus:** Multi-part session centred on the Viofo A229 Ultra dashcam. Fixed several
+latent bugs that only surface with non-standard (3-camera, "interior") profiles, fully
+wired parking mode scanning, added on-demand thumbnail extraction for cameras that
+produce no JPEG sidecars, and tracked down a `loadTripCache` crash that occurred after
+GPS extraction on Viofo trips.
+
+---
+
+#### 1. Collage remap for non-standard camera profiles
+
+**Bug:** Selecting "Interior" for a collage quadrant in `TripBuildDialog` produced front
+footage in that slot instead of interior footage. Two separate root causes.
+
+**Root cause A — `effectiveSegs` hardcoded chain (`cli/video_build.cpp`):** The lambda
+used `if (cam == "rear") ... if (cam == "left") ... return srcFront` — any camera name
+not in the four standard names fell back silently to front. Fixed by replacing the
+four named `std::vector` accumulators with a `std::map<std::string, vector>` keyed by
+camera ID; `effectiveSegs` now does a map lookup, returning an empty vector (→ black
+lavfi) for absent cameras rather than recycling front footage. Applied to
+`buildCollage4K`, `buildCollage4KChunked`, and `buildCollage1080Direct`.
+
+**Root cause B — `kCollagePos` mismatch (`gui/TripBuildDialog`):** `buildOptions()` used
+the profile slot name (`m_kSlot[i]`, e.g. `"interior"`) as the key for `cameraRemap`,
+`blankSlots`, and `externalSlots`, but the collage build always queries these by the
+fixed xstack position names (`"front"`, `"rear"`, `"right"`, `"left"`). For a Viofo
+with `m_kSlot[2] = "interior"` in the BL slot, nothing ever set `cameraRemap["right"]`,
+so BL received black. Added `kCollagePos = {"front","rear","right","left"}` (note
+BL=right, BR=left per xstack ordering) and switched all collage key writes to use
+`kCollagePos[i]` instead of slot name. Audio source also updated to use collage position
+name. Fixed `lastThumbs` iteration guard (was iterating without checking `contains`).
+
+**Non-standard camera files (`buildExtraCams`):** `buildOptions()` was silently dropping
+Camera Files checkboxes for slots not named front/rear/left/right. Added
+`VideoOptions::buildExtraCams` vector; unknown slot names push to it; `buildVideo()`
+iterates it and calls `buildCameraFile()` sequentially after the standard four.
+
+**`fmtStage` generalization (`gui/JobQueue.cpp`):** Stage label formatter was hardcoded
+to `concat:Front/Rear/Left/Right`; non-standard cameras showed the raw label (e.g.
+`concat:Interior`). Changed to a generic `startsWith("concat:")` handler that strips the
+prefix and appends " - join segments".
+
+---
+
+#### 2. Parking mode scanning — Viofo A229 Ultra
+
+The scanning infrastructure (`parkingProfile()`, `roProfile()`, `ScanProgressDialog`
+parking pass, `footageType`/`readOnly`/`triggerType` fields, manifest serialization) was
+already fully implemented. The only missing piece was thumbnail extraction.
+
+**`noThumbsYet` bug (`lib/config_manager.cpp`):** For `thumbnailMethod = "extract_frame"`
+cameras, `thumbFor()` returns `""` for each slot (no sidecars found), populating
+`firstThumbs` as `{"front":"","interior":"","rear":""}`. The extraction guard used
+`trip.firstThumbs.empty()`, which was always false (map had keys, just empty values).
+Fixed to `noThumbsYet = std::none_of(... !kv.second.empty())`.
+
+**Parking thumbnails skip in scan-time extraction:** With 265 parking clips × 3 cameras,
+265×3 = 795 synchronous `system()` ffmpeg calls would hang the scan for 10+ minutes
+(the session-1 "crash" was this hang). Added `!isParking` guard to the extraction block;
+parking thumbnails are handled lazily by the GUI instead.
+
+**`extractFrameScene()` helper:** For normal (non-parking) trips without sidecars, a
+scene-detection pass with `select=gt(scene,0.10)` finds the first significant motion
+frame in a configurable window [10, 25]s; falls back to the midpoint on no match.
+Used for parking clips when triggered from the GUI.
+
+---
+
+#### 3. On-demand thumbnail extraction in TripGridPanel
+
+**Problem:** After scanning Viofo footage, trip tiles showed grey placeholders — no JPEG
+sidecars exist and the scan-time extraction was skipped for parking clips.
+
+**`grabVideoThumb()` (`gui/TripGridPanel`):** Async `QProcess` ffmpeg grab for tiles
+where `firstThumbs[slot]` exists but is empty. Normal trips seek to a random offset
+in [90, 300]s (from `pickThumbSource`); parking clips use scene detection over [10, 25]s
+with 17.5s fallback.
+
+**Thumbnail storage location:** Moved from `~/.config/camclops/thumbs/<id>/` to
+`<manifest-parent>/clops_thumbs_<id>/` — colocated with the manifest so they don't
+accumulate in config and are naturally removed when the manifest is deleted.
+
+**Interior slot:** Tile thumbnail loop now covers "front", "rear", and "interior" (was
+only "front" and "rear"). `TripTile::setThumbnail` ignores unknown slots silently.
+
+---
+
+#### 4. Available Extras panel in TripBuildDialog
+
+Added "Available Extras" QGroupBox to the Collage Layout tab, shown only when at least
+one of `mapVideos`, `dashVideos`, or `hudVideos` is non-empty. Displays 192×108
+thumbnail cards (loaded asynchronously via `startThumbGrab()`) for each available
+output type. HUD thumbnails composite the VP9 alpha stream over `#111118` background
+so the speed tapes and compass rose are visible.
+
+Added "● available" green indicator next to the HUD checkbox when `hudVideos` is
+non-empty. Checkbox remains unchecked by default (opt-in).
+
+---
+
+#### 5. loadTripCache crash — GPS extraction on Viofo
+
+**Symptom:** After extracting GPS from a Viofo trip, `TripGridPanel::onJobFinished`
+called `loadTripCache` and the app crashed with
+`nlohmann::json_abi_v3_11_3::detail::type_error [302] type must be string, but is number`.
+
+**Trace:** `GpsExtractJob::startSyncPhase` runs `clops_sync_analyze.py --write`, which
+re-writes the entire manifest; `finished(true)` fires; `onJobFinished` reloads the
+manifest; `loadTripCache` hits an unguarded `v.get<std::string>()` on a numeric JSON
+value. Root cause not yet isolated (all inspected string-expected fields look correct in
+Python; debug symbols not available on installed binary; `std::cout << "."` per GPS
+segment confirmed the dots in crash output, confirming the crash was user-triggered, not
+startup). Defensive `is_string()` guards added to all six unguarded `get<std::string>()`
+call sites in `loadTripCache` with stderr warnings; the next GPS extraction will surface
+the problematic field via the warning log.
+
+**Version:** 2.7.3c / SN 00121 (no HWM bump this session).
+
+---
+
 ## 2026-05-15
 
 ### Session — GitHub repo rename, /update-push release skill
@@ -1574,4 +1849,45 @@ not as a standalone housekeeping operation.
 
 ---
 
-<!-- SN: 00112 -->
+## 2026-05-16
+
+### Session 2 — macOS packaging fix + cross-OS manifest data-loss bug (v2.2.0 / SN 00119)
+
+**macOS package size — camclops-tl Frameworks symlink (`CMakeLists.txt`):**
+- Observed: macOS tar.gz doubled from 36 MB (v2.1.0) to 69 MB (v2.2.0).
+- Root cause: `camclops-tl.app` now gets full `macdeployqt` treatment, duplicating
+  every Qt framework alongside `camclops-gui.app`'s copy (`libicudata.78.dylib`
+  alone is 33 MB, appearing twice).
+- Fix: after `macdeployqt` rewrites load paths in the `camclops-tl` binary, two
+  extra CMake POST_BUILD commands replace the duplicate Frameworks directory with a
+  relative symlink `→ ../../camclops-gui.app/Contents/Frameworks`. The binary's
+  `@executable_path/../Frameworks/…` load paths follow the symlink correctly.
+  `add_dependencies(camclops-tl camclops-gui)` ensures ordering. Symlink is preserved
+  by tar and resolves correctly when both apps install as siblings in `/Applications`.
+
+**Cross-OS manifest data-loss bug (`lib/config_manager.cpp`,
+`gui/ScanProgressDialog.cpp`):**
+- Bug: scanning a footage directory with an existing manifest (written on another
+  OS/machine) wiped GPS extraction status, GPS coordinates, `gpsLockSeconds`,
+  map/dash/HUD video paths, trip notes, and the GPS track from the manifest.
+  Trip IDs and cameraSync were preserved, nothing else.
+- Root cause: `saveTripCache` loaded existing trips to build `hashToId` and
+  `existingSyncById`, but wrote each trip's JSON entirely from the fresh `detectTrips()`
+  output, which cannot know about post-scan user-generated data.
+- Fix: added `existingById` map (trip ID → existing Trip). After each trip's ID is
+  assigned, a merge block restores all user-generated fields that `detectTrips()`
+  did not set. `"unavailable"` (written by `detectTrips()` when `gpsMethod == "none"`,
+  i.e. camera has no GPS hardware) is authoritative and cannot be overridden.
+- Secondary fix: `ScanProgressDialog::startScan` now calls `getManifestFilePath()`
+  before the profile check, forcing `ensureManifestId()` to adopt any unadopted
+  manifest in the footage directory. Without this, the first cross-OS scan used
+  the locally configured profile rather than the one embedded in the manifest.
+
+**Files Changed:**
+`CMakeLists.txt`, `lib/config_manager.cpp`, `gui/ScanProgressDialog.cpp`
+
+**Version / SN:** v2.2.0 (SN 00119).
+
+---
+
+<!-- SN: 00122 -->

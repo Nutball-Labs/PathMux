@@ -7,6 +7,7 @@
 #include <QString>
 #include "TimelineWidget.h"
 #include "FrameStrip.h"
+#include "MarkListWidget.h"
 
 class QVideoWidget;
 class QStackedWidget;
@@ -100,7 +101,7 @@ private:
     QLabel*       m_posLabel     = nullptr;
     QLabel*       m_hlpLbl       = nullptr;
     qint64        m_frameDurationMs = 33;
-    QLabel*       m_marksSummary  = nullptr;
+    MarkListWidget* m_markList    = nullptr;
     QLabel*       m_srcInfoLabel  = nullptr;
     QLabel*       m_outEstLabel   = nullptr;
     QProgressBar*   m_progressBar = nullptr;
@@ -113,4 +114,4 @@ private:
     // FFmpeg process
     QProcess* m_ffmpegProc = nullptr;
 };
-// SN: 00109
+// SN: 00122

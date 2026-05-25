@@ -139,6 +139,15 @@ struct Trip {
     // Camera start-offset sync data from clops_sync_analyze.py --write.
     CameraSync cameraSync;
 
+    // Footage classification — set by the scan orchestrator, not detectTrips().
+    // footageType: "normal" = driving trip | "parking" = parking-mode event
+    // triggerType: "" (normal trips) | "motion" (pixel-change) | "g_sensor" (impact)
+    // readOnly: true for G-sensor events stored in the camera's RO folder —
+    //   these files are locked by firmware and must never be deleted by CamClops.
+    std::string footageType  = "normal";
+    std::string triggerType;
+    bool        readOnly     = false;
+
     // Full GPS track — one point per second extracted from all segments.
     // Empty until user requests GPS extraction.
     std::vector<GpsPoint> gpsTrack;
@@ -184,4 +193,4 @@ public:
 } // namespace CamClops
 
 #endif
-// SN: 00113
+// SN: 00122

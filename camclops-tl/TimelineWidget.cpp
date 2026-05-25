@@ -92,6 +92,22 @@ void TimelineWidget::setMarkTarget(int id, double targetSecs)
     emit marksChanged();
 }
 
+void TimelineWidget::updateMark(const TLMark& updated)
+{
+    for (auto& m : m_marks) {
+        if (m.id == updated.id) {
+            m.startMs    = updated.startMs;
+            m.endMs      = updated.endMs;
+            m.targetSecs = updated.targetSecs;
+            break;
+        }
+    }
+    std::sort(m_marks.begin(), m_marks.end(),
+        [](const TLMark& a, const TLMark& b){ return a.startMs < b.startMs; });
+    update();
+    emit marksChanged();
+}
+
 void TimelineWidget::deleteMark(int id)
 {
     m_marks.erase(std::remove_if(m_marks.begin(), m_marks.end(),
@@ -513,4 +529,4 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
         emit markClearAllRequested();
     }
 }
-// SN: 00109
+// SN: 00122

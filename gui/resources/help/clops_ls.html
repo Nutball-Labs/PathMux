@@ -12,7 +12,7 @@
 
 <h2>Synopsis</h2>
 <div class="synopsis">
-clops_ls [--json] [<i>MID</i> | <i>MID</i>:<i>TID</i>]
+clops_ls [--json | --format=<i>fmt</i> [--fields=<i>f1,f2,...</i>]] [<i>MID</i> | <i>MID</i>:<i>TID</i>]
 </div>
 
 <h2>Description</h2>
@@ -38,6 +38,35 @@ normalised (O→0, I→1, L→1).</p>
 <dd>Emit JSON instead of text.  With no filter, outputs an array of manifest objects
 each containing a <b>trips</b> array.  With <i>MID:TID</i>, outputs a single trip
 object.  Suitable for piping to <b>jq</b>.</dd>
+
+<dt>--format=<i>fmt</i></dt>
+<dd>Structured output format.  Valid values: <b>json</b>, <b>csv</b>, <b>xml</b>.
+<dl>
+<dt>json</dt><dd>Equivalent to <b>--json</b>; <b>--fields</b> is ignored.</dd>
+<dt>csv</dt><dd>One record per trip, comma-separated with a header row.
+Use <b>--fields</b> to select columns.</dd>
+<dt>xml</dt><dd>One <code>&lt;trip&gt;</code> element per trip inside a
+<code>&lt;trips&gt;</code> root.  Use <b>--fields</b> to select child elements.</dd>
+</dl>
+</dd>
+
+<dt>--fields=<i>f1,f2,...</i></dt>
+<dd>Comma-separated list of fields to include in csv or xml output.  Ignored for json.
+Available fields:
+<dl>
+<dt>manifest_id, trip_id</dt><dd>Manifest and trip identifiers.</dd>
+<dt>address, date, start_time, start_epoch</dt><dd>Human-readable address (if geocoded),
+calendar date, wall-clock start time, and Unix epoch of trip start.</dd>
+<dt>duration, duration_seconds</dt><dd>Trip length as formatted string and raw seconds.</dd>
+<dt>segment_count, note</dt><dd>Number of video segments; optional free-text note.</dd>
+<dt>start_lat, start_lon, end_lat, end_lon</dt><dd>Start and end coordinates in decimal
+degrees (requires GPS extraction).</dd>
+<dt>distance_km, distance_mi</dt><dd>Great-circle distance between start and end coordinates.</dd>
+<dt>gps_lock_seconds</dt><dd>Seconds from segment start until first GPS fix.
+Requires GPS extraction; zero if not yet run.</dd>
+<dt>gps_track_status</dt><dd>One of <b>none</b>, <b>partial</b>, or <b>complete</b>.</dd>
+</dl>
+</dd>
 
 <dt>-v, --version</dt>
 <dd>Print the CamClops version string and exit.</dd>
@@ -168,3 +197,4 @@ by <b>clops_gpsinfo --scan-all-trips</b>.</p>
 
 </body>
 </html>
+<!-- SN: 00123 -->

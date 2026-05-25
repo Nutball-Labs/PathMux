@@ -110,6 +110,15 @@ struct CameraProfile {
     // Key = slot name (e.g. "rear"), primary slot is omitted (its offset is zero by def).
     std::map<std::string, double> cameraStartOffsets;
 
+    // Parking mode support.  When parkingSubdir is non-empty a second
+    // detectTrips() pass runs against sourcePath/parkingSubdir using slots
+    // whose tokens are prefixed with parkingTokenPrefix (e.g. "P" turns
+    // slot token "F" → "PF").  parkingProfile() builds the adjusted profile
+    // for that secondary scan; returns an invalid profile if not supported.
+    std::string parkingSubdir;       // motion-triggered parking dir, e.g. "DCIM/Movie/Parking"
+    std::string roSubdir;            // G-sensor/impact dir, e.g. "DCIM/Movie/RO" (read-only locked files)
+    std::string parkingTokenPrefix;  // e.g. "P" for Viofo A229 (turns "F"→"PF")
+
     // Returns the name of the primary slot, or "" if none designated.
     std::string primarySlot() const;
 
@@ -120,6 +129,13 @@ struct CameraProfile {
     // at least one slot, exactly one primary, a regex, and a timestamp format.
     bool isValid() const;
 
+    // Return a copy adjusted for a parking subdir scan: slots redirected to
+    // subdir, tokens prefixed with parkingTokenPrefix, parkingSubdir/roSubdir
+    // cleared (prevents recursive parking scans).  Returns invalid profile if
+    // subdir is empty.
+    CameraProfile parkingProfile() const;  // uses parkingSubdir
+    CameraProfile roProfile() const;       // uses roSubdir
+
     // --- Persistence ---
     static CameraProfile loadFromFile(const std::string& path);
     void saveToFile(const std::string& path) const;
@@ -129,6 +145,7 @@ struct CameraProfile {
     static CameraProfile cobraDefault();
     static CameraProfile cobraGpsDefault();
     static CameraProfile prirotteDefault();
+    static CameraProfile viofoA229UltraDefault();
 
     // All built-in profiles in detection-priority order.
     static std::vector<CameraProfile> getBuiltinProfiles();
@@ -137,4 +154,4 @@ struct CameraProfile {
 } // namespace CamClops
 
 #endif
-// SN: 00109
+// SN: 00122

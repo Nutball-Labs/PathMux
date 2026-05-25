@@ -25,6 +25,8 @@ class QPushButton;
 class QProgressBar;
 class QLabel;
 
+class QWheelEvent;
+
 class TripSearchDialog : public QDialog {
     Q_OBJECT
 public:
@@ -32,6 +34,10 @@ public:
 
 signals:
     void searchCompleted(QList<SearchResult> results, QString label);
+
+protected:
+    void wheelEvent(QWheelEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
     void onSearch();
@@ -66,6 +72,8 @@ private:
     QPushButton*    m_searchBtn;
     QProgressBar*   m_progress;
     QLabel*         m_statusLabel;
-    bool            m_imperial = false;
+    bool            m_imperial    = false;
+    double          m_zoomFactor  = 1.0;
+    double          m_baseFontPt  = 0.0;
 };
-// SN: 00119
+// SN: 00122

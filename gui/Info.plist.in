@@ -22,7 +22,7 @@
     <string>APPL</string>
 
     <key>CFBundleSignature</key>
-    <string>PMUX</string>
+    <string>CCLP</string>
 
     <key>CFBundleExecutable</key>
     <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
@@ -49,4 +49,4 @@
     <string>Copyright © 2026 Nutball Labs / Stephen Berg. GPL v3.</string>
 </dict>
 </plist>
-<!-- SN: 00092 -->
+<!-- SN: 00122 -->

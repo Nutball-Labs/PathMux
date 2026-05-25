@@ -263,6 +263,9 @@ static json profileToJson(const CameraProfile& p) {
     if (!p.gpsExiftoolArgs.empty())
         j["gps_exiftool_args"] = p.gpsExiftoolArgs;
     j["default_layout"]     = p.defaultLayout;
+    if (!p.parkingSubdir.empty())      j["parking_subdir"]       = p.parkingSubdir;
+    if (!p.roSubdir.empty())           j["ro_subdir"]            = p.roSubdir;
+    if (!p.parkingTokenPrefix.empty()) j["parking_token_prefix"] = p.parkingTokenPrefix;
     json slotArr = json::array();
     for (const auto& s : p.cameraSlots) {
         json js;
@@ -299,6 +302,9 @@ static CameraProfile profileFromJson(const json& j) {
     p.gpsMethod             = j.value("gps_method",              "none");
     p.gpsExiftoolArgs       = j.value("gps_exiftool_args",       "");
     p.defaultLayout         = j.value("default_layout",          "2x2");
+    p.parkingSubdir         = j.value("parking_subdir",          "");
+    p.roSubdir              = j.value("ro_subdir",               "");
+    p.parkingTokenPrefix    = j.value("parking_token_prefix",    "");
     const json& slotArr = j.contains("cameraSlots") ? j["cameraSlots"]
                         : j.value("slots", json::array());
     for (const auto& js : slotArr) {
@@ -385,7 +391,8 @@ void ConfigManager::loadHostOverlay() {
     if (j.contains("logLevel"))        settings.logLevel        = j["logLevel"];
     if (j.contains("uiScale"))         settings.uiScale         = j["uiScale"];
     if (j.contains("jobQueueMode"))    settings.jobQueueMode    = j["jobQueueMode"];
-    if (j.contains("monitorPort"))     settings.monitorPort     = j["monitorPort"];
+    if (j.contains("monitorPort"))      settings.monitorPort      = j["monitorPort"];
+    if (j.contains("monitorAutoStart")) settings.monitorAutoStart = j["monitorAutoStart"];
     if (j.contains("hudFontScale"))    settings.hudFontScale    = j["hudFontScale"];
     if (j.contains("hudLineScale"))    settings.hudLineScale    = j["hudLineScale"];
     if (j.contains("hudColor"))        settings.hudColor        = j["hudColor"];
@@ -417,7 +424,8 @@ void ConfigManager::saveHostSettings() {
     j["logLevel"]         = settings.logLevel;
     j["uiScale"]          = settings.uiScale;
     j["jobQueueMode"]     = settings.jobQueueMode;
-    j["monitorPort"]      = settings.monitorPort;
+    j["monitorPort"]       = settings.monitorPort;
+    j["monitorAutoStart"]  = settings.monitorAutoStart;
     j["hudFontScale"]     = settings.hudFontScale;
     j["hudLineScale"]     = settings.hudLineScale;
     j["hudColor"]         = settings.hudColor;
@@ -580,13 +588,21 @@ std::string ConfigManager::generateId(const std::set<std::string>& existing,
         id += B36_DIGITS[d1(rng)];
         if (!existing.count(id)) return id;
     }
-    // Exhaustive fallback (shouldn't happen at these scales)
+    // Exhaustive fallback — primary pool first, then the other pool.
+    // Parking manifests can exceed 330 trips (digit-first limit), so we fall
+    // through to alpha-first when needed, giving a total space of 1089 IDs.
     for (char c1 : firstPool)
         for (char c2 : B36_DIGITS) {
             std::string id; id += c1; id += c2;
             if (!existing.count(id)) return id;
         }
-    return "??"; // should never reach here
+    const std::string& otherPool = preferAlphaFirst ? B36_NUM : B36_ALPHA;
+    for (char c1 : otherPool)
+        for (char c2 : B36_DIGITS) {
+            std::string id; id += c1; id += c2;
+            if (!existing.count(id)) return id;
+        }
+    return "??"; // only if all 1089 IDs are taken
 }
 
 // ---------------------------------------------------------------------------
@@ -663,6 +679,72 @@ static std::string pathMapKey(const std::string& shortHostname) {
     std::transform(h.begin(), h.end(), h.begin(),
         [](char c){ return (char)std::tolower((unsigned char)c); });
     return os + "_" + h;
+}
+
+// ---------------------------------------------------------------------------
+// Parking-path helpers
+//
+// Parking manifests use "park:<sourcePath>" as their logical index key.
+// This fictional prefix keeps them distinct from driving manifests in the
+// index while allowing the real source root to be extracted for file I/O.
+// "ro:<sourcePath>" is used for G-sensor (read-only) event manifests.
+// Both parking and RO events are stored in a single "park:" manifest to
+// keep the index tidy; the trip-level triggerType field distinguishes them.
+// ---------------------------------------------------------------------------
+static bool isParkingPath(const std::string& p) {
+    return p.rfind("park:", 0) == 0;
+}
+static std::string realSourcePath(const std::string& p) {
+    return isParkingPath(p) ? p.substr(5) : p;
+}
+
+// Extract a single video frame to outputPath using ffmpeg.
+// Returns outputPath on success, "" on failure.
+static std::string extractFrame(const std::string& videoPath,
+                                 double seekSecs,
+                                 const std::string& outputPath,
+                                 const std::string& ffmpegPath) {
+    if (videoPath.empty() || videoPath == "-") return "";
+    std::error_code ec;
+    fs::create_directories(fs::path(outputPath).parent_path(), ec);
+    if (ec) return "";
+    std::string cmd = "\"" + ffmpegPath + "\""
+        + " -ss " + std::to_string(seekSecs)
+        + " -i \"" + videoPath + "\""
+        + " -frames:v 1 -q:v 2 -y"
+        + " \"" + outputPath + "\" " NULL_REDIRECT;
+    int rc = system(cmd.c_str());
+    return (rc == 0 && fs::exists(outputPath, ec)) ? outputPath : "";
+}
+
+// Scene-detection frame grab for parking clips.
+// Scans [windowStart, windowStart+windowDur] for the first frame whose
+// scene-change score exceeds threshold (the motion-trigger moment).
+// Falls back to fixed-offset grab at the window midpoint if nothing fires.
+static std::string extractFrameScene(const std::string& videoPath,
+                                      double windowStart,
+                                      double windowDur,
+                                      double threshold,
+                                      const std::string& outputPath,
+                                      const std::string& ffmpegPath) {
+    if (videoPath.empty() || videoPath == "-") return "";
+    std::error_code ec;
+    fs::create_directories(fs::path(outputPath).parent_path(), ec);
+    if (ec) return "";
+    // select=gt(scene,T) picks the first frame with a scene-change score above T.
+    // -t caps processing so we don't scan the full clip on a miss.
+    // Single quotes around the filter prevent shell comma interpretation.
+    std::string cmd = "\"" + ffmpegPath + "\""
+        + " -ss " + std::to_string(windowStart)
+        + " -t "  + std::to_string(windowDur)
+        + " -i \"" + videoPath + "\""
+        + " -vf 'select=gt(scene," + std::to_string(threshold) + ")'"
+        + " -vsync vfr -frames:v 1 -q:v 2 -y"
+        + " \"" + outputPath + "\" " NULL_REDIRECT;
+    int rc = system(cmd.c_str());
+    if (rc == 0 && fs::exists(outputPath, ec)) return outputPath;
+    // Fallback: midpoint of window.
+    return extractFrame(videoPath, windowStart + windowDur * 0.5, outputPath, ffmpegPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -802,11 +884,14 @@ std::string ConfigManager::lookupManifestFilePath(const std::string& sourcePath)
 std::string ConfigManager::getManifestFilePath(const std::string& sourcePath) {
     std::string id       = ensureManifestId(sourcePath);
     std::string filename = "clops_manifest_" + id + ".json";
-    std::string preferred = sourcePath + "/" + filename;
+    // Strip "park:" prefix — parking events land alongside the driving manifest,
+    // not in the config dir (which the literal "park:..." path would force).
+    std::string realPath = realSourcePath(sourcePath);
+    std::string preferred = realPath + "/" + filename;
 
     std::error_code ec;
-    if (fs::exists(sourcePath, ec)) {
-        std::string testFile = sourcePath + "/.clops_write_test";
+    if (fs::exists(realPath, ec)) {
+        std::string testFile = realPath + "/.clops_write_test";
         std::ofstream test(testFile);
         if (test.is_open()) {
             test.close();
@@ -814,7 +899,7 @@ std::string ConfigManager::getManifestFilePath(const std::string& sourcePath) {
             return preferred;
         }
     }
-    std::cerr << "  Warning: " << sourcePath << " is not writable.\n"
+    std::cerr << "  Warning: " << realPath << " is not writable.\n"
               << "  Manifest will be stored in " << configDir << "\n";
     return configDir + filename;
 }
@@ -955,8 +1040,9 @@ std::vector<ManifestEntry> ConfigManager::loadManifestIndex() {
         e.firstTrip    = jm.value("first_trip",   "");
         e.lastTrip     = jm.value("last_trip",    "");
         e.manifestMd5  = jm.value("manifest_md5", "");
-        e.note         = jm.value("note",         "");
+        e.note         = jm.value("note",          "");
         e.nickname     = jm.value("nickname",     e.path);  // default to path
+        e.manifestType = jm.value("manifest_type","trips");
         if (e.path.empty()) continue;
         // Discard bogus entries where path is a manifest file, not a source directory.
         // These are created when a manifest file path is mistakenly passed as a source path.
@@ -997,6 +1083,7 @@ void ConfigManager::saveManifestIndex(const std::vector<ManifestEntry>& index) {
         jm["manifest_md5"]  = e.manifestMd5;
         jm["note"]          = e.note;
         jm["nickname"]      = e.nickname.empty() ? e.path : e.nickname;
+        jm["manifest_type"] = e.manifestType.empty() ? "trips" : e.manifestType;
         root["manifests"].push_back(jm);
     }
     std::ofstream ofs(idxFile);
@@ -1084,10 +1171,11 @@ void ConfigManager::updateManifestIndex(const std::string& path,
         std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tmBuf);
         return std::string(buf);
     }();
-    entry->tripCount = (int)trips.size();
-    entry->firstTrip = trips.empty() ? "" : trips.front().date + " " + trips.front().startTime;
-    entry->lastTrip  = trips.empty() ? "" : trips.back().date  + " " + trips.back().startTime;
-    entry->manifestMd5 = fileMd5(manifestFile);
+    entry->tripCount    = (int)trips.size();
+    entry->firstTrip    = trips.empty() ? "" : trips.front().date + " " + trips.front().startTime;
+    entry->lastTrip     = trips.empty() ? "" : trips.back().date  + " " + trips.back().startTime;
+    entry->manifestMd5  = fileMd5(manifestFile);
+    entry->manifestType = isParkingPath(path) ? "park_events" : "trips";
 
     saveManifestIndex(index);
 
@@ -1307,19 +1395,34 @@ std::vector<std::string> ConfigManager::getAllCachedPaths() {
 
 void ConfigManager::saveTripCache(const std::string& path,
                                    const std::vector<Trip>& trips,
-                                   const CameraProfile& profile) {
+                                   const CameraProfile& profile,
+                                   bool skipFrameExtract) {
     // Guard: reject manifest file paths passed as source directories.
-    // A manifest file path (e.g. /foo/clops_manifest_AB.json) must never be
-    // used as a source path — doing so creates a bogus duplicate index entry.
     if (path.find("clops_manifest_") != std::string::npos) {
         std::cerr << "Bug: saveTripCache called with manifest file path: '"
                   << path << "' — ignoring to prevent duplicate index entry.\n";
         return;
     }
+
+    // For parking manifests the logical key is "park:<realPath>".
+    // Use the real filesystem path for all file I/O.
+    const std::string realPath = realSourcePath(path);
+    const bool        isPark   = isParkingPath(path);
+
     std::string manifestFile = getManifestFilePath(path);
 
+    // Extract manifest ID from filename for disk probe (e.g. "clops_manifest_XY.json" → "XY")
+    std::string manifestId;
+    {
+        std::string mfn = fs::path(manifestFile).filename().string();
+        const std::string pfx = "clops_manifest_";
+        const std::string sfx = ".json";
+        if (mfn.size() > pfx.size() + sfx.size() && mfn.rfind(pfx, 0) == 0)
+            manifestId = mfn.substr(pfx.size(), mfn.size() - pfx.size() - sfx.size());
+    }
+
     // Load existing manifest to preserve note and trip IDs
-    auto existingTrips = loadTripCache(path);
+    auto existingTrips = loadTripCache(path);  // handles park: prefix internally
     std::set<std::string> usedIds;
     for (const auto& t : existingTrips) usedIds.insert(t.id);
 
@@ -1342,16 +1445,20 @@ void ConfigManager::saveTripCache(const std::string& path,
             } catch (...) {}
         }
     }
-    // Register this machine in path_map.
-    existingPathMap[pathMapKey(hostname)] = path;
+    // Register this machine in path_map using the real footage root.
+    existingPathMap[pathMapKey(hostname)] = realPath;
 
     // Build identity hash → id map from existing trips, and preserve any
     // cameraSync data written by clops_sync_analyze.py so a rescan doesn't wipe it.
+    // existingById is used to merge user-generated fields (GPS extraction results,
+    // overlay video paths, notes) that detectTrips() cannot produce.
     std::map<std::string, std::string>  hashToId;
     std::map<std::string, CameraSync>   existingSyncById;
+    std::map<std::string, Trip>         existingById;
     for (const auto& t : existingTrips) {
         if (!t.id.empty()) {
             hashToId[tripIdentityHash(t)] = t.id;
+            existingById[t.id] = t;
             if (t.cameraSync.valid)
                 existingSyncById[t.id] = t.cameraSync;
         }
@@ -1372,7 +1479,8 @@ void ConfigManager::saveTripCache(const std::string& path,
     }
 
     json root;
-    root["source_path"]    = path;
+    root["source_path"]    = realPath;
+    root["manifest_type"]  = isPark ? "park_events" : "trips";
     root["profile_id"]     = newProfileId;
     if (!newCameraProfile.empty())
         root["camera_profile"] = newCameraProfile;
@@ -1395,9 +1503,124 @@ void ConfigManager::saveTripCache(const std::string& path,
             }
         }
 
-        // Compute validation files if not already present
-        if (trip.validationFiles.empty())
-            trip.validationFiles = selectValidationFiles(trip, path);
+        // Merge user-generated fields from the existing trip that detectTrips()
+        // cannot produce: GPS extraction results, overlay video paths, notes,
+        // GPS coordinates.  This preserves data across rescans and cross-OS scans
+        // where the manifest was written on another machine.
+        // "unavailable" (set by detectTrips when gpsMethod == "none", e.g. Cobra)
+        // is authoritative and must never be overridden by an old "extracted" status.
+        {
+            auto oldIt = existingById.find(trip.id);
+            if (oldIt != existingById.end()) {
+                const Trip& old = oldIt->second;
+                if (trip.gpsTrackStatus != "unavailable" &&
+                    (trip.gpsTrackStatus.empty() || trip.gpsTrackStatus == "none"))
+                    trip.gpsTrackStatus = old.gpsTrackStatus;
+                if (trip.gpsLockSeconds < 0)
+                    trip.gpsLockSeconds = old.gpsLockSeconds;
+                if (trip.firstLockLat == 0.0 && old.firstLockLat != 0.0) {
+                    trip.firstLockLat       = old.firstLockLat;
+                    trip.firstLockLon       = old.firstLockLon;
+                    trip.firstLockTimestamp = old.firstLockTimestamp;
+                    trip.firstLockRecord    = old.firstLockRecord;
+                }
+                if (trip.startLat == 0.0 && old.startLat != 0.0) {
+                    trip.startLat = old.startLat;  trip.startLon = old.startLon;
+                }
+                if (trip.endLat == 0.0 && old.endLat != 0.0) {
+                    trip.endLat = old.endLat;  trip.endLon = old.endLon;
+                }
+                if (trip.mapVideos.empty())  trip.mapVideos  = old.mapVideos;
+                if (trip.dashVideos.empty()) trip.dashVideos = old.dashVideos;
+                if (trip.hudVideos.empty())  trip.hudVideos  = old.hudVideos;
+                if (trip.note.empty())       trip.note       = old.note;
+                if (trip.gpsTrack.empty())   trip.gpsTrack   = old.gpsTrack;
+            }
+        }
+
+        // Disk probe: backfill video fields for files on disk not recorded in manifest.
+        {
+            auto probe = [&](std::vector<std::string>& vec,
+                             const std::string& sfx, const std::string& ext) {
+                if (!vec.empty()) return;
+                std::error_code ec;
+                std::string f1 = realPath + "/clops_trip_" + trip.id + "_" + sfx + "." + ext;
+                if (fs::exists(f1, ec)) { vec.push_back(f1); return; }
+                if (!manifestId.empty()) {
+                    std::string f2 = realPath + "/clops_trip_" + manifestId + "-" + trip.id
+                                   + "_" + sfx + "." + ext;
+                    if (fs::exists(f2, ec)) { vec.push_back(f2); }
+                }
+            };
+            probe(trip.mapVideos,  "map",  "mp4");
+            probe(trip.dashVideos, "dash", "mp4");
+            probe(trip.hudVideos,  "hud",  "webm");
+        }
+
+        // Frame thumbnail extraction for profiles without sidecar thumbnails.
+        // Condition: thumbnailMethod == "extract_frame" AND no non-empty thumb path
+        // exists yet.  (firstThumbs may have keys with empty values for cameras whose
+        // thumbFor() found no sidecar — checking empty() alone misses that case.)
+        // Normal trips: random frame in [90, 300]s from trip start.
+        // Parking events: skipped here — too many clips (100s per session) makes
+        //   scan-time extraction impractical.  GUI extracts lazily via grabVideoThumb.
+        bool noThumbsYet = std::none_of(trip.firstThumbs.begin(), trip.firstThumbs.end(),
+            [](const auto& kv) { return !kv.second.empty(); });
+        bool isParking = (trip.footageType == "parking");
+        if (!skipFrameExtract
+                && profile.thumbnailMethod == "extract_frame"
+                && noThumbsYet
+                && !isParking
+                && !manifestId.empty()
+                && !trip.segments.empty()) {
+            // Store thumbnails alongside the manifest (footage dir when writable,
+            // config fallback otherwise) so they don't accumulate in ~/.config.
+            std::string thumbDir = fs::path(manifestFile).parent_path().string()
+                                   + "/clops_thumbs_" + manifestId + "/";
+            std::mt19937 rng(static_cast<unsigned>(trip.startEpoch));
+            int    seekSeg   = 0;
+            double seekOff   = 0.0;
+            if (!isParking) {
+                int segdur  = trip.segdur > 0 ? trip.segdur : 60;
+                int maxSecs = std::max(90, trip.segDetectedDuration / 2);
+                maxSecs     = std::min(maxSecs, 300);
+                std::uniform_int_distribution<int> dist(90, maxSecs);
+                int target  = dist(rng);
+                seekSeg = std::min(target / segdur, (int)trip.segments.size() - 1);
+                seekSeg = std::max(seekSeg, std::min(1, (int)trip.segments.size() - 1));
+                seekOff = static_cast<double>(target % segdur);
+            }
+            // Extract from front and interior; fall back to any present camera.
+            std::vector<std::string> slotPriority = {"front", "interior"};
+            for (const auto& [k, v] : trip.segments[seekSeg].cameras) {
+                if (std::find(slotPriority.begin(), slotPriority.end(), k) == slotPriority.end())
+                    slotPriority.push_back(k);
+            }
+            for (const auto& slot : slotPriority) {
+                std::string vid = camPath(trip.segments[seekSeg], slot);
+                if (vid.empty() || vid == "-") continue;
+                std::string out = thumbDir + trip.id + "_" + slot + ".jpg";
+                if (fs::exists(out)) {
+                    trip.firstThumbs[slot] = out;
+                } else {
+                    std::string got;
+                    if (isParking)
+                        // Scan [10, 25]s for trigger-moment scene change; 45s clip
+                        // has 15s pre-buffer so the trigger is typically near 15s.
+                        got = extractFrameScene(vid, 10.0, 15.0, 0.10, out, getFfmpegPath());
+                    else
+                        got = extractFrame(vid, seekOff, out, getFfmpegPath());
+                    if (!got.empty()) trip.firstThumbs[slot] = got;
+                }
+            }
+        }
+
+        // Compute validation files if not already present.
+        // Parking events are skipped — they're transient clips the camera rotates
+        // automatically, so MD5 checksumming hundreds of large files adds minutes to
+        // every scan for zero benefit.
+        if (trip.validationFiles.empty() && !isParking)
+            trip.validationFiles = selectValidationFiles(trip, realPath);
 
         json jTrip;
         jTrip["id"]         = trip.id;
@@ -1406,6 +1629,9 @@ void ConfigManager::saveTripCache(const std::string& path,
         jTrip["start_epoch"]= trip.startEpoch;
         jTrip["duration"]   = trip.duration;
         jTrip["segdur"]     = trip.segdur;
+        if (trip.footageType != "normal")  jTrip["footage_type"]  = trip.footageType;
+        if (!trip.triggerType.empty())     jTrip["trigger_type"]  = trip.triggerType;
+        if (trip.readOnly)                 jTrip["read_only"]     = true;
         {
             json dur = json::object();
             dur["segDetectedDur"] = trip.segDetectedDuration;
@@ -1436,17 +1662,17 @@ void ConfigManager::saveTripCache(const std::string& path,
 
         if (!trip.mapVideos.empty()) {
             json arr = json::array();
-            for (const auto& p : trip.mapVideos) arr.push_back(p);
+            for (const auto& p : trip.mapVideos) arr.push_back(makeRelPath(p, realPath));
             jTrip["mapVideos"] = arr;
         }
         if (!trip.dashVideos.empty()) {
             json arr = json::array();
-            for (const auto& p : trip.dashVideos) arr.push_back(p);
+            for (const auto& p : trip.dashVideos) arr.push_back(makeRelPath(p, realPath));
             jTrip["dashVideos"] = arr;
         }
         if (!trip.hudVideos.empty()) {
             json arr = json::array();
-            for (const auto& p : trip.hudVideos) arr.push_back(p);
+            for (const auto& p : trip.hudVideos) arr.push_back(makeRelPath(p, realPath));
             jTrip["hudVideos"] = arr;
         }
         {
@@ -1475,8 +1701,8 @@ void ConfigManager::saveTripCache(const std::string& path,
 
         {
             json jFirst, jLast;
-            for (const auto& [k, v] : trip.firstThumbs) if (!v.empty()) jFirst[k] = makeRelPath(v, path);
-            for (const auto& [k, v] : trip.lastThumbs)  if (!v.empty()) jLast[k]  = makeRelPath(v, path);
+            for (const auto& [k, v] : trip.firstThumbs) if (!v.empty()) jFirst[k] = makeRelPath(v, realPath);
+            for (const auto& [k, v] : trip.lastThumbs)  if (!v.empty()) jLast[k]  = makeRelPath(v, realPath);
             if (!jFirst.empty()) jTrip["firstThumbs"] = jFirst;
             if (!jLast.empty())  jTrip["lastThumbs"]  = jLast;
         }
@@ -1520,8 +1746,8 @@ void ConfigManager::saveTripCache(const std::string& path,
             json jSeg;
             jSeg["timestamp"] = seg.timestamp;
             json jCams, jThumbs;
-            for (const auto& [k, v] : seg.cameras) jCams[k] = makeRelPath(v, path);
-            for (const auto& [k, v] : seg.thumbs)  if (!v.empty()) jThumbs[k] = makeRelPath(v, path);
+            for (const auto& [k, v] : seg.cameras) jCams[k] = makeRelPath(v, realPath);
+            for (const auto& [k, v] : seg.thumbs)  if (!v.empty()) jThumbs[k] = makeRelPath(v, realPath);
             jSeg["cameras"] = jCams;
             if (!jThumbs.empty()) jSeg["thumbs"] = jThumbs;
             jTrip["segments"].push_back(jSeg);
@@ -1583,7 +1809,7 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
     if (pathMap.contains(key) && pathMap[key].is_string()) {
         localRoot = pathMap[key].get<std::string>();
     } else if (!isDirectManifest) {
-        localRoot = path;
+        localRoot = realSourcePath(path);  // strip "park:" prefix if present
     } else {
         std::error_code ec;
         fs::path parent = fs::path(fullFile).parent_path();
@@ -1619,7 +1845,10 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
             trip.segDetectedDuration = dur.value("segDetectedDur",    0);
             trip.durationFFProbed    = dur.value("durationFFProbed",  -1);
         }
-        trip.note      = jTrip.value("note",         "");
+        trip.note        = jTrip.value("note",          "");
+        trip.footageType = jTrip.value("footage_type", "normal");
+        trip.triggerType = jTrip.value("trigger_type", "");
+        trip.readOnly    = jTrip.value("read_only",    false);
 
         trip.firstLockLat       = jTrip.value("firstLockLat",       0.0);
         trip.firstLockLon       = jTrip.value("firstLockLon",       0.0);
@@ -1634,18 +1863,32 @@ std::vector<Trip> ConfigManager::loadTripCache(const std::string& path) {
         trip.gpsTrackStatus = jTrip.value("gpsTrackStatus", "none");
 
         if (jTrip.contains("mapVideos") && jTrip["mapVideos"].is_array())
-            for (const auto& v : jTrip["mapVideos"]) trip.mapVideos.push_back(v.get<std::string>());
+            for (const auto& v : jTrip["mapVideos"]) {
+                if (v.is_string()) trip.mapVideos.push_back(resolvePathWithMap(v.get<std::string>(), localRoot, pathMap));
+                else std::cerr << "Warning: non-string in mapVideos — skipped\n";
+            }
         if (jTrip.contains("dashVideos") && jTrip["dashVideos"].is_array())
-            for (const auto& v : jTrip["dashVideos"]) trip.dashVideos.push_back(v.get<std::string>());
+            for (const auto& v : jTrip["dashVideos"]) {
+                if (v.is_string()) trip.dashVideos.push_back(resolvePathWithMap(v.get<std::string>(), localRoot, pathMap));
+                else std::cerr << "Warning: non-string in dashVideos — skipped\n";
+            }
         if (jTrip.contains("hudVideos") && jTrip["hudVideos"].is_array())
-            for (const auto& v : jTrip["hudVideos"]) trip.hudVideos.push_back(v.get<std::string>());
+            for (const auto& v : jTrip["hudVideos"]) {
+                if (v.is_string()) trip.hudVideos.push_back(resolvePathWithMap(v.get<std::string>(), localRoot, pathMap));
+                else std::cerr << "Warning: non-string in hudVideos — skipped\n";
+            }
         // Trip thumbnails — new format uses firstThumbs/lastThumbs maps.
         // Migrate old per-camera named fields transparently on read.
         if (jTrip.contains("firstThumbs") && jTrip["firstThumbs"].is_object()) {
-            for (const auto& [k, v] : jTrip["firstThumbs"].items())
-                trip.firstThumbs[k] = resolvePathWithMap(v.get<std::string>(), localRoot, pathMap);
-            for (const auto& [k, v] : jTrip["lastThumbs"].items())
-                trip.lastThumbs[k] = resolvePathWithMap(v.get<std::string>(), localRoot, pathMap);
+            for (const auto& [k, v] : jTrip["firstThumbs"].items()) {
+                if (v.is_string()) trip.firstThumbs[k] = resolvePathWithMap(v.get<std::string>(), localRoot, pathMap);
+                else std::cerr << "Warning: non-string in firstThumbs[" << k << "] — skipped\n";
+            }
+            if (jTrip.contains("lastThumbs") && jTrip["lastThumbs"].is_object())
+                for (const auto& [k, v] : jTrip["lastThumbs"].items()) {
+                    if (v.is_string()) trip.lastThumbs[k] = resolvePathWithMap(v.get<std::string>(), localRoot, pathMap);
+                    else std::cerr << "Warning: non-string in lastThumbs[" << k << "] — skipped\n";
+                }
         } else {
             // Old format — migrate D90 named fields into maps.
             auto gt = [&](const std::string& fkey) { return jTrip.value(fkey, std::string("")); };
@@ -1915,4 +2158,4 @@ void ConfigManager::clearStale(bool force) {
 
 } // namespace CamClops
 
-// SN: 00119
+// SN: 00122

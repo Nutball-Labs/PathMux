@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
 """
-clops_hud.py — CamClops military-style HUD overlay renderer
+clops_hud.py — CamClops HUD overlay renderer
 
 Reads a GPS track from a CamClops manifest JSON and renders an animated
 HUD (heads-up display) overlay as a transparent WebM/VP9 video for
 compositing over collage footage.
 
-Elements:
+Styles (--style):
+  military  Left/right scrolling speed ladder tapes + bottom compass rose (default)
+  spacex    Static telemetry cards: KPH left, MPH right, HDG bottom-center
+
+Elements (military):
   Left edge  — vertical speed ladder tape (km/h)
   Right edge — vertical speed ladder tape (mph)
-  Bottom     — horizontal heading tape (degrees / cardinal)
+  Bottom     — circular compass rose (degrees / cardinal)
+
+Elements (spacex):
+  Left edge         — rounded card: SPEED (km/h)
+  Right edge        — rounded card: SPEED (mph)
+  Bottom-center     — rounded card: HDG (cardinal + degrees)
 
 Usage:
     clops_hud.py --manifest <path> --trip <id> --output <path.webm>
+              [--style military|spacex]
               [--width 3840] [--height 2160] [--fps 30] [--render-fps 10]
               [--no-left-speed]   [--left-speed-width 160]  [--left-speed-height 1620]
               [--left-speed-x 0] [--left-speed-y 270]
@@ -36,10 +46,11 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
-_CAMCLOPS_VERSION = "1.101.2"
-_CAMCLOPS_HWM     = "00117"
+_CAMCLOPS_VERSION = "2.6.0a"
+_CAMCLOPS_HWM     = "00120"
 
 # ---------------------------------------------------------------------------
 # Error log — tees sys.stderr to ~/.config/camclops/logs/<script>.log
@@ -535,6 +546,66 @@ def draw_compass_rose(img, draw, cx, cy, radius, heading_deg, pal, fonts, line_s
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SpaceX-style telemetry cards
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _cardinal(deg):
+    dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE",
+            "S","SSW","SW","WSW","W","WNW","NW","NNW"]
+    return dirs[int((deg + 11.25) / 22.5) % 16]
+
+
+def draw_spx_speed_card(img, draw, x, y, w, h, speed_kmh, unit, pal, fonts):
+    """Rounded dark panel with label, large value, and unit — no scrolling tape."""
+    pad = max(10, w // 10)
+
+    draw.rounded_rectangle([(x, y), (x + w - 1, y + h - 1)], radius=12,
+                            fill=pal["backing"])
+
+    lbl_font = fonts.get("small") or fonts.get("tiny")
+    draw.text((x + pad, y + pad), "SPEED", font=lbl_font, fill=pal["dim"])
+
+    speed_val = max(0.0, speed_kmh * 0.621371 if unit == "MPH" else speed_kmh)
+    val_str   = f"{int(round(speed_val))}"
+    val_font  = fonts["large"]
+    vw, vh    = _twh(draw, val_str, val_font)
+    cx        = x + w // 2
+    cy        = y + h // 2 + pad // 2
+    draw.text((cx - vw // 2, cy - vh // 2), val_str, font=val_font,
+              fill=pal["readout"])
+
+    unit_font = fonts.get("small") or fonts.get("tiny")
+    uw, _uh   = _twh(draw, unit, unit_font)
+    draw.text((cx - uw // 2, cy + vh // 2 + pad // 3), unit, font=unit_font,
+              fill=pal["mid"])
+
+
+def draw_spx_heading_card(img, draw, x, y, w, h, heading_deg, pal, fonts):
+    """Rounded dark panel with HDG label, large cardinal direction, and degrees."""
+    pad = max(10, w // 10)
+
+    draw.rounded_rectangle([(x, y), (x + w - 1, y + h - 1)], radius=12,
+                            fill=pal["backing"])
+
+    lbl_font = fonts.get("small") or fonts.get("tiny")
+    draw.text((x + pad, y + pad), "HDG", font=lbl_font, fill=pal["dim"])
+
+    cardinal  = _cardinal(heading_deg)
+    card_font = fonts["large"]
+    cw, ch    = _twh(draw, cardinal, card_font)
+    cx        = x + w // 2
+    cy        = y + h // 2
+    draw.text((cx - cw // 2, cy - ch // 2 - pad // 4), cardinal,
+              font=card_font, fill=pal["readout"])
+
+    deg_str  = f"{int(round(heading_deg % 360)):03d}°"
+    deg_font = fonts.get("medium") or fonts.get("small")
+    dw, _dh  = _twh(draw, deg_str, deg_font)
+    draw.text((cx - dw // 2, cy + ch // 2 + pad // 4), deg_str,
+              font=deg_font, fill=pal["mid"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Strip-based frame renderer
 #
 # Instead of allocating a fresh W×H RGBA image (32 MB at 4K) every frame,
@@ -579,30 +650,44 @@ def render_hud_frame(W, H, pt, cfg, pal, fonts, frame_buf):
     ls          = cfg.get("line_scale",    1.0)
     vis         = cfg.get("visible_range", 80.0)
 
+    spx = cfg.get("style") == "spacex"
+
     if cfg["left_speed"]["enabled"]:
         c = cfg["left_speed"]
         _clear_strip(frame_buf, W, c["x"], c["y"], c["w"], c["h"])
         strip = Image.new("RGBA", (c["w"], c["h"]), (0, 0, 0, 0))
-        draw_speed_tape(strip, ImageDraw.Draw(strip), 0, 0, c["w"], c["h"],
-                        speed_kmh, "KPH", "left", pal, fonts, ls, vis)
+        if spx:
+            draw_spx_speed_card(strip, ImageDraw.Draw(strip),
+                                 0, 0, c["w"], c["h"], speed_kmh, "KPH", pal, fonts)
+        else:
+            draw_speed_tape(strip, ImageDraw.Draw(strip), 0, 0, c["w"], c["h"],
+                            speed_kmh, "KPH", "left", pal, fonts, ls, vis)
         _blit_strip(frame_buf, W, strip, c["x"], c["y"])
 
     if cfg["right_speed"]["enabled"]:
         c = cfg["right_speed"]
         _clear_strip(frame_buf, W, c["x"], c["y"], c["w"], c["h"])
         strip = Image.new("RGBA", (c["w"], c["h"]), (0, 0, 0, 0))
-        draw_speed_tape(strip, ImageDraw.Draw(strip), 0, 0, c["w"], c["h"],
-                        speed_kmh, "MPH", "right", pal, fonts, ls, vis)
+        if spx:
+            draw_spx_speed_card(strip, ImageDraw.Draw(strip),
+                                 0, 0, c["w"], c["h"], speed_kmh, "MPH", pal, fonts)
+        else:
+            draw_speed_tape(strip, ImageDraw.Draw(strip), 0, 0, c["w"], c["h"],
+                            speed_kmh, "MPH", "right", pal, fonts, ls, vis)
         _blit_strip(frame_buf, W, strip, c["x"], c["y"])
 
     if cfg["heading"]["enabled"]:
         c = cfg["heading"]
         _clear_strip(frame_buf, W, c["x"], c["y"], c["w"], c["h"])
         strip = Image.new("RGBA", (c["w"], c["h"]), (0, 0, 0, 0))
-        # cx/cy stored as frame-absolute; convert to strip-local for drawing
-        draw_compass_rose(strip, ImageDraw.Draw(strip),
-                          c["cx"] - c["x"], c["cy"] - c["y"], c["r"],
-                          heading_deg, pal, fonts, ls)
+        if spx:
+            draw_spx_heading_card(strip, ImageDraw.Draw(strip),
+                                   0, 0, c["w"], c["h"], heading_deg, pal, fonts)
+        else:
+            # cx/cy stored as frame-absolute; convert to strip-local for drawing
+            draw_compass_rose(strip, ImageDraw.Draw(strip),
+                              c["cx"] - c["x"], c["cy"] - c["y"], c["r"],
+                              heading_deg, pal, fonts, ls)
         _blit_strip(frame_buf, W, strip, c["x"], c["y"])
 
 
@@ -654,6 +739,18 @@ def _render_chunk(job):
         tmp_path,
     ]
     proc = subprocess.Popen(ff_cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    # Drain ffmpeg stderr in a background thread to prevent pipe deadlock.
+    # Without this: ffmpeg fills its stderr pipe (~64KB) printing progress stats,
+    # blocks on stderr write, stops consuming stdin, stdin pipe fills, Python
+    # blocks in proc.stdin.write() — circular wait, never completes.
+    _stderr_lines = []
+    def _drain_stderr():
+        for raw in proc.stderr:
+            _stderr_lines.append(raw.decode(errors="replace").rstrip())
+    _drain_t = threading.Thread(target=_drain_stderr, daemon=True)
+    _drain_t.start()
+
     for fi in range(frame_start, frame_end):
         pt = interp_point(pts, fi / rfps)
         render_hud_frame(W, H, pt, cfg, pal, fonts, frame_buf)
@@ -664,12 +761,11 @@ def _render_chunk(job):
         if counter is not None:
             counter.value += 1
     proc.stdin.close()
-    ff_stderr = proc.stderr.read().decode(errors="replace")
+    _drain_t.join()
     proc.wait()
-    # Only pass stderr back on failure — discard on success to keep output clean.
     err_tail = ""
     if proc.returncode != 0:
-        lines = [l for l in ff_stderr.splitlines() if l.strip()]
+        lines = [l for l in _stderr_lines if l.strip()]
         err_tail = "\n    ".join(lines[-6:]) if lines else "(no output)"
     return (proc.returncode, tmp_path, err_tail)
 
@@ -719,6 +815,9 @@ def main():
     parser.add_argument("--ffmpeg",    default="ffmpeg")
     parser.add_argument("--workers",   type=int, default=0,
                         help="Parallel render worker processes (0=auto uses all CPU cores, 1=serial)")
+    parser.add_argument("--style",     default="military", choices=["military", "spacex"],
+                        help="HUD style: military (scrolling tape ladders + compass rose) "
+                             "or spacex (static telemetry cards).  Default: military.")
 
     # Left speed tape
     parser.add_argument("--no-left-speed",     action="store_true")
@@ -863,7 +962,37 @@ def main():
         "heading":     {"enabled": not args.no_heading,
                         "cx": compass_cx, "cy": compass_cy, "r": compass_r,
                         "x": cstrip_x, "y": cstrip_y, "w": cstrip_w, "h": cstrip_h},
+        "style":       args.style,
     }
+
+    # SpaceX style: override dimensions to compact cards instead of full-height tapes.
+    if args.style == "spacex":
+        default_card_w = args.tape_width if args.tape_width > 0 else max(120, W * 200 // 3840)
+        default_card_h = max(150, H * 13 // 100)
+
+        # Re-apply user overrides or compute card-appropriate defaults.
+        _lw = args.left_speed_width  or default_card_w
+        _lh = args.left_speed_height or default_card_h
+        _ly = args.left_speed_y if args.left_speed_y >= 0 else (H - _lh) // 2
+        cfg["left_speed"].update({"w": _lw, "h": _lh, "y": _ly})
+
+        _rw = args.right_speed_width  or default_card_w
+        _rh = args.right_speed_height or default_card_h
+        _rx = args.right_speed_x if args.right_speed_x >= 0 else W - _rw
+        _ry = args.right_speed_y if args.right_speed_y >= 0 else (H - _rh) // 2
+        cfg["right_speed"].update({"w": _rw, "h": _rh, "x": _rx, "y": _ry})
+
+        # Heading: replace compass-rose bounding box with a card at bottom-center.
+        _cw = default_card_w
+        _ch = default_card_h
+        _margin_b = max(20, H // 80)
+        _hx = args.heading_x if args.heading_x >= 0 else W // 2 - _cw // 2
+        _hy = args.heading_y if args.heading_y >= 0 else H - _ch - _margin_b
+        cfg["heading"] = {
+            "enabled": not args.no_heading,
+            "x": max(0, _hx), "y": max(0, _hy),
+            "w": _cw, "h": _ch,
+        }
 
     # --- Fonts (scale from frame height) ---
     # Sized to be readable when the full-frame HUD WebM is composited over 4K footage.
@@ -884,6 +1013,21 @@ def main():
         "small":  max(26, int(46 * fscale * fs)),   # compass cardinal labels
         "medium": max(48, min(medium_raw, medium_cap)),  # speed & heading readouts
     }
+    # SpaceX style needs a "large" font for the big value in each card.
+    # Target: 44% of card height; cap so "000" fits in (card_width - padding).
+    if args.style == "spacex":
+        _ref_h  = cfg["left_speed"]["h"] if not args.no_left_speed \
+                  else cfg["right_speed"]["h"] if not args.no_right_speed \
+                  else max(150, H * 13 // 100)
+        _ref_w  = cfg["left_speed"]["w"] if not args.no_left_speed \
+                  else cfg["right_speed"]["w"] if not args.no_right_speed \
+                  else max(120, W * 200 // 3840)
+        _l_raw  = int(_ref_h * 0.44 * fs)
+        _l_cap  = _ref_w * 48 // 100
+        font_sizes["large"] = max(60, min(_l_raw, _l_cap))
+    else:
+        font_sizes["large"] = font_sizes["medium"]  # unused in military
+
     fonts = _make_fonts(font_sizes)
 
     # Recompute tape y so the readout box top aligns with the horizontal seam
@@ -891,7 +1035,7 @@ def main():
     # depends on the rendered font metrics, so we measure it with a 1×1 probe
     # rather than guessing from the font size.  Only applies when --left/right-
     # speed-y were not explicitly set (i.e. still at their auto-positioned value).
-    if args.left_speed_y < 0 or args.right_speed_y < 0:
+    if args.style != "spacex" and (args.left_speed_y < 0 or args.right_speed_y < 0):
         _probe_img  = Image.new("RGBA", (1, 1))
         _probe_draw = ImageDraw.Draw(_probe_img)
         _, _rh = _twh(_probe_draw, "000", fonts["medium"])
@@ -1052,10 +1196,13 @@ def main():
                         now     = time.monotonic()
                         elapsed = now - t_start
                         if (now - last_print) >= 3.0:
-                            done   = counter.value
-                            pct    = min(99, done * 100 // n_frames) if n_frames > 0 else 0
-                            el_str = f"{int(elapsed // 60)}:{int(elapsed % 60):02d}"
-                            line   = f"  {pct}%  ({done}/{n_frames} frames)  {el_str} elapsed\n"
+                            done    = counter.value
+                            pct     = min(99, done * 100 // n_frames) if n_frames > 0 else 0
+                            fps_act = done / elapsed if elapsed > 0 else 0
+                            eta     = (n_frames - done) / fps_act if fps_act > 0 else 0
+                            el_str  = f"{int(elapsed // 60)}:{int(elapsed % 60):02d}"
+                            eta_str = f"{int(eta     // 60)}:{int(eta     % 60):02d}"
+                            line    = f"  {pct}%  [{el_str} / {eta_str}]  ({done}/{n_frames} frames)\n"
                             os.write(2, line.encode())
                             last_print = now
                         if all(r.ready() for r in async_results):
@@ -1118,4 +1265,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# SN: 00119
+# SN: 00122

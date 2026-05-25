@@ -23,6 +23,32 @@ const CameraSlot* CameraProfile::slotByName(const std::string& slotName) const {
     return nullptr;
 }
 
+// Returns a copy adjusted for scanning a parking subdir: slots redirected to
+// subdir with tokens prefixed by parkingTokenPrefix.  parkingSubdir/roSubdir
+// cleared so the returned profile cannot trigger further parking scans.
+static CameraProfile parkingVariantProfile(const CameraProfile& base,
+                                            const std::string& subdir) {
+    if (subdir.empty()) return {};
+    CameraProfile p = base;
+    for (auto& slot : p.cameraSlots) {
+        slot.scanSubdir = subdir;
+        slot.scanSubdirCandidates.clear();
+        if (!base.parkingTokenPrefix.empty() && !slot.filenameToken.empty())
+            slot.filenameToken = base.parkingTokenPrefix + slot.filenameToken;
+    }
+    p.parkingSubdir.clear();
+    p.roSubdir.clear();
+    return p;
+}
+
+CameraProfile CameraProfile::parkingProfile() const {
+    return parkingVariantProfile(*this, parkingSubdir);
+}
+
+CameraProfile CameraProfile::roProfile() const {
+    return parkingVariantProfile(*this, roSubdir);
+}
+
 bool CameraProfile::isValid() const {
     // timestampFormat only required when timestamps are parsed from the filename.
     bool needsFmt = (timestampSource == "filename");
@@ -71,8 +97,11 @@ CameraProfile CameraProfile::loadFromFile(const std::string& path) {
     p.containerExt    = j.value("container_ext",     "");
     p.thumbnailMethod = j.value("thumbnail_method", "replace_ext");
     p.gpsMethod       = j.value("gps_method",        "none");
-    p.gpsExiftoolArgs = j.value("gps_exiftool_args", "");
-    p.defaultLayout   = j.value("default_layout",   "2x2");
+    p.gpsExiftoolArgs    = j.value("gps_exiftool_args",    "");
+    p.defaultLayout      = j.value("default_layout",      "2x2");
+    p.parkingSubdir      = j.value("parking_subdir",      "");
+    p.roSubdir           = j.value("ro_subdir",           "");
+    p.parkingTokenPrefix = j.value("parking_token_prefix","");
 
     if (j.contains("camera_start_offsets") && j["camera_start_offsets"].is_object())
         for (const auto& [k, v] : j["camera_start_offsets"].items())
@@ -114,6 +143,9 @@ void CameraProfile::saveToFile(const std::string& path) const {
     if (!gpsExiftoolArgs.empty())
         j["gps_exiftool_args"] = gpsExiftoolArgs;
     j["default_layout"]   = defaultLayout;
+    if (!parkingSubdir.empty())      j["parking_subdir"]       = parkingSubdir;
+    if (!roSubdir.empty())           j["ro_subdir"]            = roSubdir;
+    if (!parkingTokenPrefix.empty()) j["parking_token_prefix"] = parkingTokenPrefix;
 
     json slotArr = json::array();
     for (const auto& s : cameraSlots) {
@@ -198,6 +230,7 @@ CameraProfile CameraProfile::d90Default() {
 // Flat layout: all files in DCIM/100_DSC/.
 // Filename: YYYYMMDD_NNNN_CAM1_VID.MOV (sequential counter, not HHMMSS).
 // Timestamp: DateTimeOriginal from QuickTime audio track (UTC).
+// Contributed by K.S.
 // ---------------------------------------------------------------------------
 CameraProfile CameraProfile::cobraDefault() {
     CameraProfile p;
@@ -226,6 +259,7 @@ CameraProfile CameraProfile::cobraDefault() {
 // Filename: YYYYMMDD_NNNN_CAMx_VID.MOV — camera ID in filename token.
 // Timestamp: DateTimeOriginal from QuickTime audio track (UTC).
 // GPS: standard gps0 atom via ExifTool (no accelerometer on this camera).
+// Contributed by K.S.
 // ---------------------------------------------------------------------------
 CameraProfile CameraProfile::cobraGpsDefault() {
     CameraProfile p;
@@ -263,6 +297,7 @@ CameraProfile CameraProfile::cobraGpsDefault() {
 // Timestamp: filesystem mtime (no embedded metadata in AVI/RIFF headers).
 //   mtime = segment end time; 2-minute segments.
 // No GPS on this camera.
+// Contributed by K.S.
 // ---------------------------------------------------------------------------
 CameraProfile CameraProfile::prirotteDefault() {
     CameraProfile p;
@@ -292,6 +327,59 @@ CameraProfile CameraProfile::prirotteDefault() {
 }
 
 // ---------------------------------------------------------------------------
+// viofoA229UltraDefault — Viofo A229 Ultra 3-channel dashcam.
+// Layout: all three cameras in a single flat directory (DCIM/Movie/).
+// Filename: YYYY_MMDD_HHMMSS_NNNNNN[P?][FIR].MP4
+//   F/I/R   = driving clips (Front 4K, Interior fisheye, Rear)
+//   PF/PI/PR = parking-mode clips (same cameras, parking subdir)
+// Timestamps in the filename are local wall-clock time.
+// GPS: standard QuickTime GPS metadata, 1 record/sec, UTC timestamps.
+//   Speed in km/h; no altitude; no accelerometer.
+//   GPS Date/Time tag may have trailing 'Z' — parser strips it.
+// No sidecar thumbnails — frame extracted by CamClops at scan time.
+// Parking: motion-triggered clips in DCIM/Movie/Parking/ (writable).
+//   G-sensor clips in DCIM/Movie/RO/ (firmware-locked, never delete).
+//   Both use PF/PI/PR token prefix; 45s clips (15s pre + 30s post).
+// Contributed by B.G.
+// ---------------------------------------------------------------------------
+CameraProfile CameraProfile::viofoA229UltraDefault() {
+    CameraProfile p;
+    p.name              = "Viofo A229 Ultra";
+    p.profileId         = "viofo_a229ultra";
+    // P?[FIR] matches both driving tokens (F/I/R) and parking tokens (PF/PI/PR).
+    p.filenameRegex     = R"((\d{4}_\d{4}_\d{6})_\d{6}(P?[FIR])\.[Mm][Pp][4])";
+    p.timestampFormat   = "%Y_%m%d_%H%M%S";
+    p.timestampTimezone = "local";
+    p.containerExt      = ".MP4";
+    p.thumbnailMethod   = "extract_frame";
+    p.gpsMethod         = "exiftool_gps0";
+    p.gpsExiftoolArgs   = "-ee3 -p '$GPSDateTime $GPSLatitude# $GPSLongitude#"
+                          " 0 $GPSSpeed# $GPSTrack#'";
+    p.defaultLayout     = "2x2";
+    p.parkingSubdir     = "DCIM/Movie/Parking";
+    p.roSubdir          = "DCIM/Movie/RO";  // unconfirmed path — scanned only if present
+    p.parkingTokenPrefix = "P";
+
+    CameraSlot front;
+    front.name = "front"; front.displayName = "Front";
+    front.filenameToken = "F"; front.scanSubdir = "DCIM/Movie";
+    front.isPrimary = true; front.quadrant = 0; // TL
+
+    CameraSlot interior;
+    interior.name = "interior"; interior.displayName = "Interior";
+    interior.filenameToken = "I"; interior.scanSubdir = "DCIM/Movie";
+    interior.quadrant = 1; // TR
+
+    CameraSlot rear;
+    rear.name = "rear"; rear.displayName = "Rear";
+    rear.filenameToken = "R"; rear.scanSubdir = "DCIM/Movie";
+    rear.quadrant = 2; // BL
+
+    p.cameraSlots = { front, interior, rear };
+    return p;
+}
+
+// ---------------------------------------------------------------------------
 // getBuiltinProfiles — all factory-embedded profiles, detection-priority order.
 // More specific profiles (more cameras, unique layout) listed before generic ones
 // so the detector picks the best match when signatures overlap (e.g. Cobra GPS
@@ -300,6 +388,7 @@ CameraProfile CameraProfile::prirotteDefault() {
 std::vector<CameraProfile> CameraProfile::getBuiltinProfiles() {
     return {
         d90Default(),
+        viofoA229UltraDefault(),
         cobraGpsDefault(),   // before cobraDefault — more specific (2-cam regex)
         cobraDefault(),
         prirotteDefault(),
@@ -307,4 +396,4 @@ std::vector<CameraProfile> CameraProfile::getBuiltinProfiles() {
 }
 
 } // namespace CamClops
-// SN: 00109
+// SN: 00122

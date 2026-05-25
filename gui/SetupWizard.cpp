@@ -323,11 +323,13 @@ void HardwarePage::onProbe()
         args << extraArgs;
         args << "-c:v" << enc << "-frames:v" << "1" << "-f" << "null" << "-";
         t.start(ffmpeg, args);
-        t.waitForFinished(5000);
+        t.waitForFinished(10000);
         return t.exitCode() == 0;
     };
 
-    bool hasNvenc = nvencCompiled && testEncoder("h264_nvenc", {});
+    // Blackwell (RTX 5000 series) NVENC SDK 13 requires an explicit pixel format;
+    // nullsrc with no declared format fails format negotiation on newer drivers.
+    bool hasNvenc = nvencCompiled && testEncoder("h264_nvenc", {"-pix_fmt", "nv12"});
     bool hasQsv   = qsvCompiled   && testEncoder("h264_qsv",   {"-init_hw_device","qsv=hw","-filter_hw_device","hw"});
     bool hasVaapi = vaapiCompiled && testEncoder("h264_vaapi", {"-vaapi_device","/dev/dri/renderD128",
                                                                 "-vf","format=nv12,hwupload"});
@@ -448,4 +450,4 @@ void SetupWizard::applyToConfig(ConfigManager& config)
     config.saveSettings();
     config.saveHostSettings();
 }
-// SN: 00118
+// SN: 00122

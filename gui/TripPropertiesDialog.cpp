@@ -424,8 +424,7 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
             vlay->addLayout(outRow);
 
             auto* resLbl = new QLabel(
-                QString("Resolution: %1×%2  (trip video profile)")
-                    .arg(trip.videoProfile.width).arg(trip.videoProfile.height), grp);
+                "Resolution: 1920×1080  (collage quadrant / overlay)", grp);
             resLbl->setStyleSheet("font-size: 8pt; color: gray;");
             vlay->addWidget(resLbl);
 
@@ -609,6 +608,11 @@ TripPropertiesDialog::TripPropertiesDialog(const Trip& trip,
                 auto* sg   = new QGroupBox("Style", grp);
                 auto* glay = new QFormLayout(sg);
                 glay->setContentsMargins(8, 4, 8, 8); glay->setSpacing(6);
+                m_hudStyle = new QComboBox(sg);
+                m_hudStyle->addItem("Military",  "military");
+                m_hudStyle->addItem("SpaceX",    "spacex");
+                glay->addRow("HUD style:", m_hudStyle);
+
                 m_hudFontScale = new QDoubleSpinBox(sg);
                 m_hudFontScale->setRange(0.25, 4.0); m_hudFontScale->setSingleStep(0.25);
                 m_hudFontScale->setDecimals(2); m_hudFontScale->setSuffix("×");
@@ -1037,7 +1041,9 @@ void TripPropertiesDialog::onBuildAll()
         if (hexColor.isEmpty() || !hexColor.startsWith('#')) hexColor = "#00ff41";
         double fontSc = m_hudFontScale ? m_hudFontScale->value() : 1.0;
         double lineSc = m_hudLineScale ? m_hudLineScale->value() : 1.0;
+        QString style = m_hudStyle ? m_hudStyle->currentData().toString() : "military";
         QStringList extraArgs{
+            "--style",      style,
             "--color-hex",  hexColor,
             "--font-scale", QString::number(fontSc, 'f', 2),
             "--line-scale", QString::number(lineSc, 'f', 2),
@@ -1114,7 +1120,7 @@ void TripPropertiesDialog::onGenerateMap()
         QString::fromStdString(manifestFile),
         QString::fromStdString(m_trip.id),
         output,
-        m_trip.videoProfile.width, m_trip.videoProfile.height,
+        1920, 1080,
         extraArgs);
     connect(job, &Job::finished, this, [this, output](bool ok) {
         if (ok) appendVideoToManifest(output, "mapVideos", m_trip.mapVideos);
@@ -1236,8 +1242,10 @@ void TripPropertiesDialog::onGenerateHud()
     if (hexColor.isEmpty() || !hexColor.startsWith('#')) hexColor = "#00ff41";
     double  fontSc   = m_hudFontScale ? m_hudFontScale->value() : 1.0;
     double  lineSc   = m_hudLineScale ? m_hudLineScale->value() : 1.0;
+    QString style    = m_hudStyle ? m_hudStyle->currentData().toString() : "military";
 
     QStringList extraArgs{
+        "--style",        style,
         "--color-hex",    hexColor,
         "--font-scale",   QString::number(fontSc, 'f', 2),
         "--line-scale",   QString::number(lineSc, 'f', 2),
@@ -1675,4 +1683,4 @@ void TripPropertiesDialog::onDeleteTrip()
 }
 
 #include "TripPropertiesDialog.moc"
-// SN: 00118
+// SN: 00122

@@ -1,4 +1,4 @@
-.TH CAMCLOPS 1 "May 2026" "v2.0.1a" "CamClops Dashcam Explorer Manual"
+.TH CAMCLOPS 1 "May 2026" "v2.9.2" "CamClops Dashcam Explorer Manual"
 .SH NAME
 camclops \- Trip manager and video builder for multi-channel dashcam footage
 .SH SYNOPSIS
@@ -382,6 +382,17 @@ Silent audio padding
 .RB ( apad )
 matches each camera's audio duration to its video track.
 Falls back to Tier 1 only when no sync data is present.
+.PP
+.B "Multi-startup trip drift normalization:"
+When a trip contains multiple camera restarts (inter-restart gaps under the
+gap threshold), cameras that started later within a given startup group record
+shorter raw segments because all cameras are cut at the same instant.
+To prevent the resulting per-segment length difference from accumulating as
+visible drift across the trip, each camera's raw segment duration is probed
+and extra clone frames are appended to any camera whose raw duration is
+shorter than the front camera's for that segment.
+This normalization is applied before any Tier\~2 sync-pad delay so both
+mechanisms are combined correctly.
 .IP 3. 4
 The four normalized streams are combined with the
 .B xstack
@@ -569,6 +580,14 @@ wipe with
 .I ~/.config/camclops/locations.json
 Named locations (Home, Work, etc.) used for KML proximity pin overlays.
 .TP
+.I <scanned_path>/clops_thumbs_<id>/
+Thumbnail cache directory written by the GUI when trip tiles load for cameras
+that do not produce JPEG sidecar files (e.g.\& Viofo).
+Thumbnails are stored as
+.IR <tid>_<slot>.jpg .
+Co-located with the manifest file; cleaned up automatically if the manifest
+is deleted.  Not written by the CLI.
+.TP
 .I <scanned_path>/clops_buildlog.json
 Build provenance log appended after each successful video build.  Each entry
 records the build timestamp, manifest ID, trip ID, output path and filename,
@@ -673,4 +692,4 @@ issue on the CamClops GitHub tracker.
 .BR clops_videos (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-." SN: 00112
+." SN: 00123

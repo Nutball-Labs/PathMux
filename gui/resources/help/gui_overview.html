@@ -55,6 +55,12 @@ a tile in the right panel with:</p>
 <li>Thumbnail image from the trip</li>
 </ul>
 
+<p>Each tile has two action buttons:</p>
+<ul>
+<li><b>Build Video</b> — opens the Video Build Dialog for that trip.</li>
+<li><b>Extras…</b> — opens a lightweight dialog to queue GPS extraction, camera
+sync analysis, Map, Dashboard, and HUD generation as batch jobs (see Job Queue below).</li>
+</ul>
 <p>Double-click a trip tile to open the <b>Trip Properties</b> dialog.</p>
 
 <h2>Trip Properties Dialog</h2>
@@ -170,6 +176,35 @@ stderr to the progress dialog log panel — useful for diagnosing encode failure
 Click the X button at any time to cancel — the current ffmpeg process is
 killed cleanly and all remaining stages are skipped.</p>
 
+<h2>Job Queue</h2>
+
+<p>The Job Queue is a dockable panel at the bottom of the main window.  It shows
+all pending, running, and completed jobs (GPS extraction, Map, Dashboard, HUD, video
+builds).</p>
+
+<p>Toggle it via <b>View &gt; Job Queue</b> (Ctrl+J).  The panel appears automatically
+when a job is submitted.  Click <b>Detach</b> in the panel toolbar to float it as
+a separate window — useful for monitoring a long encode on a second monitor.
+Close the detached window to re-dock it.</p>
+
+<p>Jobs are submitted from two places:</p>
+<ul>
+<li><b>Extras… button</b> on a trip tile — GPS extract, camera sync analysis, Map,
+Dashboard, HUD.  Multiple items can be queued in one dialog.</li>
+<li><b>Add to Batch Queue</b> in the Video Build Dialog — queues a full video build
+(per-camera files and/or 4K collage).</li>
+</ul>
+
+<p>Each job row shows a progress bar, status label, and a Cancel button.
+Completed jobs remain visible until cleared.  The queue runs jobs sequentially
+by default; GPU jobs may run in parallel depending on the encoder configuration.</p>
+
+<p>A remote status page is available when enabled: set <b>Tools &gt; Settings &gt;
+Remote monitor</b> on and navigate to <code>http://localhost:8647</code> (or the
+configured port) from any browser on the local network.
+The page polls <code>/tmp/camclops_jobs.json</code> (written by the GUI) and
+refreshes every few seconds.</p>
+
 <h2>Menus</h2>
 
 <h3>File</h3>
@@ -181,8 +216,11 @@ killed cleanly and all remaining stages are skipped.</p>
 <h3>View</h3>
 <dl>
 <dt>Zoom In / Zoom Out / Reset Zoom</dt>
-<dd>Change the trip tile size. Keyboard shortcuts: Ctrl++, Ctrl+-, Ctrl+0.
-You can also hold Ctrl and scroll the mouse wheel over either panel.</dd>
+<dd>Change the trip tile size.  The primary method is Ctrl+Scroll over either panel.
+Ctrl+0 resets to the default tile size.</dd>
+
+<dt>Job Queue (Ctrl+J)</dt>
+<dd>Toggle the Job Queue dock panel at the bottom of the window.</dd>
 </dl>
 
 <h3>Manifests</h3>
@@ -196,8 +234,9 @@ You can also hold Ctrl and scroll the mouse wheel over either panel.</dd>
 
 <h3>Trips</h3>
 <dl>
-<dt>Export GPS Track…</dt>
-<dd>Export the GPS track for the selected trip (GPX, KML, or GeoJSON).</dd>
+<dt>Search Trips… (Ctrl+F)</dt>
+<dd>Search across all loaded manifests by date, note text, GPS status, or other criteria.
+Results appear as a temporary virtual manifest in the left panel.</dd>
 
 <dt>Build Video…</dt>
 <dd>Open the video build dialog for the selected trip.</dd>
@@ -238,6 +277,12 @@ profile changes until the footage directory is rescanned.</dd>
 <dt>Probe SD Card…</dt>
 <dd>Run <b>clops_probe --wizard</b> against an SD card to create or update a camera
 profile.</dd>
+
+<dt>Timelapse Editor…</dt>
+<dd>Launch <b>camclops-tl</b>, the standalone timelapse editor.  Use it to mark
+sections of a collage MP4 for timelapse compression (e.g. parking lot footage),
+then build the condensed output.  Opens as a separate window.
+Requires <b>camclops-tl</b> to be installed alongside <b>camclops-gui</b>.</dd>
 </dl>
 
 <h3>Help</h3>
@@ -247,6 +292,9 @@ profile.</dd>
 
 <dt>About CamClops</dt>
 <dd>Show version information and credits.</dd>
+
+<dt>Uninstall CamClops…</dt>
+<dd>Launch the system uninstaller (Windows only).</dd>
 </dl>
 
 <h2>Settings Dialog</h2>
@@ -259,6 +307,8 @@ profile.</dd>
 requires restart)</li>
 <li><b>Encoder:</b> preset selection and individual encoder parameters
 (host-specific; saved to the host overlay file)</li>
+<li><b>Remote monitor:</b> auto-start toggle and HTTP port for the
+<b>clops_monitor.py</b> job status web page (default port 8647)</li>
 </ul>
 
 <h2>Setup Wizard</h2>
@@ -300,4 +350,4 @@ recorded fix — not total odometer distance.
 
 </body>
 </html>
-<!-- SN: 00104 -->
+<!-- SN: 00123 -->

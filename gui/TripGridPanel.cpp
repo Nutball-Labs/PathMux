@@ -13,13 +13,59 @@
 #include <QWheelEvent>
 #include <QPainter>
 #include <QTimer>
+#include <QProcess>
+#include <QPointer>
+#include <QRandomGenerator>
+#include <QFile>
+#include <QDir>
+#include <QFileInfo>
+#include <fstream>
 #include <algorithm>
+#include "json.hpp"
+using json = nlohmann::json;
 
 using namespace CamClops;
+
+// Pick the video path and in-segment offset for a sidecar-less thumbnail grab.
+// For normal trips the target falls randomly in [90s, 300s] from trip start.
+// parking=true uses [15s, 30s] for parking mode events (future use).
+static std::pair<std::string, double>
+pickThumbSource(const Trip& t, const std::string& slot, bool parking = false)
+{
+    if (t.segments.empty()) return {{}, 0.0};
+
+    int totalS = t.durationFFProbed > 0 ? t.durationFFProbed : t.segDetectedDuration;
+    if (totalS <= 0) totalS = 60;
+
+    int lo, hi;
+    if (parking) {
+        lo = 15;
+        hi = std::min(30, std::max(lo + 1, totalS - 2));
+    } else {
+        lo = std::min(90,  std::max(5,  totalS / 2 - 30));
+        hi = std::min(300, std::max(lo + 1, totalS - 5));
+    }
+    double targetS = lo + QRandomGenerator::global()->bounded(std::max(1, hi - lo));
+
+    // Walk segments using approximate uniform duration to find the right file.
+    double approxSeg = double(totalS) / double(t.segments.size());
+    if (approxSeg < 1.0) approxSeg = 60.0;
+    int idx = std::clamp((int)(targetS / approxSeg), 0, (int)t.segments.size() - 1);
+
+    double offsetInSeg = std::max(targetS - idx * approxSeg, 2.0);
+
+    auto it = t.segments[idx].cameras.find(slot);
+    if (it == t.segments[idx].cameras.end() || it->second.empty() || it->second == "-")
+        return {{}, 0.0};
+    return {it->second, offsetInSeg};
+}
 
 TripGridPanel::TripGridPanel(QWidget* parent)
     : QWidget(parent)
 {
+    ConfigManager cfg;
+    m_ffmpegPath = cfg.getFfmpegPath();
+
     auto* vlay = new QVBoxLayout(this);
     vlay->setContentsMargins(0, 0, 0, 0);
     vlay->setSpacing(0);
@@ -120,6 +166,7 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
     m_currentManifest = entry;
     clearTiles();
     m_thumbQueue.clear();
+    m_procQueue.clear();
 
     ConfigManager config;
     config.loadSettings();
@@ -129,12 +176,15 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
     // Build sticky header using actual loaded count, not cached entry.tripCount,
     // so it stays accurate after trip deletions/archives.
     {
-        QString id   = QString::fromStdString(entry.id).toUpper();
-        QString path = QString::fromStdString(entry.path);
-        int     n    = (int)trips.size();
+        QString id      = QString::fromStdString(entry.id).toUpper();
+        bool    isPark  = (entry.manifestType == "park_events");
+        QString rawPath = QString::fromStdString(entry.path);
+        QString path    = isPark && rawPath.startsWith("park:") ? rawPath.mid(5) : rawPath;
+        int     n       = (int)trips.size();
+        QString word    = isPark ? "parking event" : "trip";
         m_manifestHeader->setText(
-            QString("%1 \u2014\u2014 %2 \u2014\u2014 %3 trip%4")
-                .arg(id).arg(path).arg(n).arg(n == 1 ? "" : "s"));
+            QString("%1 \u2014\u2014 %2 \u2014\u2014 %3 %4%5")
+                .arg(id).arg(path).arg(n).arg(word).arg(n == 1 ? "" : "s"));
         m_manifestHeader->show();
     }
 
@@ -150,13 +200,25 @@ void TripGridPanel::loadManifest(const ManifestEntry& entry)
         tile->setZoom(m_zoomFactor);
         m_tiles.push_back(tile);
 
-        // Queue thumbnails for deferred loading
-        for (const std::string slot : {"front", "rear"}) {
+        // Queue thumbnails — sidecar/extracted if present, otherwise async grab.
+        // Parking events skip thumb extraction during scan, so firstThumbs may not
+        // contain the slot key at all — fall through to video grab unconditionally.
+        bool isPark = (t.footageType == "parking");
+        for (const std::string slot : {"front", "rear", "interior"}) {
             auto it = t.firstThumbs.find(slot);
-            if (it != t.firstThumbs.end() && !it->second.empty())
+            if (it != t.firstThumbs.end() && !it->second.empty()) {
                 enqueueThumb(tile,
                              QString::fromStdString(slot),
                              QString::fromStdString(it->second));
+            } else {
+                auto [vidPath, offset] = pickThumbSource(t, slot, isPark);
+                if (!vidPath.empty())
+                    grabVideoThumb(tile, QString::fromStdString(slot),
+                                   QString::fromStdString(vidPath), offset, isPark,
+                                   QString::fromStdString(entry.manifestFile),
+                                   QString::fromStdString(entry.id),
+                                   QString::fromStdString(t.id));
+            }
         }
     }
 
@@ -193,6 +255,83 @@ void TripGridPanel::layoutTiles()
     int containerW = cols * (tileW + TILE_SPACING) + TILE_SPACING;
     int containerH = qMax(totalH, m_scrollArea->viewport()->height());
     m_gridContainer->resize(containerW, containerH);
+}
+
+void TripGridPanel::grabVideoThumb(TripTile* tile, const QString& slot,
+                                    const QString& videoPath, double offsetSecs,
+                                    bool parking,
+                                    const QString& manifestFile,
+                                    const QString& manifestId,
+                                    const QString& eventId)
+{
+    if (m_ffmpegPath.empty() || videoPath.isEmpty()) return;
+    m_procQueue.push_back({QPointer<TripTile>(tile), slot, videoPath, offsetSecs, parking,
+                           manifestFile, manifestId, eventId});
+    drainProcQueue();
+}
+
+void TripGridPanel::drainProcQueue()
+{
+    while (m_activeProcs < MAX_THUMB_PROCS && !m_procQueue.empty()) {
+        ProcRequest req = m_procQueue.front();
+        m_procQueue.pop_front();
+        startThumbProc(req);
+    }
+}
+
+void TripGridPanel::startThumbProc(const ProcRequest& req)
+{
+    if (!req.tile) return;
+
+    auto* proc = new QProcess(this);
+    proc->setProcessChannelMode(QProcess::SeparateChannels);
+
+    const QString scale = QString("scale=%1:%2:force_original_aspect_ratio=decrease,"
+                                  "pad=%1:%2:(ow-iw)/2:(oh-ih)/2")
+                          .arg(TripTile::THUMB_W).arg(TripTile::THUMB_H);
+
+    QStringList args;
+    if (req.parking) {
+        // Scene-detection pass: [10, 25]s window for the motion-trigger frame.
+        // select=gt(scene,0.10) finds the first frame with significant scene change.
+        args = { "-y", "-ss", "10", "-t", "15",
+                 "-i", req.videoPath,
+                 "-vf", QString("select=gt(scene\\,0.10),%1").arg(scale),
+                 "-vsync", "vfr", "-frames:v", "1",
+                 "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1" };
+    } else {
+        args = { "-y", "-ss", QString::number(req.offsetSecs, 'f', 1),
+                 "-i", req.videoPath,
+                 "-frames:v", "1",
+                 "-vf", scale,
+                 "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1" };
+    }
+
+    ++m_activeProcs;
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, req, proc](int code, QProcess::ExitStatus) {
+        QByteArray data = proc->readAllStandardOutput();
+        proc->deleteLater();
+        --m_activeProcs;
+        drainProcQueue();
+        QPixmap px;
+        bool valid = (code == 0 && px.loadFromData(data, "JPEG") && !px.isNull());
+        if (valid) {
+            // Save to disk regardless of whether the tile is still on screen —
+            // the user may have switched manifests mid-grab; the result is still worth keeping.
+            saveGrabbedThumb(data, req);
+            if (req.tile) req.tile->setThumbnail(req.slot, px);
+        } else if (req.parking && req.tile) {
+            // Scene detection found nothing — fall back to fixed 17.5s offset.
+            // Only retry if the tile is still visible; no point grabbing for a hidden manifest.
+            ProcRequest fallback = req;
+            fallback.offsetSecs = 17.5;
+            fallback.parking    = false;
+            m_procQueue.push_front(fallback);
+            drainProcQueue();
+        }
+    });
+    proc->start(QString::fromStdString(m_ffmpegPath), args);
 }
 
 void TripGridPanel::enqueueThumb(TripTile* tile,
@@ -274,6 +413,7 @@ void TripGridPanel::loadSearchResults(const QList<SearchResult>& results,
     m_currentManifest = virtualEntry;
     clearTiles();
     m_thumbQueue.clear();
+    m_procQueue.clear();
 
     ConfigManager config;
     config.loadSettings();
@@ -309,12 +449,22 @@ void TripGridPanel::loadSearchResults(const QList<SearchResult>& results,
         tile->setZoom(m_zoomFactor);
         m_tiles.push_back(tile);
 
-        for (const std::string slot : {"front", "rear"}) {
+        bool isPark = (r.trip.footageType == "parking");
+        for (const std::string slot : {"front", "rear", "interior"}) {
             auto it = r.trip.firstThumbs.find(slot);
-            if (it != r.trip.firstThumbs.end() && !it->second.empty())
+            if (it != r.trip.firstThumbs.end() && !it->second.empty()) {
                 enqueueThumb(tile,
                              QString::fromStdString(slot),
                              QString::fromStdString(it->second));
+            } else {
+                auto [vidPath, offset] = pickThumbSource(r.trip, slot, isPark);
+                if (!vidPath.empty())
+                    grabVideoThumb(tile, QString::fromStdString(slot),
+                                   QString::fromStdString(vidPath), offset, isPark,
+                                   QString::fromStdString(r.manifest.manifestFile),
+                                   QString::fromStdString(r.manifest.id),
+                                   QString::fromStdString(r.trip.id));
+            }
         }
     }
 
@@ -363,4 +513,44 @@ void TripGridPanel::onJobFinished(Job*, bool ok)
         }
     }
 }
-// SN: 00119
+
+void TripGridPanel::saveGrabbedThumb(const QByteArray& jpeg, const ProcRequest& req)
+{
+    if (req.manifestFile.isEmpty() || req.manifestId.isEmpty() || req.eventId.isEmpty()) return;
+
+    QString thumbDir  = QFileInfo(req.manifestFile).absolutePath()
+                        + "/clops_thumbs_" + req.manifestId + "/";
+    QDir().mkpath(thumbDir);
+    QString thumbPath = thumbDir + req.eventId + "_" + req.slot + ".jpg";
+
+    { QFile f(thumbPath); if (f.open(QIODevice::WriteOnly)) f.write(jpeg); }
+
+    // Relative to manifest parent (= source root in the common case; stored as-is otherwise).
+    std::string relThumb = ("clops_thumbs_" + req.manifestId + "/"
+                            + req.eventId + "_" + req.slot + ".jpg").toStdString();
+
+    std::string mfPath = req.manifestFile.toStdString();
+    try {
+        std::ifstream ifs(mfPath);
+        if (!ifs.is_open()) return;
+        json root;
+        ifs >> root;
+        ifs.close();
+        if (!root.contains("trips") || !root["trips"].is_array()) return;
+        std::string eid  = req.eventId.toStdString();
+        std::string slot = req.slot.toStdString();
+        bool changed = false;
+        for (auto& jt : root["trips"]) {
+            if (!jt.contains("id") || jt["id"].get<std::string>() != eid) continue;
+            if (!jt.contains("firstThumbs") || !jt["firstThumbs"].is_object())
+                jt["firstThumbs"] = json::object();
+            jt["firstThumbs"][slot] = relThumb;
+            changed = true;
+            break;
+        }
+        if (!changed) return;
+        std::ofstream ofs(mfPath);
+        if (ofs.is_open()) ofs << root.dump(2);
+    } catch (...) {}
+}
+// SN: 00122

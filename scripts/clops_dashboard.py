@@ -44,8 +44,8 @@ import subprocess
 import sys
 import time
 
-_CAMCLOPS_VERSION = "1.101.2"
-_CAMCLOPS_HWM     = "00117"
+_CAMCLOPS_VERSION = "2.6.0a"
+_CAMCLOPS_HWM     = "00120"
 
 def _setup_log():
     import datetime
@@ -1121,4 +1121,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# SN: 00117
+# SN: 00122

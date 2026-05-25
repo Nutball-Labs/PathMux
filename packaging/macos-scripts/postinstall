@@ -1,5 +1,6 @@
 #!/bin/bash
-# CamClops macOS postinstall — move GUI app to /Applications.
+# CamClops macOS postinstall — move GUI apps to /Applications and
+# install the uninstall helper to /usr/local/bin/.
 # pkgbuild installs everything to /usr/local; the installer runs this
 # script with root privileges so it can write to /Applications.
 set -e
@@ -9,5 +10,16 @@ if [ -d "/usr/local/camclops-gui.app" ]; then
     mv "/usr/local/camclops-gui.app" "/Applications/"
 fi
 
+if [ -d "/usr/local/camclops-tl.app" ]; then
+    rm -rf "/Applications/camclops-tl.app"
+    mv "/usr/local/camclops-tl.app" "/Applications/"
+fi
+
+# Install the uninstall helper so users can run: sudo camclops-uninstall
+SCRIPT_SRC="/Applications/camclops-gui.app/Contents/Resources/uninstall-camclops.sh"
+if [ -f "${SCRIPT_SRC}" ]; then
+    install -m 755 "${SCRIPT_SRC}" "/usr/local/bin/camclops-uninstall"
+fi
+
 exit 0
-# SN: 00094
+# SN: 00122

@@ -80,6 +80,38 @@ _LOGO_CSS = (
     "background-blend-mode: normal;"
 ) if _LOGO_B64 else ""
 
+# ─── App icons (PWA manifest) ─────────────────────────────────────────────────
+
+def _load_icon_bytes(size: int) -> bytes:
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / f"../gui/resources/camclops_{size}.png",
+        script_dir / f"resources/camclops_{size}.png",
+    ]
+    for p in candidates:
+        try:
+            return p.resolve().read_bytes()
+        except (OSError, FileNotFoundError):
+            continue
+    return b""
+
+_ICON_256 = _load_icon_bytes(256)
+_ICON_512 = _load_icon_bytes(512)
+
+_MANIFEST = json.dumps({
+    "name": "CamClops Monitor",
+    "short_name": "CamClops",
+    "description": "CamClops job queue live monitor",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#2c3e50",
+    "theme_color": "#2c3e50",
+    "icons": [
+        {"src": "/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any maskable"},
+        {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+    ],
+}, indent=2).encode()
+
 # ─── Embedded page ────────────────────────────────────────────────────────────
 
 _HTML = f"""\
@@ -89,6 +121,12 @@ _HTML = f"""\
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#2c3e50">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-256.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CamClops">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>CamClops — Job Queue</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -422,6 +460,15 @@ class _Handler(BaseHTTPRequestHandler):
         elif path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", _HTML.encode())
 
+        elif path == "/manifest.json":
+            self._send(200, "application/manifest+json", _MANIFEST)
+
+        elif path == "/icon-256.png" and _ICON_256:
+            self._send(200, "image/png", _ICON_256)
+
+        elif path == "/icon-512.png" and _ICON_512:
+            self._send(200, "image/png", _ICON_512)
+
         else:
             self._send(404, "text/plain", b"Not found")
 
@@ -483,4 +530,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# SN: 00117
+# SN: 00122

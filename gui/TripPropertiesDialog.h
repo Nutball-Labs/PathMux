@@ -108,6 +108,7 @@ private:
     QSpinBox*       m_hudWidth         = nullptr;   // render resolution
     QSpinBox*       m_hudHeight        = nullptr;
     // Style
+    QComboBox*      m_hudStyle         = nullptr;   // military | spacex
     QDoubleSpinBox* m_hudFontScale     = nullptr;
     QDoubleSpinBox* m_hudLineScale     = nullptr;
     QLineEdit*      m_hudColorHex      = nullptr;
@@ -139,4 +140,4 @@ private:
     QWidget* buildSyncWidget();
     void     refreshSyncTab();
 };
-// SN: 00118
+// SN: 00122

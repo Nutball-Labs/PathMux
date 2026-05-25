@@ -28,6 +28,13 @@ scan time with their MD5 checksums recorded in the manifest.  <b>clops_audit</b>
 that each sample file still exists at the expected path and that its checksum matches
 the recorded value.</p>
 
+<p>Parking-mode events (footage recorded by the dashcam's motion or G-sensor trigger
+while the vehicle is parked) are exempt from MD5 validation.  Dashcams continuously
+overwrite parking clips as the storage card fills; assigning checksums to transient
+files that may be deleted by the camera before the next scan would generate spurious
+MISSING reports.  Parking events always report <b>OK</b> without a checksum check;
+use <b>--deep</b> to run an ffprobe liveness check on them.</p>
+
 <p><b>clops_audit</b> does not write to any manifest.  It is purely read-only and safe
 to run at any time, including from cron.</p>
 
@@ -164,3 +171,4 @@ or CORRUPT).  Use <b>--json</b> for machine-parseable detail.</dd>
 
 </body>
 </html>
+<!-- SN: 00123 -->

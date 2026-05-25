@@ -12,12 +12,15 @@
 #include <QFileInfo>
 #include <QCoreApplication>
 #include <QAtomicInt>
+#include <filesystem>
 #include <fstream>
+#include <regex>
 #include <atomic>
 #include <vector>
 
 using json = nlohmann::json;
 using namespace CamClops;
+namespace fs = std::filesystem;
 
 static QString fmtElapsed(qint64 msecs)
 {
@@ -795,10 +798,8 @@ void CollageJob::start()
 
     // Human-readable names for the raw label strings from video_build.cpp.
     auto fmtStage = [](const QString& raw) -> QString {
-        if (raw == "concat:Front")  return "Front - join segments";
-        if (raw == "concat:Rear")   return "Rear - join segments";
-        if (raw == "concat:Left")   return "Left - join segments";
-        if (raw == "concat:Right")  return "Right - join segments";
+        if (raw.startsWith("concat:"))
+            return raw.mid(7) + " - join segments";
         if (raw == "collage:4K")    return "Collage 4K";
         if (raw == "collage:1080p") return "Collage 1080p";
         return raw;
@@ -921,7 +922,101 @@ public slots:
                 "exiftool",
                 [this](int done, int total) { emit segProgress(done, total); },
                 [this](int done, int total) { emit gpsProgress(done, total); });
-            config.saveTripCache(stdPath, trips, profile);
+            // skipFrameExtract=true: GUI grabs thumbnails lazily via grabVideoThumb;
+            // running system(ffmpeg) per trip here blocks the worker with no progress
+            // signal, making GNOME report the app as unresponsive.
+            config.saveTripCache(stdPath, trips, profile, /*skipFrameExtract=*/true);
+
+            // Parking scan — motion-triggered (Parking/) and G-sensor/RO events.
+            // Combined into a single "park:<path>" manifest.
+            // Pre-count primary files in each parking directory so the total is
+            // known before detectTrips starts, enabling accurate progress display.
+            CameraProfile pkMotion = profile.parkingProfile();
+            CameraProfile pkRo     = profile.roProfile();
+
+            auto countPrimary = [&](const CameraProfile& pk) -> int {
+                if (!pk.isValid()) return 0;
+                std::string scanDir;
+                for (const auto& slot : pk.cameraSlots)
+                    if (slot.isPrimary) { scanDir = stdPath + "/" + slot.scanSubdir; break; }
+                std::error_code ec;
+                if (!fs::exists(scanDir, ec)) return 0;
+                std::regex pat(pk.filenameRegex);
+                int n = 0;
+                for (const auto& de : fs::directory_iterator(scanDir, ec)) {
+                    if (de.is_directory()) continue;
+                    std::smatch m;
+                    std::string fname = de.path().filename().string();
+                    if (!std::regex_search(fname, m, pat)) continue;
+                    int tkGrp = pk.tokenCaptureGroup;
+                    if ((int)m.size() <= tkGrp) continue;
+                    std::string tok = m[tkGrp].str();
+                    for (const auto& slot : pk.cameraSlots)
+                        if (slot.isPrimary && tok == slot.filenameToken) { ++n; break; }
+                }
+                return n;
+            };
+
+            int motionCount = countPrimary(pkMotion);
+            int roCount     = countPrimary(pkRo);
+            int parkTotal   = motionCount + roCount;
+
+            if (parkTotal > 0) emit parkScanStarted(parkTotal);
+
+            std::vector<Trip> parkingTrips;
+            int parkOffset = 0;
+
+            auto runParkingScan = [&](const CameraProfile& pkProfile,
+                                      const std::string&   triggerType,
+                                      bool                 readOnly,
+                                      int                  thisScanTotal) {
+                if (!pkProfile.isValid() || thisScanTotal == 0) return;
+                std::string primarySlot = pkProfile.primarySlot();
+                if (primarySlot.empty()) return;
+                std::string scanDir;
+                for (const auto& slot : pkProfile.cameraSlots)
+                    if (slot.isPrimary) { scanDir = stdPath + "/" + slot.scanSubdir; break; }
+                std::error_code ec;
+                if (!fs::exists(scanDir, ec)) return;
+
+                // Each triggered parking clip is a separate event — use a 1-second
+                // gap so every distinct-timestamp file becomes its own tile.
+                // Skip ffprobe duration probes and GPS extraction: parking clips
+                // are fixed-length (camera-defined) and parked-location GPS adds
+                // no value. Skipping keeps the scan fast (no subprocesses per clip).
+                CameraProfile noProbe = pkProfile;
+                noProbe.gpsMethod = "none";
+                int offset = parkOffset;
+                auto pTrips = td.detectTrips(
+                    stdPath, noProbe,
+                    1,
+                    config.getFuzzyWindow(),
+                    "",   // skip ffprobe — duration estimated
+                    "",   // skip exiftool — no GPS for parking events
+                    [this, offset, parkTotal](int done, int) {
+                        emit parkProgress(offset + done, parkTotal);
+                    });
+                parkOffset += thisScanTotal;
+
+                for (auto& t : pTrips) {
+                    t.footageType = "parking";
+                    t.triggerType = triggerType;
+                    t.readOnly    = readOnly;
+                }
+                parkingTrips.insert(parkingTrips.end(), pTrips.begin(), pTrips.end());
+            };
+
+            runParkingScan(pkMotion, "motion",   false, motionCount);
+            runParkingScan(pkRo,     "g_sensor", true,  roCount);
+
+            if (!parkingTrips.empty()) {
+                std::sort(parkingTrips.begin(), parkingTrips.end(),
+                    [](const Trip& a, const Trip& b) { return a.startEpoch < b.startEpoch; });
+                std::string parkKey = "park:" + stdPath;
+                CameraProfile parkProfile = pkMotion.isValid() ? pkMotion : pkRo;
+                config.saveTripCache(parkKey, parkingTrips, parkProfile, /*skipFrameExtract=*/true);
+            }
+
             emit finished(true, "");
         } catch (const std::exception& ex) {
             emit finished(false, QString::fromLatin1(ex.what()));
@@ -932,6 +1027,8 @@ public slots:
 signals:
     void segProgress(int done, int total);
     void gpsProgress(int done, int total);
+    void parkScanStarted(int total);
+    void parkProgress(int done, int total);
     void finished(bool ok, const QString& error);
 };
 
@@ -952,8 +1049,9 @@ QString ManifestScanJob::description() const
 
 void ManifestScanJob::start()
 {
-    m_state  = State::Running;
-    m_pct    = -1;
+    m_state       = State::Running;
+    m_pct         = -1;
+    m_currentStep = "";
     m_elapsed.start();
     m_status = "Scanning…";
     emit progressChanged(-1);
@@ -964,21 +1062,62 @@ void ManifestScanJob::start()
     m_thread = new QThread(this);
     worker->moveToThread(m_thread);
 
+    // Helper: transition to a new step, closing the previous one.
+    // Called on first signal from each phase.
+    auto openStep = [this](const QString& name) {
+        if (!m_currentStep.isEmpty()) emit stepDone(m_currentStep, true);
+        m_currentStep = name;
+        emit stepStarted(m_currentStep);
+    };
+
     QString path = m_sourcePath;
     connect(m_thread, &QThread::started, worker, [worker, path]() { worker->start(path); });
-    connect(worker, &ScanJobWorker::segProgress, this, [this](int done, int total) {
+
+    // Driving trips — 0–50 % overall
+    connect(worker, &ScanJobWorker::segProgress, this, [this, openStep](int done, int total) {
+        if (done == 1) openStep("Driving trips");
+        emit stepProgress(m_currentStep, total > 0 ? done * 100 / total : -1);
         m_pct    = total > 0 ? done * 50 / total : -1;
         m_status = QString("Segment %1 / %2").arg(done).arg(total);
         emit progressChanged(m_pct);
         emit statusChanged(m_status);
     }, Qt::QueuedConnection);
-    connect(worker, &ScanJobWorker::gpsProgress, this, [this](int done, int total) {
-        m_pct    = 50 + (total > 0 ? done * 50 / total : 0);
-        m_status = QString("GPS coords — trip %1 / %2").arg(done).arg(total);
+
+    // GPS coordinates — 50–60 % overall
+    connect(worker, &ScanJobWorker::gpsProgress, this, [this, openStep](int done, int total) {
+        if (done == 1) openStep("GPS coordinates");
+        emit stepProgress(m_currentStep, total > 0 ? done * 100 / total : -1);
+        m_pct    = 50 + (total > 0 ? done * 10 / total : 0);
+        m_status = QString("GPS — trip %1 / %2").arg(done).arg(total);
         emit progressChanged(m_pct);
         emit statusChanged(m_status);
     }, Qt::QueuedConnection);
+
+    // Parking events — 60–100 % overall; total known before scan starts
+    connect(worker, &ScanJobWorker::parkScanStarted, this, [this, openStep](int total) {
+        QString name = total > 0
+            ? QString("Parking — %1 events").arg(total)
+            : "Parking events";
+        openStep(name);
+        m_pct    = 60;
+        m_status = total > 0 ? QString("Parking — 0 / %1").arg(total) : "Parking…";
+        emit progressChanged(m_pct);
+        emit statusChanged(m_status);
+    }, Qt::QueuedConnection);
+
+    connect(worker, &ScanJobWorker::parkProgress, this, [this](int done, int total) {
+        emit stepProgress(m_currentStep, total > 0 ? done * 100 / total : -1);
+        m_pct    = 60 + (total > 0 ? done * 40 / total : 0);
+        m_status = QString("Parking — %1 / %2").arg(done).arg(total);
+        emit progressChanged(m_pct);
+        emit statusChanged(m_status);
+    }, Qt::QueuedConnection);
+
     connect(worker, &ScanJobWorker::finished, this, [this](bool ok, QString err) {
+        if (!m_currentStep.isEmpty()) {
+            emit stepDone(m_currentStep, ok);
+            m_currentStep = "";
+        }
         if (ok) {
             ConfigManager cfg;
             cfg.loadSettings();
@@ -1069,4 +1208,4 @@ void JobQueue::tryStartNext()
 }
 
 #include "JobQueue.moc"
-// SN: 00117
+// SN: 00122

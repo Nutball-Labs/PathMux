@@ -1,4 +1,4 @@
-.TH CLOPS_AUDIT 1 "May 2026" "v2.0.1a" "CamClops - Footage Auditor"
+.TH CLOPS_AUDIT 1 "May 2026" "v2.9.2" "CamClops - Footage Auditor"
 .SH NAME
 clops_audit \- footage integrity checker for CamClops manifests
 .SH SYNOPSIS
@@ -18,6 +18,16 @@ at scan time with their MD5 checksums recorded in the manifest.
 .B clops_audit
 checks that each sample file still exists at the expected path and that its
 checksum matches the recorded value.
+.PP
+Parking-mode events (footage recorded by the dashcam's motion or G-sensor
+trigger while the vehicle is parked) are exempt from MD5 validation.  Dashcams
+continuously overwrite parking clips as the storage card fills; assigning
+checksums to transient files that may be deleted by the camera before the next
+scan would generate spurious MISSING reports.  Parking events always report
+.B OK
+without a checksum check; use
+.B \-\-deep
+to run an ffprobe liveness check on them.
 .PP
 .B clops_audit
 does not write to any manifest.  It is purely read-only and safe to run at
@@ -159,4 +169,4 @@ for machine-parseable detail.
 .BR ffprobe (1)
 .SH AUTHOR
 Developed by Stephen Berg, 2026.
-.\" SN: 00112
+.\" SN: 00123

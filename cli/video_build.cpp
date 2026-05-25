@@ -26,6 +26,7 @@
 #include <ctime>
 #include <array>
 #include <chrono>
+#include <map>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -925,25 +926,21 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
     // from all segments gets a lavfi black+silent input so the grid stays
     // filled; -shortest stops the encode when the real streams end.
     // -----------------------------------------------------------------------
-    std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
-    for (const auto& seg : trip.segments) {
-        auto cp = [&](const std::string& n) { return camPath(seg, n); };
-        if (cp("front") != "-") srcFront.push_back(cp("front"));
-        if (cp("rear")  != "-") srcRear.push_back(cp("rear"));
-        if (cp("left")  != "-") srcLeft.push_back(cp("left"));
-        if (cp("right") != "-") srcRight.push_back(cp("right"));
-    }
+    std::map<std::string, std::vector<std::string>> srcByCam;
+    for (const auto& seg : trip.segments)
+        for (const auto& [id, path] : seg.cameras)
+            if (!path.empty())
+                srcByCam[id].push_back(path);
 
     // Apply cameraRemap: redirect source segments for each collage position.
     // Returns segments for the camera that should fill `position` in the collage.
     auto effectiveSegs = [&](const std::string& position)
                          -> const std::vector<std::string>& {
+        static const std::vector<std::string> empty;
         auto it = opts.cameraRemap.find(position);
         const std::string& cam = (it != opts.cameraRemap.end()) ? it->second : position;
-        if (cam == "rear")  return srcRear;
-        if (cam == "left")  return srcLeft;
-        if (cam == "right") return srcRight;
-        return srcFront;
+        auto sit = srcByCam.find(cam);
+        return (sit != srcByCam.end()) ? sit->second : empty;
     };
 
     // Look up whether a given camera slot has an external video replacement.
@@ -982,13 +979,14 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
         return opts.blankSlots.count(slot) > 0;
     };
 
-    // Probe front-slot segment durations once — used by both paths for Tier 1
-    // lockstep (concat path) and for per-segment hold durations (sync-pad path).
+    // Probe front-slot segment durations — used by both paths for Tier 1
+    // lockstep (concat path) and for per-segment duration equalization (sync-pad path).
+    const std::string ffprobePath4K = ffprobeFromFfmpeg(opts.ffmpegPath);
     std::vector<double> refDurations;
     const auto& refSegs = effectiveSegs("front");
     if (!refSegs.empty() && !extReplacesFront && !isBlank("front")) {
         std::cout << "  Probing segment durations (" << refSegs.size() << " segments)...\n";
-        refDurations = probeSegmentDurations(refSegs, ffprobeFromFfmpeg(opts.ffmpegPath),
+        refDurations = probeSegmentDurations(refSegs, ffprobePath4K,
                                             trip.videoProfile.frameRate);
     }
 
@@ -1057,6 +1055,33 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
                 int trimF = (int)std::round(double(t) * syncFps4K);
                 segDelayF[si][cam] = maxTrimF - trimF;
                 segHoldF[si][cam]  = trimF;
+            }
+        }
+
+        // Duration-equalization: cameras that started later within a startup record
+        // shorter segments when power cuts all cameras at the same instant.  The
+        // ghost+hold padding corrects start alignment but does not compensate for
+        // the shorter raw duration, causing the delayed-start camera's stream to
+        // run ahead in the xstack timeline, producing cumulative sync drift.
+        // Fix: probe all camera segment durations and append extra clone frames to
+        // any camera whose raw segment is shorter than the front camera's.
+        std::cout << "  Probing non-front segment durations for equalization...\n";
+        std::vector<std::vector<double>> camRawDurs4K(4);
+        camRawDurs4K[0] = refDurations;  // front already probed above
+        for (size_t ci = 1; ci < 4; ++ci) {
+            const auto& sv = *slotSegs[ci];
+            if (!sv.empty())
+                camRawDurs4K[ci] = probeSegmentDurations(sv, ffprobePath4K,
+                                                         trip.videoProfile.frameRate);
+        }
+        std::vector<std::map<std::string, int>> segDurEqF(nSegs);
+        for (size_t si = 0; si < nSegs; ++si) {
+            int frontF = (si < camRawDurs4K[0].size())
+                         ? (int)std::round(camRawDurs4K[0][si] * syncFps4K) : 0;
+            for (size_t ci = 0; ci < 4; ++ci) {
+                int camF = (si < camRawDurs4K[ci].size())
+                           ? (int)std::round(camRawDurs4K[ci][si] * syncFps4K) : frontF;
+                segDurEqF[si][slotOrder[ci]] = std::max(0, frontF - camF);
             }
         }
 
@@ -1129,6 +1154,8 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
                 const std::string& slot = slotOrder[ci];
                 int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
                 int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
+                int EF = segDurEqF[si].count(slot) ? segDurEqF[si].at(slot) : 0;
+                int totalHF = HF + EF;
                 std::string tag = std::to_string(si) + "_" + std::to_string(ci);
                 std::string qL  = "q" + tag;
 
@@ -1139,12 +1166,12 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
                          << "trim=end_frame=" << DF << ",setpts=PTS-STARTPTS,"
                          << "eq=brightness=-0.25:saturation=0.1[sfp" << tag << "];"
                          << "[sfp" << tag << "][mn" << tag << "]concat=n=2:v=1:a=0";
-                    if (HF > 0)
-                        fc4K << ",tpad=stop_mode=clone:stop=" << HF;
+                    if (totalHF > 0)
+                        fc4K << ",tpad=stop_mode=clone:stop=" << totalHF;
                     fc4K << "," << sf4K << "[" << qL << "];";
-                } else if (HF > 0) {
+                } else if (totalHF > 0) {
                     fc4K << "[" << idx << ":v]"
-                         << "tpad=stop_mode=clone:stop=" << HF
+                         << "tpad=stop_mode=clone:stop=" << totalHF
                          << "," << sf4K << "[" << qL << "];";
                 } else {
                     fc4K << "[" << idx << ":v]" << sf4K << "[" << qL << "];";
@@ -1166,15 +1193,17 @@ bool VideoBuilder::buildCollage4K(const Trip& trip,
             const std::string& slot = slotOrder[audioSlotCI];
             int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
             int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
+            int EF = segDurEqF[si].count(slot) ? segDurEqF[si].at(slot) : 0;
+            int totalHF = HF + EF;
             int dMs = int(double(DF) * 1000.0 / syncFps4K + 0.5);
             fc4K << "[" << idx << ":a]";
-            if      (DF > 0 && HF > 0)
+            if      (DF > 0 && totalHF > 0)
                 fc4K << "adelay=" << dMs << "|" << dMs
-                     << ",apad=pad_dur=" << fmtD(double(HF) / syncFps4K);
+                     << ",apad=pad_dur=" << fmtD(double(totalHF) / syncFps4K);
             else if (DF > 0)
                 fc4K << "adelay=" << dMs << "|" << dMs;
-            else if (HF > 0)
-                fc4K << "apad=pad_dur=" << fmtD(double(HF) / syncFps4K);
+            else if (totalHF > 0)
+                fc4K << "apad=pad_dur=" << fmtD(double(totalHF) / syncFps4K);
             else
                 fc4K << "anull";
             fc4K << "[ai" << si << "];";
@@ -1470,25 +1499,18 @@ bool VideoBuilder::buildCollage4KChunked(const Trip& trip,
     }
 
     // ── Source segment vectors ────────────────────────────────────────────────
-    std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
-    for (const auto& seg : trip.segments) {
-        auto cp = [&](const std::string& n) -> std::string {
-            auto it = seg.cameras.find(n);
-            return (it != seg.cameras.end() && !it->second.empty()) ? it->second : "-";
-        };
-        if (cp("front") != "-") srcFront.push_back(cp("front"));
-        if (cp("rear")  != "-") srcRear.push_back(cp("rear"));
-        if (cp("left")  != "-") srcLeft.push_back(cp("left"));
-        if (cp("right") != "-") srcRight.push_back(cp("right"));
-    }
+    std::map<std::string, std::vector<std::string>> srcByCam;
+    for (const auto& seg : trip.segments)
+        for (const auto& [id, path] : seg.cameras)
+            if (!path.empty())
+                srcByCam[id].push_back(path);
 
     auto effectiveSegs = [&](const std::string& pos) -> const std::vector<std::string>& {
+        static const std::vector<std::string> empty;
         auto it = opts.cameraRemap.find(pos);
         const std::string& cam = (it != opts.cameraRemap.end()) ? it->second : pos;
-        if (cam == "rear")  return srcRear;
-        if (cam == "left")  return srcLeft;
-        if (cam == "right") return srcRight;
-        return srcFront;
+        auto sit = srcByCam.find(cam);
+        return (sit != srcByCam.end()) ? sit->second : empty;
     };
 
     // ── Sync-pad data ─────────────────────────────────────────────────────────
@@ -1800,16 +1822,21 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
     std::string outFile  = UI::confirmOutputPath(proposed);
     if (outFile != proposed) renamedFiles.push_back({proposed, outFile});
 
-    std::vector<std::string> srcFront, srcRear, srcLeft, srcRight;
-    for (const auto& seg : trip.segments) {
-        auto cp = [&](const std::string& n) { return camPath(seg, n); };
-        if (cp("front") != "-") srcFront.push_back(cp("front"));
-        if (cp("rear")  != "-") srcRear.push_back(cp("rear"));
-        if (cp("left")  != "-") srcLeft.push_back(cp("left"));
-        if (cp("right") != "-") srcRight.push_back(cp("right"));
-    }
+    std::map<std::string, std::vector<std::string>> srcByCam;
+    for (const auto& seg : trip.segments)
+        for (const auto& [id, path] : seg.cameras)
+            if (!path.empty())
+                srcByCam[id].push_back(path);
 
-    if (srcFront.empty()) {
+    auto effectiveSegs = [&](const std::string& pos) -> const std::vector<std::string>& {
+        static const std::vector<std::string> empty;
+        auto it = opts.cameraRemap.find(pos);
+        const std::string& cam = (it != opts.cameraRemap.end()) ? it->second : pos;
+        auto sit = srcByCam.find(cam);
+        return (sit != srcByCam.end()) ? sit->second : empty;
+    };
+
+    if (effectiveSegs("front").empty()) {
         std::cerr << "Error: No front-camera segments found for collage.\n";
         return false;
     }
@@ -1830,18 +1857,20 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         }
     }
 
+    const std::string ffprobePath1080 = ffprobeFromFfmpeg(opts.ffmpegPath);
     std::vector<double> refDurations;
-    if (!srcFront.empty()) {
-        std::cout << "  Probing segment durations (" << srcFront.size() << " segments)...\n";
-        refDurations = probeSegmentDurations(srcFront, ffprobeFromFfmpeg(opts.ffmpegPath),
+    if (!effectiveSegs("front").empty()) {
+        const auto& ef = effectiveSegs("front");
+        std::cout << "  Probing segment durations (" << ef.size() << " segments)...\n";
+        refDurations = probeSegmentDurations(ef, ffprobePath1080,
                                             trip.videoProfile.frameRate);
     }
 
     // ── Per-segment sync-pad path (1080p direct) ──────────────────────────────
     bool canSyncPad1080 = trip.cameraSync.valid
                        && !trip.cameraSync.segmentTrims.empty()
-                       && !srcFront.empty() && !srcRear.empty()
-                       && !srcLeft.empty()  && !srcRight.empty();
+                       && !effectiveSegs("front").empty() && !effectiveSegs("rear").empty()
+                       && !effectiveSegs("left").empty()  && !effectiveSegs("right").empty();
 
     if (canSyncPad1080) {
         const auto& syncTrims = trip.cameraSync.segmentTrims;
@@ -1857,9 +1886,11 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         };
 
         const std::vector<std::string>            slotOrder = {"front","rear","left","right"};
-        const std::vector<const std::vector<std::string>*> slotSegs =
-            { &srcFront, &srcRear, &srcLeft, &srcRight };
-        size_t nSegs = srcFront.size();
+        const std::vector<const std::vector<std::string>*> slotSegs = {
+            &effectiveSegs("front"), &effectiveSegs("rear"),
+            &effectiveSegs("left"),  &effectiveSegs("right")
+        };
+        size_t nSegs = effectiveSegs("front").size();
 
         auto frontTsKey1080 = [](const std::string& path) -> std::string {
             std::string bn = fs::path(path).filename().string();
@@ -1867,8 +1898,8 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
         };
         std::vector<std::map<std::string, int>> segDelayF(nSegs), segHoldF(nSegs);
         for (size_t si = 0; si < nSegs; ++si) {
-            if (si >= srcFront.size()) continue;
-            auto it = syncTrims.find(frontTsKey1080(srcFront[si]));
+            if (si >= effectiveSegs("front").size()) continue;
+            auto it = syncTrims.find(frontTsKey1080(effectiveSegs("front")[si]));
             if (it == syncTrims.end()) continue;
             int maxTrimF = 0;
             for (const auto& [cam, t] : it->second)
@@ -1877,6 +1908,24 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
                 int trimF = (int)std::round(double(t) * syncFps1080);
                 segDelayF[si][cam] = maxTrimF - trimF;
                 segHoldF[si][cam]  = trimF;
+            }
+        }
+
+        // Duration equalization — same logic as 4K path.
+        std::cout << "  Probing non-front segment durations for equalization...\n";
+        std::vector<std::vector<double>> camRawDurs1080(4);
+        camRawDurs1080[0] = refDurations;
+        camRawDurs1080[1] = probeSegmentDurations(effectiveSegs("rear"),  ffprobePath1080, trip.videoProfile.frameRate);
+        camRawDurs1080[2] = probeSegmentDurations(effectiveSegs("left"),  ffprobePath1080, trip.videoProfile.frameRate);
+        camRawDurs1080[3] = probeSegmentDurations(effectiveSegs("right"), ffprobePath1080, trip.videoProfile.frameRate);
+        std::vector<std::map<std::string, int>> segDurEqF(nSegs);
+        for (size_t si = 0; si < nSegs; ++si) {
+            int frontF = (si < camRawDurs1080[0].size())
+                         ? (int)std::round(camRawDurs1080[0][si] * syncFps1080) : 0;
+            for (size_t ci = 0; ci < 4; ++ci) {
+                int camF = (si < camRawDurs1080[ci].size())
+                           ? (int)std::round(camRawDurs1080[ci][si] * syncFps1080) : frontF;
+                segDurEqF[si][slotOrder[ci]] = std::max(0, frontF - camF);
             }
         }
 
@@ -1922,6 +1971,8 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
                 const std::string& slot = slotOrder[ci];
                 int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
                 int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
+                int EF = segDurEqF[si].count(slot) ? segDurEqF[si].at(slot) : 0;
+                int totalHF = HF + EF;
                 std::string tag = std::to_string(si) + "_" + std::to_string(ci);
                 std::string qL  = "q" + tag;
 
@@ -1932,12 +1983,12 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
                            << "trim=end_frame=" << DF << ",setpts=PTS-STARTPTS,"
                            << "eq=brightness=-0.25:saturation=0.1[sfp" << tag << "];"
                            << "[sfp" << tag << "][mn" << tag << "]concat=n=2:v=1:a=0";
-                    if (HF > 0)
-                        fc1080 << ",tpad=stop_mode=clone:stop=" << HF;
+                    if (totalHF > 0)
+                        fc1080 << ",tpad=stop_mode=clone:stop=" << totalHF;
                     fc1080 << "," << sf1080 << "[" << qL << "];";
-                } else if (HF > 0) {
+                } else if (totalHF > 0) {
                     fc1080 << "[" << idx << ":v]"
-                           << "tpad=stop_mode=clone:stop=" << HF
+                           << "tpad=stop_mode=clone:stop=" << totalHF
                            << "," << sf1080 << "[" << qL << "];";
                 } else {
                     fc1080 << "[" << idx << ":v]" << sf1080 << "[" << qL << "];";
@@ -1957,14 +2008,16 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
             const std::string& slot = slotOrder[audioSlotCI];
             int DF = segDelayF[si].count(slot) ? segDelayF[si].at(slot) : 0;
             int HF = segHoldF[si].count(slot)  ? segHoldF[si].at(slot)  : 0;
+            int EF = segDurEqF[si].count(slot) ? segDurEqF[si].at(slot) : 0;
+            int totalHF = HF + EF;
             int dMs = int(double(DF) * 1000.0 / syncFps1080 + 0.5);
             fc1080 << "[" << idx << ":a]";
-            if      (DF > 0 && HF > 0)
-                fc1080 << "adelay=" << dMs << "|" << dMs << ",apad=pad_dur=" << fmtD(double(HF) / syncFps1080);
+            if      (DF > 0 && totalHF > 0)
+                fc1080 << "adelay=" << dMs << "|" << dMs << ",apad=pad_dur=" << fmtD(double(totalHF) / syncFps1080);
             else if (DF > 0)
                 fc1080 << "adelay=" << dMs << "|" << dMs;
-            else if (HF > 0)
-                fc1080 << "apad=pad_dur=" << fmtD(double(HF) / syncFps1080);
+            else if (totalHF > 0)
+                fc1080 << "apad=pad_dur=" << fmtD(double(totalHF) / syncFps1080);
             else
                 fc1080 << "anull";
             fc1080 << "[ai" << si << "];";
@@ -2006,10 +2059,10 @@ bool VideoBuilder::buildCollage1080Direct(const Trip& trip,
             refDurations);
     };
 
-    std::string listF = makeList(srcFront, "front");
-    std::string listR = makeList(srcRear,  "rear");
-    std::string listL = makeList(srcLeft,  "left");
-    std::string listG = makeList(srcRight, "right");
+    std::string listF = makeList(effectiveSegs("front"), "front");
+    std::string listR = makeList(effectiveSegs("rear"),  "rear");
+    std::string listL = makeList(effectiveSegs("left"),  "left");
+    std::string listG = makeList(effectiveSegs("right"), "right");
 
     if (listF.empty()) {
         std::cerr << "Error: Failed to write front concat list.\n";
@@ -3121,10 +3174,11 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
     BuildTimings timings;
 
     // --- Per-camera file concat ---
-    bool anyCamera = opts.buildFront || opts.buildRear || opts.buildLeft || opts.buildRight;
+    bool anyCamera = opts.buildFront || opts.buildRear || opts.buildLeft || opts.buildRight
+                   || !opts.buildExtraCams.empty();
     if (anyCamera) {
         auto t0 = clock::now();
-        if (opts.parallelConcats) {
+        if (opts.parallelConcats && !ffmpegRunner) {
             // CLI mode: assign ANSI rows and print initial 0% bars.
             // GUI mode (ffmpegRunner set): just launch threads; ffmpegRunner
             // handles progress via progressCallback — no terminal output.
@@ -3174,6 +3228,11 @@ void VideoBuilder::buildTrip(Trip& trip, const VideoOptions& opts) {
                 buildCameraFile(trip, "Left",  collectSegments("left"),  opts);
             if (opts.buildRight)
                 buildCameraFile(trip, "Right", collectSegments("right"), opts);
+        }
+        for (const auto& cam : opts.buildExtraCams) {
+            std::string disp = cam;
+            if (!disp.empty()) disp[0] = (char)std::toupper((unsigned char)disp[0]);
+            buildCameraFile(trip, disp, collectSegments(cam), opts);
         }
         timings.concatSecs = elapsedSecs(t0);
     }
@@ -3348,7 +3407,7 @@ void VideoBuilder::run(ConfigManager& config) {
         bool anyCamera = opts.buildFront || opts.buildRear || opts.buildLeft || opts.buildRight;
         if (anyCamera) {
             auto t0 = clock::now();
-            if (opts.parallelConcats) {
+            if (opts.parallelConcats && !ffmpegRunner) {
                 // Assign each camera its own progress row.  Print initial 0% bars
                 // to establish the row positions, then threads update in place via
                 // ANSI cursor movement (serialised through m_stdoutMutex).
@@ -3467,4 +3526,4 @@ void VideoBuilder::run(ConfigManager& config) {
         // GO — loop back to trip picker for another build
     }
 }
-// SN: 00117
+// SN: 00122

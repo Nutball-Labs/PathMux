@@ -12,7 +12,7 @@
 
 <h2>Synopsis</h2>
 <div class="synopsis">
-clops_gpsexport <i>MID</i>:<i>TID</i> [--gpx <i>PATH</i>] [--kml <i>PATH</i>] [--geojson <i>PATH</i>] [--force] [--verbose]
+clops_gpsexport <i>MID</i>:<i>TID</i> [--gpx <i>PATH</i>] [--kml <i>PATH</i>] [--geojson <i>PATH</i>] [--dump] [--force] [--verbose]
 </div>
 
 <h2>Description</h2>
@@ -47,10 +47,16 @@ per-point timestamps, speed, and heading.</dd>
 <dt>--geojson <i>PATH</i></dt>
 <dd>Write a GeoJSON FeatureCollection (RFC 7946) with one LineString feature.
 Coordinates are in [longitude, latitude] order per the spec.</dd>
+
+<dt>--dump</dt>
+<dd>Print all GPS track points to stdout in a tab-separated diagnostic format
+(index, UTC timestamp, latitude, longitude, speed, heading).  Useful for
+verifying track contents without writing a file.  Counts as an output format;
+extraction runs automatically if not yet done.</dd>
 </dl>
 
-<p>At least one format flag is required.  Multiple flags may be combined in a
-single invocation; GPS extraction runs only once.</p>
+<p>At least one of the above format flags is required.  Multiple flags may be
+combined in a single invocation; GPS extraction runs only once.</p>
 
 <h3>PATH Resolution</h3>
 <dl>
@@ -173,4 +179,4 @@ without --force, or a write error occurred.</dd>
 </body>
 </html>
 
-<!-- SN: 00104 -->
+<!-- SN: 00123 -->

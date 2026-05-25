@@ -1,5 +1,168 @@
 # CHANGELOG
 
+## [2.9.1 / SN: 00122] - 2026-05-24
+
+### Fixed
+
+- **GUI crash — too many open files when loading Viofo manifests** (`gui/TripGridPanel`):
+  Launching one ffmpeg `QProcess` per tile per camera slot simultaneously exhausted the
+  OS file descriptor limit (1024), crashing GNOME. Thumbnail grabs are now queued and
+  throttled to four concurrent processes (`MAX_THUMB_PROCS = 4`).
+
+- **Thumbnails re-grabbed on every manifest view** (`gui/TripGridPanel`): Async
+  thumbnail grabs were displayed but never saved to disk. On switching manifests and
+  returning, all grabs restarted from scratch. Grabbed JPEGs are now saved to
+  `<manifest-parent>/clops_thumbs_<id>/<eventId>_<slot>.jpg` and the manifest
+  `firstThumbs` map is patched immediately so subsequent loads skip the grab.
+
+- **Parking manifests always written to `~/.config` instead of footage directory**
+  (`lib/config_manager.cpp`): `getManifestFilePath` passed the literal
+  `"park:/footage/path"` key to the filesystem writability test; the path with the
+  `"park:"` prefix never exists, so the fallback always fired. Parking manifests and
+  their thumbnail directories now co-locate with driving manifests.
+
+- **GUI hang / GNOME "force quit" on Viofo rescan** (`lib/config_manager.cpp`,
+  `gui/JobQueue.cpp`): After `detectTrips` returned, `saveTripCache` was calling
+  `system(ffmpeg)` per driving trip per camera slot to extract thumbnail frames.
+  No progress signal is emitted during this phase, making GNOME flag the app as
+  unresponsive. Added `skipFrameExtract = true` to both `saveTripCache` calls in the
+  GUI scan worker; thumbnails load lazily via `grabVideoThumb` instead. CLI scans
+  retain the existing extraction behaviour (default `false`).
+
+- **Parking scan hung indefinitely after progress bar reached 100%**
+  (`lib/config_manager.cpp`): `selectValidationFiles` was called for every parking
+  event, running `md5sum` on up to 3 video files per event. With 408 events this meant
+  reading ~120 GB of footage to compute checksums on transient clips that the dashcam
+  rotates automatically. Parking events now skip `selectValidationFiles` entirely.
+
+---
+
+## [2.7.3c / SN: 00121] - 2026-05-23
+
+### Added
+- **Viofo A229 Ultra support — interior camera in collage:** Non-standard camera names
+  (e.g. `"interior"`) now work correctly in all four collage quadrant slots.
+  `effectiveSegs()` uses a generic map lookup instead of a hardcoded four-name chain;
+  any camera present in segment data can fill any grid position.
+- **Non-standard cameras in Camera Files tab:** Profiles with slots not named
+  front/rear/left/right (e.g. Viofo's "interior") now produce standalone camera file
+  outputs when the corresponding checkbox is ticked. Previously the checkbox had no
+  effect.
+- **Parking mode scanning — Viofo A229 Ultra:** Motion-triggered clips from
+  `DCIM/Movie/Parking/` and G-sensor clips from `DCIM/Movie/RO/` are scanned
+  automatically after each driving-footage scan. Resulting events carry
+  `footageType="parking"`, `triggerType="motion"/"g_sensor"`, and `readOnly=true`
+  (G-sensor only). Combined into a single `park:` manifest entry in the index.
+- **On-demand thumbnail extraction for cameras without JPEG sidecars:** Trip tiles now
+  show thumbnails for cameras (e.g. Viofo) that do not produce `_ths.jpg` sidecar files.
+  A random frame in [90 s, 300 s] from trip start is grabbed asynchronously via ffmpeg
+  when the tile loads. Parking event thumbnails use scene-detection over [10 s, 25 s]
+  to find the motion-trigger frame, with 17.5 s fallback.
+- **Available Extras panel in Build Video dialog:** Collage Layout tab now shows a
+  row of 192×108 thumbnail previews (async frame grabs) for any map, dashboard, or HUD
+  video already generated for the trip. Only shown when at least one extra exists.
+- **HUD "● available" indicator:** Green dot next to the HUD overlay checkbox when
+  a HUD video has been generated for the trip. Checkbox remains opt-in.
+
+### Fixed
+- **Interior camera showed front footage in collage** (`cli/video_build.cpp`):
+  `effectiveSegs()` fell back to front footage for any camera name not in the four
+  standard names. Replaced four named vectors with a `std::map` keyed by camera ID.
+- **Viofo BL/BR quadrant assignment** (`gui/TripBuildDialog`): `buildOptions()` used
+  the profile slot name as the key for `cameraRemap`/`blankSlots`/`externalSlots`, but
+  the collage build always queries by fixed xstack position names. For a Viofo with
+  "interior" in the BL slot, nothing ever set `cameraRemap["right"]`, so BL was always
+  black. Fixed by introducing `kCollagePos = {"front","rear","right","left"}` (matching
+  the xstack `[v0][v1][v3][v2]` order) and using it for all collage key writes.
+- **Non-standard camera stage labels** (`gui/JobQueue.cpp`): Stage labels for cameras
+  not named Front/Rear/Left/Right showed as raw `concat:Interior` instead of
+  "Interior - join segments". `fmtStage` now handles any `concat:X` generically.
+- **Thumbnail extraction never fired for `extract_frame` cameras** (`lib/config_manager.cpp`):
+  The extraction guard used `trip.firstThumbs.empty()`, which was always false — `thumbFor`
+  populates the map with empty-string values for each slot when no sidecar exists. Fixed to
+  check that no non-empty path value exists.
+- **Scan crash on large parking manifests** (`lib/config_manager.cpp`): On first scan
+  of a Viofo with 265 parking clips, the extraction block ran 265×3 = 795 synchronous
+  ffmpeg calls, hanging the scan for 10+ minutes. Parking events now skip scan-time
+  extraction; thumbnails are deferred to GUI-side lazy loading.
+- **`loadTripCache` crash after GPS extraction** (`lib/config_manager.cpp`): App crashed
+  with `type_error.302: type must be string, but is number` when `onJobFinished` reloaded
+  a manifest after GPS extraction completed. Added defensive `is_string()` guards on all
+  six unguarded `v.get<std::string>()` call sites; a warning is logged for the offending
+  field to identify the root cause on next occurrence.
+- **Thumbnail storage accumulated in `~/.config`** (`lib/config_manager.cpp`): Extracted
+  thumbnail JPEGs were written to `~/.config/camclops/thumbs/<id>/`. Moved to
+  `<manifest-parent>/clops_thumbs_<id>/` so they colocate with the manifest and are
+  naturally cleaned up when it is deleted.
+
+---
+
+## [2.6.1 / SN: 00121] - 2026-05-20
+
+### Fixed
+
+- **Sync-pad collage drift on multi-startup trips** (`cli/video_build.cpp`):
+  When a trip contains multiple camera restarts and the trip detection groups them
+  into one trip (inter-startup gaps under the 15-minute threshold), short segments
+  at each restart boundary caused cumulative sync drift in the output collage.
+  Root cause: cameras that start later within a startup record shorter raw segments
+  (because the power cut hits all cameras at the same instant, but each camera's
+  clock started at a different time).  The ghost-pad approach correctly delays the
+  late-starting camera's content by prepending darkened ghost frames, but did not
+  compensate for the shorter raw duration — so that camera's xstack stream ran ahead
+  by the missing frames, accumulating across all short segments.  For the specific
+  trip that exposed this (left work → gas station stop → parking move → drive home),
+  the right camera's two short gas-station segments were ~1.5 s and ~1.2 s shorter
+  than front's, causing ~2.7 s of cumulative drift by the time the truck-passing
+  scene at 17:59 was reached, confirmed via OSD GPS timestamps in the extracted
+  frames.  Fixed by probing all four camera segment durations in the sync-pad path
+  and appending extra clone frames to any camera whose raw segment is shorter than
+  the front camera's, normalizing all stream outputs to the same per-segment duration.
+  Applied to both the 4K and 1080p-direct collage paths.
+
+## [2.2.0 / SN: 00119] - 2026-05-16
+
+### Added
+- **Uninstall CamClops menu item** (`gui/MainWindow`): Help → "Uninstall CamClops…"
+  shows a dialog with platform-appropriate removal instructions. On macOS: displays
+  the `sudo camclops-uninstall` terminal command with a "Copy Command" button that
+  puts it on the clipboard. On Linux: shows the RPM and DEB package manager commands.
+- **macOS: `camclops-tl.app` moves to `/Applications`** (`packaging/macos-scripts/postinstall`,
+  `CMakeLists.txt`): the post-install script now moves both `camclops-gui.app` and
+  `camclops-tl.app` to `/Applications` so both appear in Finder. An uninstall helper
+  (`sudo camclops-uninstall`) is also installed to `/usr/local/bin/`.
+
+### Fixed
+- **Cross-OS rescan erased GPS and video data** (`lib/config_manager.cpp`,
+  `gui/ScanProgressDialog.cpp`): rescanning a footage directory (or scanning it for
+  the first time from a new OS/machine) wiped GPS extraction status, GPS coordinates,
+  `gpsLockSeconds`, map/dashboard/HUD video paths, trip notes, and the GPS track
+  stored in the manifest. Trip IDs and camera sync data were preserved; nothing else
+  was. Root cause: `saveTripCache` built each trip's JSON from the fresh `detectTrips()`
+  output without merging back user-generated fields. Fixed by carrying all
+  user-generated fields forward from the existing manifest entry when `detectTrips()`
+  did not set them. `"unavailable"` (no GPS hardware) set by `detectTrips()` is
+  authoritative and cannot be overridden by a stale `"extracted"` value.
+- **Cross-OS first scan used wrong camera profile** (`gui/ScanProgressDialog`): on
+  the first scan from a new OS the manifest had not yet been adopted into the local
+  index, so `lookupManifestFilePath` returned empty and the locally configured profile
+  was used instead of the one embedded in the manifest. Fixed by calling
+  `getManifestFilePath()` before the profile check to force adoption.
+- **macOS package size doubled** (`CMakeLists.txt`): `camclops-tl.app` received its
+  own full private copy of all Qt frameworks from `macdeployqt`, doubling the
+  archive size (36 MB → 69 MB). Since both apps always ship together and install as
+  siblings in `/Applications`, `camclops-tl.app/Contents/Frameworks` is now a
+  relative symlink into `camclops-gui.app/Contents/Frameworks`. Package size returns
+  to approximately 36 MB.
+- **NVENC probe fails on Blackwell GPUs** (`gui/SetupWizard`): RTX 5000-series NVENC
+  SDK 13 requires an explicit pixel format; the null-source test encode failed format
+  negotiation on newer drivers. Added `-pix_fmt nv12` to the NVENC probe command.
+  Probe timeout increased from 5 s to 10 s to accommodate slower initialisation.
+- **`Info.plist` CFBundleSignature not rebranded** (`gui/Info.plist.in`): signature
+  was still `PMUX` (PathMux) rather than `CCLP` (CamClops).
+
+---
+
 ## [2.0.1a / SN: 00118] - 2026-05-14
 
 ### Added
@@ -1930,4 +2093,4 @@ cmake --install build --prefix /usr/local
 ## [0.1.0 / HWM: n/a] - 2026-01-25
 ### Added
 - **Initial Release**: Basic directory scanning and file listing for Tesla dashcam footage.
-<!-- SN: 00112 -->
+<!-- SN: 00122 -->

@@ -287,7 +287,7 @@ If segments are naively concatenated without compensation, sync drift accumulate
 
 **Priority:** High — without this, long trips become unwatchable due to A/V desync
 
-**Status: Tier 1 + Tier 2 both complete as of v1.9.9a.**
+**Status: Tier 1 + Tier 2 both complete. Duration equalization added v2.6.1.**
 
 Tier 1 (explicit segment durations) ships in all three build paths. Tier 2 (audio
 cross-correlation via `clops_sync_analyze.py`) measures per-trip start-time offsets and stores
@@ -295,8 +295,14 @@ them in the manifest `cameraSync` block. The collage builder reads per-segment d
 values and pads the shorter stream with a subdued first-frame ghost — zero frames discarded,
 four streams remain lockstep. Falls back to Tier 1 when no sync data is present.
 
-Pending (v2.0.0): GPS extraction should auto-trigger sync analysis; `cameraSync.segments`
-array should be keyed by front camera timestamp rather than positional index.
+**v2.6.1 fix — multi-startup drift:** For trips spanning multiple camera restarts
+(gap under the 15-minute detection threshold), cameras that start later per
+startup record shorter segments when power cuts all cameras simultaneously. The
+ghost-pad delay was correct but didn't account for the shorter raw duration,
+causing the late-start camera's xstack stream to run ahead cumulatively. Fixed by
+probing all four camera segment durations and appending extra clone frames to any
+camera shorter than front, normalizing all stream outputs per segment. This fix is
+also a prerequisite for the planned Join Trip feature.
 
 ### Video Export
 - Multi-camera collage generation using ffmpeg
@@ -1420,4 +1426,4 @@ This is a multi-session effort gated on no active release work:
 7. Implement trip migration UI (drag tile to manifest → update two manifest reference lists)
 8. Implement `.camclops` archival packaging (walk trip file, collect paths, tar/zip)
 
-<!-- SN: 00119 -->
+<!-- SN: 00122 -->

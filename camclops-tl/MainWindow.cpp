@@ -212,10 +212,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     trow->addStretch();
     vlay->addLayout(trow);
 
-    // ── Marks summary ─────────────────────────────────────────────────────────
-    m_marksSummary = new QLabel("No timelapse marks. Click Set Start, then Set End to define a timelapse section.", this);
-    m_marksSummary->setStyleSheet("color: gray;");
-    vlay->addWidget(m_marksSummary);
+    // ── Cut list (VRD-style mark table) ──────────────────────────────────────
+    m_markList = new MarkListWidget(this);
+    vlay->addWidget(m_markList);
 
     // ── Source / output info bar ─────────────────────────────────────────────
     auto* infoRow    = new QHBoxLayout;
@@ -331,6 +330,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             this, &MainWindow::onMarkDeleteRequested);
     connect(m_timeline, &TimelineWidget::marksChanged,
             this, &MainWindow::onMarksChanged);
+
+    connect(m_markList, &MarkListWidget::markSeekRequested,
+            m_player, &QMediaPlayer::setPosition);
+    connect(m_markList, &MarkListWidget::markEditRequested,
+            this, &MainWindow::onMarkEditRequested);
+    connect(m_markList, &MarkListWidget::markDeleteRequested,
+            this, &MainWindow::onMarkDeleteRequested);
     connect(m_timeline, &TimelineWidget::markClearAllRequested,
             this, [this]{
         m_timeline->clearAllMarks();
@@ -422,15 +428,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     connect(loadMarksAct, &QAction::triggered, this, [this]{
         QString path = QFileDialog::getOpenFileName(
             this, "Load Marks", m_marksPath.isEmpty() ? QString() : m_marksPath,
-            "CamClops TL marks (*.pmtl.json);;All files (*)");
+            "CamClops TL marks (*.cltl.json *.pmtl.json);;All files (*)");
         if (!path.isEmpty()) { loadMarks(path); m_marksLoaded = true; }
     });
     connect(saveMarksAct, &QAction::triggered, this, [this]{
         QString path = QFileDialog::getSaveFileName(
             this, "Save Marks As", m_marksPath.isEmpty() ? QString() : m_marksPath,
-            "CamClops TL marks (*.pmtl.json);;All files (*)");
+            "CamClops TL marks (*.cltl.json);;All files (*)");
         if (path.isEmpty()) return;
-        if (!path.endsWith(".pmtl.json")) path += ".pmtl.json";
+        if (!path.endsWith(".cltl.json")) path += ".cltl.json";
         m_marksPath = path;
         saveMarks();
     });
@@ -475,7 +481,7 @@ void MainWindow::openFile(const QString& path)
     m_inputEdit->setText(path);
     QFileInfo fi(path);
     m_outputPath   = fi.dir().filePath(fi.baseName() + "_tl.mp4");
-    m_marksPath    = fi.dir().filePath(fi.baseName() + ".pmtl.json");
+    m_marksPath    = fi.dir().filePath(fi.baseName() + ".cltl.json");
     m_marksLoaded  = false;
     m_outputEdit->setText(m_outputPath);
     m_frameStrip->clearFrames();
@@ -521,10 +527,20 @@ void MainWindow::onPlayerPositionChanged(qint64 ms)
 void MainWindow::onPlayerDurationChanged(qint64 ms)
 {
     m_timeline->setDuration(ms);   // clears marks
-    if (ms > 0 && !m_marksLoaded && !m_marksPath.isEmpty()
-            && QFileInfo::exists(m_marksPath)) {
-        loadMarks(m_marksPath);
-        m_marksLoaded = true;
+    if (ms > 0 && !m_marksLoaded && !m_marksPath.isEmpty()) {
+        if (QFileInfo::exists(m_marksPath)) {
+            loadMarks(m_marksPath);
+            m_marksLoaded = true;
+        } else {
+            // Migrate legacy .pmtl.json → .cltl.json
+            QString legacy = m_marksPath;
+            legacy.replace(".cltl.json", ".pmtl.json");
+            if (QFileInfo::exists(legacy)) {
+                loadMarks(legacy);
+                m_marksLoaded = true;
+                saveMarks();   // re-save under new extension
+            }
+        }
     }
     m_processBtn->setEnabled(ms > 0 && !m_outputEdit->text().isEmpty());
     updateMarksSummary();
@@ -600,11 +616,11 @@ void MainWindow::onMarkEditRequested(int id)
         if (m.id == id) { mk = &m; break; }
     if (!mk) return;
 
-    auto* dlg = new MarkDialog(*mk, this);
+    auto* dlg = new MarkDialog(*mk, m_player->duration(), m_frameDurationMs, this);
     connect(dlg, &MarkDialog::deleteRequested,
             this, &MainWindow::onMarkDeleteRequested);
     if (dlg->exec() == QDialog::Accepted)
-        m_timeline->setMarkTarget(id, dlg->targetSecs());
+        m_timeline->updateMark(dlg->result());
     dlg->deleteLater();
 }
 
@@ -904,26 +920,7 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 // ---------------------------------------------------------------------------
 void MainWindow::updateMarksSummary()
 {
-    const auto& marks = m_timeline->marks();
-    if (marks.isEmpty()) {
-        m_marksSummary->setText(
-            "No timelapse marks. Click Set Start, then Set End to define a timelapse section.");
-        return;
-    }
-    QStringList parts;
-    for (const auto& m : marks) {
-        QString span = QString("%1\xe2\x80\x93%2")
-                       .arg(formatMsFrame(m.startMs)).arg(formatMsFrame(m.endMs));
-        if (m.targetSecs < 0)
-            parts << QString("[%1 unconfigured]").arg(span);
-        else if (m.targetSecs == 0.0)
-            parts << QString("[%1 CUT]").arg(span);
-        else
-            parts << QString("[%1 \xe2\x86\x92 %2s]").arg(span)
-                         .arg(m.targetSecs, 0, 'f', 1);
-    }
-    m_marksSummary->setText(
-        QString("%1 timelapse mark(s):  ").arg(marks.size()) + parts.join("   "));
+    m_markList->rebuild(m_timeline->marks(), m_frameDurationMs);
 }
 
 void MainWindow::updateTransportButtons()
@@ -959,13 +956,13 @@ void MainWindow::applyUiScale(double scale)
         QFont small = f;
         small.setPointSizeF(m_baseFontPt * m_uiScale * 0.8);
         m_hlpLbl->setFont(small);
-        m_marksSummary->setFont(small);
         m_srcInfoLabel->setFont(small);
         m_outEstLabel->setFont(small);
         m_statusLabel->setFont(small);
     }
     m_timeline->setUiScale(m_uiScale);
     m_frameStrip->setUiScale(m_uiScale);
+    m_markList->setUiScale(m_uiScale);
 }
 
 double MainWindow::calcOutputDurationSecs() const
@@ -1110,4 +1107,4 @@ void MainWindow::reloadFrameStrip()
     m_frameStrip->loadFrames(m_inputPath, m_player->position(),
                               m_frameDurationMs, findFfmpeg());
 }
-// SN: 00117
+// SN: 00122

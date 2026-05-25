@@ -14,6 +14,7 @@
 #include "CameraProfilesDialog.h"
 #include "profile_detector.hpp"
 #include <QDockWidget>
+#include <QCloseEvent>
 #include <QEvent>
 #include <QFrame>
 #include <QSplitter>
@@ -110,6 +111,7 @@ MainWindow::MainWindow(QWidget* parent)
         m_jobFloatWin->setWindowTitle("Job Queue");
         m_jobFloatWin->setMinimumSize(500, 160);
         m_jobFloatWin->resize(800, 240);
+        m_jobFloatWin->setAttribute(Qt::WA_QuitOnClose, false);
         m_jobFloatWin->installEventFilter(this);
 
         auto* lay = new QVBoxLayout(m_jobFloatWin);
@@ -164,6 +166,44 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
         // Let default close handling delete the window.
     }
     return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    const auto& jobs = JobQueue::instance().jobs();
+    int running = 0, queued = 0;
+    for (const auto* job : jobs) {
+        if (job->state() == Job::State::Running) ++running;
+        if (job->state() == Job::State::Queued)  ++queued;
+    }
+
+    if (running + queued > 0) {
+        QString detail;
+        if (running && queued)
+            detail = QString("%1 running, %2 queued").arg(running).arg(queued);
+        else if (running)
+            detail = QString("%1 running").arg(running);
+        else
+            detail = QString("%1 queued").arg(queued);
+
+        QMessageBox dlg(this);
+        dlg.setWindowTitle("Jobs Active");
+        dlg.setText(QString("There are jobs still active (%1).\n\nKill all jobs and close?").arg(detail));
+        dlg.setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
+        dlg.setDefaultButton(QMessageBox::Cancel);
+        dlg.button(QMessageBox::Yes)->setText("Kill && Close");
+
+        if (dlg.exec() != QMessageBox::Yes) {
+            event->ignore();
+            return;
+        }
+
+        for (auto* job : jobs)
+            if (job->state() == Job::State::Running || job->state() == Job::State::Queued)
+                job->cancel();
+    }
+
+    event->accept();
 }
 
 void MainWindow::buildMenuBar()
@@ -580,4 +620,4 @@ void MainWindow::onSearchCompleted(QList<SearchResult> results, QString label)
     m_manifestPanel->selectEntry(ve);
     m_tripGridPanel->loadSearchResults(results, ve);
 }
-// SN: 00119
+// SN: 00122

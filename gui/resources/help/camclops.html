@@ -240,8 +240,27 @@ Only video and audio streams are mapped; the LIGOGPSINFO data track is discarded
 <p>The 4K collage is assembled as follows:</p>
 <ol>
 <li>Per segment, ffprobe measures the frame count of all four cameras.</li>
-<li>Cameras shorter than the longest are padded with a fade-to-black tail
-(<code>tpad + fade</code> filters) and silent audio (<code>apad</code>).</li>
+<li>Camera sync is applied in two tiers.
+<ul>
+<li><b>Tier 1 (always active):</b> ffprobe measures the exact playback duration
+of each segment and passes it to the concat demuxer via <code>-t</code> flags,
+preventing drift from startup-lag frame-count differences accumulating across a long
+trip.</li>
+<li><b>Tier 2 (when sync data is present):</b> If the manifest contains a
+<code>cameraSync</code> block (written by <i>clops_sync_analyze.py</i>), each
+camera stream is delayed or held using a subdued first-frame ghost pad (brightness
+−0.25, saturation 0.1) so all streams start at exactly the same wall-clock moment.
+Zero frames are discarded; all four streams remain lockstep.  Silent audio padding
+(<code>apad</code>) matches each camera's audio duration to its video track.  Falls
+back to Tier 1 only when no sync data is present.</li>
+<li><b>Multi-startup trip drift normalization:</b> When a trip contains multiple
+camera restarts grouped together (inter-restart gaps under the gap threshold),
+cameras that started later within a given startup record shorter raw segments.
+Each camera's raw segment duration is probed and extra clone frames are appended to
+any camera whose raw duration is shorter than the front camera's for that segment,
+preventing cumulative drift across the trip.</li>
+</ul>
+</li>
 <li>The four normalized streams are combined with the <b>xstack</b> filter
 into a 3840×2160 frame:<br>
 <pre>[ Front ] [ Rear  ]
@@ -355,6 +374,12 @@ wipe with <b>--clear-stale</b>.</dd>
 <dt>~/.config/camclops/locations.json</dt>
 <dd>Named locations (Home, Work, etc.) used for KML proximity pin overlays.</dd>
 
+<dt><i>&lt;scanned_path&gt;</i>/clops_thumbs_<i>&lt;id&gt;</i>/</dt>
+<dd>Thumbnail cache directory written by the GUI when trip tiles load for cameras
+that do not produce JPEG sidecar files (e.g. Viofo).  Thumbnails are stored as
+<code><i>tid</i>_<i>slot</i>.jpg</code>.  Co-located with the manifest file;
+cleaned up automatically if the manifest is deleted.  Not written by the CLI.</dd>
+
 <dt><i>&lt;scanned_path&gt;</i>/clops_buildlog.json</dt>
 <dd>Build provenance log appended after each successful video build.  Records
 build timestamp, manifest ID, trip ID, output path, output duration, cameras
@@ -395,4 +420,4 @@ i7 / 16 GB DDR5 / RTX 5060 / NVMe<br>
 </body>
 </html>
 
-<!-- SN: 00104 -->
+<!-- SN: 00123 -->

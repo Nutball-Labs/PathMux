@@ -77,6 +77,7 @@ int main(int argc, char* argv[])
     app.setApplicationName("CamClops");
     app.setApplicationVersion(APP_VERSION);
     app.setOrganizationName("Nutball Labs");
+    app.setDesktopFileName("camclops");
 
     // Under the Adwaita GTK theme (GNOME/Alma 9), Qt widget borders are nearly
     // invisible — same color as the background.  Apply explicit borders globally
@@ -167,4 +168,4 @@ int main(int argc, char* argv[])
 
     return app.exec();
 }
-// SN: 00113
+// SN: 00122

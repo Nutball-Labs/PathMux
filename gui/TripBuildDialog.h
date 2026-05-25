@@ -14,6 +14,7 @@ class LogoMorphWidget;
 class QCheckBox;
 class QComboBox;
 class QGroupBox;
+class QLabel;
 class QLineEdit;
 class QPushButton;
 class QRadioButton;
@@ -46,11 +47,17 @@ private:
 
     QWidget*   makeQuadrantCell(int idx, const std::set<std::string>& cams);
     void       updateQuadFileRow(int idx);
+    void       startThumbGrab(const QString& path, bool isHud, QLabel* target);
 
     // Quadrant → slot mapping built from the embedded camera profile at construct time.
     // Indices 0-3 map to TL, TR, BL, BR.  Empty string = no camera assigned to that quad.
     static constexpr std::array<const char*, 4> kPos =
         {"Top Left", "Top Right", "Bottom Left", "Bottom Right"};
+    // Fixed collage position names that video_build.cpp uses as keys for cameraRemap/
+    // blankSlots/externalSlots — derived from the xstack layout: TL=front, TR=rear,
+    // BL=right, BR=left (note BL/BR swap: right camera sits bottom-left in the grid).
+    static constexpr std::array<const char*, 4> kCollagePos =
+        {"front", "rear", "right", "left"};
     std::array<std::string, 4> m_kSlot = {};  // backend slot name (e.g. "front")
     std::array<QString,     4> m_kCam  = {};  // display name      (e.g. "Front")
 
@@ -99,4 +106,4 @@ private:
     // ── Action row ───────────────────────────────────────────────────────────
     QCheckBox*   m_chkVerbose = nullptr;
 };
-// SN: 00112
+// SN: 00122

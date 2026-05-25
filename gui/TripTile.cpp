@@ -466,4 +466,4 @@ void TripTile::paintEvent(QPaintEvent*)
 
     drawStatusIndicators(p);
 }
-// SN: 00119
+// SN: 00122

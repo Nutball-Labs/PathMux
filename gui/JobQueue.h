@@ -152,7 +152,8 @@ private:
     QString                m_profileId;
     CamClops::ManifestEntry m_entry;
     QElapsedTimer          m_elapsed;
-    QThread*               m_thread = nullptr;
+    QThread*               m_thread      = nullptr;
+    QString                m_currentStep;  // name of the open step sub-row
 };
 
 // ─── JobQueue ─────────────────────────────────────────────────────────────────
