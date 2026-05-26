@@ -10,6 +10,7 @@ extracted (if supported), and the confirmation status.
 | Camera | Layout | GPS | Status |
 |---|---|---|---|
 | Pruveeo D90 360° | `Front/` `Rear/` `Left/` `Right/` subdirs, `.ts` | LIGOGPSINFO via ExifTool | ✅ Confirmed |
+| Viofo A229 Ultra | `DCIM/Movie/` flat dir, F/I/R filename tokens, `.MP4`; parking clips in `DCIM/Movie/Parking/`, G-sensor clips in `DCIM/Movie/RO/` | QuickTime GPS atom via ExifTool, 1 rec/sec UTC | ✅ Confirmed |
 | Cobra CCDC4500 / GPS | `DCIM/100_DSC/`, CAM1+CAM2, `.MOV`/`.3GP` | gps0 atom via ExifTool (GPS models) | ✅ Confirmed |
 | Prilotte | `DCIMA/` + `DCIMC/` subdirs, `.AVI` MJPEG | None (mtime timestamps) | ✅ Confirmed (no GPS) |
 
@@ -60,4 +61,4 @@ Attach `camera_report.json` to the issue.
 Open issues at **https://github.com/Nutball-Labs/CamClops/issues** and include
 the camera make and model in the title.
 
-<!-- SN: 00118 -->
+<!-- SN: 00122 -->
