@@ -19,6 +19,35 @@ per-camera MP4 files and 4K collages.
 
 ---
 
+## Coming in v3.0
+
+v3.0 restructures the GUI around a four-stage tab-based pipeline and absorbs
+the `camclops-tl` timelapse editor as a built-in tab — no separate application.
+
+**Highlights:**
+
+- **Manifest → Trip → Collage → Timelapse tab pipeline** — the four production
+  stages chain naturally; multiple trips can be open simultaneously in any combination
+- **`camclops-gui` becomes `camclops`; the CLI becomes `camclops-cli`** — most users
+  will need only the GUI package; split packaging reflects the real-world usage split
+- **Stage 2 — Stream Editor** — assign any source (camera, map, dashboard, HUD,
+  external clip) to each quadrant slot and center overlay independently;
+  timeline keyframes control when each slot changes sources
+- **Transitions** — hard cut, fade to black, and cross-fade are configurable
+  per slot-swap and per full-screen insertion entry/exit point
+- **Full-screen insertions** — pre-roll, post-roll, or mid-collage jump cuts with
+  entry and exit transitions set independently
+- **Timelapse editor absorbed** — `camclops-tl` mark-and-encode workflow becomes
+  Stage 3 inside the main app; no standalone binary
+- **Edit config** — all editing decisions (slot assignments, keyframes, insertions,
+  transitions) are saved to `clops_edit_<MID>-<TID>.json` and reloadable before render
+
+Ships on a milestone track: v3.0 brings the tab pipeline and timelapse absorption;
+subsequent point releases add the editing timeline, transitions, and full-screen
+insertions. See [V3-Roadmap.md](V3-Roadmap.md) for the full plan.
+
+---
+
 ## Download
 
 Pre-built packages for the latest release are on the
