@@ -36,4 +36,16 @@ the desktop GUI open. This view shows four jobs: two completed GPS extractions,
 a camera sync analysis in progress, and a HUD build queued behind it. The
 timestamp at the bottom shows when camclops-gui last wrote the status file.
 
-<!-- SN: 00119 -->
+---
+
+## Telemetry Timelapse
+
+[![Telemetry Timelapse on YouTube](https://img.youtube.com/vi/4kOj_mbFeX8/0.jpg)](https://www.youtube.com/watch?v=4kOj_mbFeX8)
+
+[Watch on YouTube](https://www.youtube.com/watch?v=4kOj_mbFeX8)
+
+A timelapse of a single commute home with the telemetry overlay rendered
+by `pm_hud.py`. Couple minor glitches in the layout that I'll work on 
+fixing over the next few days.
+
+<!-- SN: 00122 -->
